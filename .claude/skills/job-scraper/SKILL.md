@@ -151,3 +151,13 @@ If the user decides to apply to any job, add a row to `job_search_tracker.csv`.
 4. **Only open positions.** Skip postings with expired deadlines or those marked as closed.
 5. **Be efficient with WebFetch.** Don't fetch every search result - use titles and snippets to pre-filter before fetching.
 6. **Parallel searches.** Use the Agent tool or parallel WebSearch calls to speed up the search phase.
+
+## Portal Exclusion List
+
+The following Danish portal directories exist under `.agents/skills/` but are **disabled** (scraper must NOT run them):
+- `jobbank-search`
+- `jobdanmark-search`
+- `jobindex-search`
+- `jobnet-search`
+
+These portals are for the Danish job market and are not relevant for the Saudi Arabia job search. Do not include them in any scrape run. Only `linkedin-search` is active.

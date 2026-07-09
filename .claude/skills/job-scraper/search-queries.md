@@ -1,31 +1,24 @@
-# Search Queries for Job Scraper
+# Search Queries for Job Scraper (Saudi Arabia Focus)
 
-<!-- SETUP: Customize these queries based on your skills, target roles, and location -->
+<!-- Danish portals disabled — see job-scraper SKILL.md for portal exclusion list -->
+<!-- Search is scoped to LinkedIn (global) for Saudi Arabia / Riyadh market -->
 
 ## Search Sites
 
-Primary (Danish job market):
-- **jobindex.dk** - largest Danish job board
-- **linkedin.com/jobs** - LinkedIn job listings (filter: Denmark / your city)
-- **karriere.dk** - IDA's job board (engineering/science roles)
-- **jobfinder.dk** - another major Danish job board
-- **akademikernes.dk** - academic union job board
-
-Secondary (company career pages via Google):
-- Direct Google searches with `site:` filters for known target companies
+Primary:
+- **linkedin.com/jobs** - LinkedIn job listings (global, filter to Saudi Arabia)
 
 ## Query Categories
 
-Queries are grouped by priority. Each query should be combined with your location terms (e.g. "Copenhagen", "Sjælland", "Hovedstaden") where the site supports it.
+Queries are grouped by priority. All queries target the Saudi job market.
 
 ### Priority 1: [YOUR_PRIMARY_ROLE_TYPE]
 
 These match your strongest and most desired career direction.
 
 ```
-site:jobindex.dk "[YOUR_PRIMARY_JOB_TITLE]" [YOUR_CITY]
-site:jobindex.dk "[YOUR_KEY_SKILL]" [YOUR_CITY]
-site:linkedin.com/jobs "[YOUR_PRIMARY_JOB_TITLE]" [YOUR_COUNTRY]
+site:linkedin.com/jobs "[YOUR_PRIMARY_JOB_TITLE]" "Riyadh" "Saudi Arabia"
+site:linkedin.com/jobs "[YOUR_KEY_SKILL]" "Riyadh" "Saudi Arabia"
 ```
 
 ### Priority 2: [YOUR_DOMAIN_EXPERTISE]
@@ -33,9 +26,8 @@ site:linkedin.com/jobs "[YOUR_PRIMARY_JOB_TITLE]" [YOUR_COUNTRY]
 These match your domain expertise.
 
 ```
-site:jobindex.dk [YOUR_DOMAIN_KEYWORD_1] [YOUR_CITY] OR [YOUR_REGION]
-site:jobindex.dk [YOUR_DOMAIN_KEYWORD_2] [YOUR_COUNTRY]
-site:linkedin.com/jobs [YOUR_DOMAIN_KEYWORD_1] [YOUR_CITY] [YOUR_COUNTRY]
+site:linkedin.com/jobs [YOUR_DOMAIN_KEYWORD_1] "Riyadh" "Saudi Arabia"
+site:linkedin.com/jobs [YOUR_DOMAIN_KEYWORD_2] "Saudi Arabia"
 ```
 
 ### Priority 3: [YOUR_ADJACENT_ROLE_TYPE]
@@ -43,8 +35,8 @@ site:linkedin.com/jobs [YOUR_DOMAIN_KEYWORD_1] [YOUR_CITY] [YOUR_COUNTRY]
 Adjacent roles you could pivot into.
 
 ```
-site:jobindex.dk "[YOUR_ADJACENT_TITLE_1]" [YOUR_KEY_SKILL] [YOUR_CITY]
-site:jobindex.dk "[YOUR_ADJACENT_TITLE_2]" [YOUR_KEY_SKILL] [YOUR_CITY]
+site:linkedin.com/jobs "[YOUR_ADJACENT_TITLE_1]" "Riyadh" "Saudi Arabia"
+site:linkedin.com/jobs "[YOUR_ADJACENT_TITLE_2]" "Riyadh" "Saudi Arabia"
 ```
 
 ### Priority 4: Broader Technical / Consulting
@@ -52,19 +44,16 @@ site:jobindex.dk "[YOUR_ADJACENT_TITLE_2]" [YOUR_KEY_SKILL] [YOUR_CITY]
 Wider net for general technical roles.
 
 ```
-site:jobindex.dk [YOUR_KEY_SKILL] developer [YOUR_CITY]
-site:linkedin.com/jobs "[YOUR_KEY_SKILL] developer" [YOUR_CITY]
-site:jobindex.dk "technical consultant" [YOUR_DOMAIN] [YOUR_CITY]
+site:linkedin.com/jobs "[YOUR_KEY_SKILL]" "Riyadh" "Saudi Arabia"
+site:linkedin.com/jobs "technical consultant" "Riyadh" "Saudi Arabia"
 ```
 
 ## Location Filter
 
-When evaluating results, verify the job location is within reasonable commute distance from your home. Define acceptable areas:
-- [YOUR_CITY] and surrounding areas
-- [ACCEPTABLE_AREA_1]
-- [ACCEPTABLE_AREA_2]
-- [BORDERLINE_AREA] (borderline - ~X min by transit)
-- [TOO_FAR_AREA] (too far)
+When evaluating results, verify the job location is within reasonable commute distance from Riyadh. Define acceptable areas:
+- Riyadh and surrounding areas
+- Remote (within KSA time zone or fully remote)
+- Other KSA cities (if relocation is feasible)
 
 ## Date Filter
 
