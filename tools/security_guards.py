@@ -76,6 +76,8 @@ ALLOWED_IGNORE_NEGATIONS = {
     "!cv/main_example.tex",
     "!cover_letters/cover_example.tex",
     "!documents/**/.gitkeep",
+    "!projects/job-automation/data/jobs/.gitkeep",
+    "!projects/job-automation/artifacts/.gitkeep",
 }
 
 FORBIDDEN_SCRIPTS = {"preinstall", "install", "postinstall", "prepare", "prepack"}
