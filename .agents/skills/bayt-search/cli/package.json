@@ -1,0 +1,9 @@
+{
+  "name": "bayt-cli",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}

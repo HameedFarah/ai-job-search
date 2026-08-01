@@ -17,6 +17,7 @@ description: >
   hiring denmark, job listings denmark, python jobs denmark, grafisk designer job,
   data engineer job, softwareudvikler job, full stack developer job danmark.
 context: fork
+enabled: false  # disabled for this GCC/KSA fork — Danish portal
 allowed-tools: Bash(bun run .agents/skills/jobindex-search/cli/src/cli.ts *)
 ---
 
