@@ -349,10 +349,12 @@ class CareerTracker:
         now = utc_now()
         record["job"]["last_updated"] = now
         if "owner" in changes or "processing_status" in changes:
-            record["processing_state"] = {
-                "owner": record["job"]["owner"],
-                "status": record["job"]["processing_status"],
-            }
+            processing_state = record.get("processing_state")
+            if not isinstance(processing_state, dict):
+                processing_state = {}
+            processing_state["owner"] = record["job"]["owner"]
+            processing_state["status"] = record["job"]["processing_status"]
+            record["processing_state"] = processing_state
         event = self._make_event(
             actor=actor, entity_type="job", entity_id=job_id, action=action,
             before=before, after=after, comment=comment, source_refs=source_refs,

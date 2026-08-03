@@ -1,70 +1,37 @@
 ---
 name: job-application-assistant
-description: >
-  Assists with job applications: evaluating job postings, tailoring CVs, writing cover letters,
-  and preparing for interviews. Triggers on keywords like: job posting, job application, CV,
-  cover letter, resume, interview prep, job fit, career, application, apply, ansøgning, stilling
-allowed-tools: Read, Glob, Grep, WebFetch, WebSearch, Edit, Write, AskUserQuestion
-framework_version: 1.1.0
+description: Use the centralized Career Engine to evaluate a vacancy and create an evidence-grounded tailored CV and cover email.
+framework_version: 1.2.0
 ---
 
 # Job Application Assistant
 
----
+This skill is a thin client of the centralized Career Engine. It does not maintain independent career facts, scoring rules, writing rules or application policy.
 
-## Workflow
+## Authorities
 
-When the user provides a job posting (URL or text), follow this workflow:
+- Engine code and schemas: repository root and `career_engine/`
+- Career truth and governance: `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/`
+- Compiled runtime bundle: `projects/job-automation/config/runtime-bundle.v1.json`
+- Canonical tracker: `projects/job-automation/tracker.py`
 
-### Step 1: Research & Evaluate Fit
-- Fetch the job posting content (use WebFetch for URLs)
-- Analyze the posting for required competencies, keywords, and priorities
-- Research the company (website, LinkedIn, mission, recent news)
-- Score the posting against the candidate's profile using the framework in `04-job-evaluation.md`
-- Present the evaluation table and verdict
-- Suggest whether the candidate should call the employer before applying (see `04-job-evaluation.md` for guidance)
-- Ask the user if they want to proceed with an application
+## Required flow
 
-### Step 2: Tailor CV
-- Read the most relevant existing CV variant from `cv/` as a starting point
-- Follow the guidelines in `05-cv-templates.md`
-- Create `cv/main_<company>_<role>.tex` with tailored content
-- Adjust: profile statement, skills section, experience bullet emphasis, section order
+1. Save the complete verified job description to a UTF-8 file.
+2. Run `./career-engine bundle build`.
+3. Run `./career-engine prepare` with the real company, role, source, official application URL, `live_status=live`, verification timestamp/source and verified recipient details when available. Closed, unverified or incompletely verified vacancies must remain blocked.
+4. Read the generated `generation_packet.json` from the returned artifact path.
+5. Perform one high-quality LLM generation pass using the packet's system instruction and evidence claims. Write original, coherent and persuasive prose. Do not use rigid fill-in-the-blank sentences.
+6. Return JSON matching `projects/job-automation/config/generated_application.schema.json`.
+7. Import the result with `./career-engine generate import --job-id <id> --file <json>`.
+8. Render through the approved versioned DOCX template only after deterministic validation passes.
+9. Create an unsent Gmail draft only when the Career Engine route is `email` and the verified real recipient is present. For portal-only roles, provide the official application link and create no application email draft.
+10. Never send, submit or answer sensitive declarations without explicit owner approval.
 
-### Step 3: Write Cover Letter
-- Follow the writing style rules in `03-writing-style.md` (critical: no em-dashes, no cliches)
-- Follow the template structure in `06-cover-letter-templates.md`
-- Create `cover_letters/cover_<company>_<role>.tex`
-- Ensure the letter connects specific experience to the role requirements
+## LLM boundary
 
-### Step 4: Interview Preparation
-- Follow the framework in `07-interview-prep.md`
-- Prepare STAR-format answers for likely questions
-- Identify role-specific talking points
-- Draft questions the candidate should ask the interviewer
+The LLM writes vacancy-specific prose. It must not re-evaluate career facts independently. Every factual sentence or bullet cites approved claim IDs. A second LLM review is used only when deterministic validation fails, evidence is materially ambiguous, or the owner asks for another review.
 
----
+## Required reporting
 
-## Reference Files
-
-| File | Purpose |
-|------|---------|
-| `01-candidate-profile.md` | Education, experience, skills, publications, awards |
-| `02-behavioral-profile.md` | Behavioral assessment, strengths, ideal environments |
-| `03-writing-style.md` | Tone, structure, do's and don'ts |
-| `04-job-evaluation.md` | Scoring framework for job fit |
-| `05-cv-templates.md` | LaTeX CV structure and tailoring rules |
-| `06-cover-letter-templates.md` | LaTeX cover letter structure and tailoring rules |
-| `07-interview-prep.md` | STAR examples, tough questions, roleplay guidelines |
-| `08-application-forms.md` | Portal free-text fields: self-introduction, project entries, character-limited pitches |
-
----
-
-## Quick Commands
-
-The user may also ask for individual steps without the full workflow:
-- "Evaluate this job posting" - Step 1 only
-- "Write a CV for [company]" - Step 2 only
-- "Write a cover letter for [role] at [company]" - Step 3 only
-- "Help me prepare for an interview at [company]" - Step 4 only
-- "What jobs should I look for?" - Career strategy discussion using profile + evaluation framework
+Always include the job ID, bundle hash, fit score, material gaps, application route, artifact paths, validation result and explicit external-action status.

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "headings": {
+    "responsibilities": ["responsibilities", "key responsibilities", "role responsibilities", "what you will do", "duties"],
+    "mandatory": ["requirements", "required skills", "required qualifications", "mandatory requirements", "minimum qualifications", "qualifications", "what you bring", "essential criteria"],
+    "preferred": ["preferred", "preferred skills", "desired skills", "desired qualifications", "desirable", "nice to have", "advantageous"]
+  },
+  "aliases": {
+    "design governance": ["design assurance", "design quality", "technical governance", "design controls"],
+    "design management": ["design coordination", "multidisciplinary coordination", "technical coordination"],
+    "project delivery": ["programme delivery", "project management", "delivery management"],
+    "construction oversight": ["construction supervision", "site supervision", "construction-stage services"],
+    "contract administration": ["commercial assessment", "variation assessment", "payment certification", "dispute avoidance"],
+    "bim": ["building information modelling", "building information modeling", "digital delivery"],
+    "client management": ["stakeholder management", "client engagement", "senior client interface"],
+    "leadership": ["team leadership", "people management", "mentoring", "line management"],
+    "value engineering": ["value optimisation", "value optimization", "cost engineering"],
+    "quality assurance": ["qa", "quality control", "technical review", "design review"],
+    "saudi council of engineers": ["sce", "professional classification"],
+    "career tenure": ["years of experience", "years of related engineering", "direct experience", "progressive experience"],
+    "architectural degree": ["bachelor degree in architecture", "bachelor degree in engineering", "architectural engineering", "related technical field"],
+    "codes and standards": ["industry standards", "codes", "procedural requirements", "regulatory approval processes"],
+    "technical communication": ["written and oral communication", "technical reports", "correspondence", "client presentations"],
+    "professional registration": ["professional certification", "certification", "professional classification", "sce"],
+    "hse": ["health safety environment", "health, safety and environment"]
+  },
+  "seniority_terms": ["manager", "senior manager", "director", "principal", "head", "lead", "regional", "district"],
+  "leadership_terms": ["lead", "manage", "direct", "mentor", "oversee", "govern", "approve"],
+  "gcc_locations": ["saudi arabia", "riyadh", "jeddah", "dammam", "khobar", "gcc", "uae", "qatar", "oman", "bahrain", "kuwait", "jordan", "amman"],
+  "mandatory_domain_terms": {
+    "stadium_sports_venue": [
+      "stadium", "stadiums", "sports venue", "sports venues", "sport venue", "sport venues",
+      "sports facility", "sports facilities", "sports infrastructure", "sports arena", "arena",
+      "sporting event", "sporting events", "sporting venue", "sporting venues"
+    ],
+    "shopping_mall_retail": [
+      "shopping mall", "shopping malls", "mall development", "mall", "malls",
+      "retail destination", "retail destinations", "retail development", "retail unit",
+      "retail units", "retail planning", "retail", "mixed-use development", "mixed use development"
+    ],
+    "hospitality_leisure": [
+      "hospitality", "leisure", "hotel", "hotels", "resort", "resorts",
+      "entertainment venue", "entertainment venues", "f&b", "food and beverage", "guest experience", "tourism"
+    ],
+    "high_rise_tower": [
+      "high-rise", "high rise", "tower", "towers", "vertical structure", "vertical structures", "supertall"
+    ],
+    "defense_military_security": [
+      "defense", "defence", "military", "high-security", "high security", "civil defense", "civil defence",
+      "security/defense", "security/defence", "defense facility", "defence facility", "defense infrastructure"
+    ],
+    "aviation": [
+      "aviation", "airport", "airports", "aerodrome", "runway", "runways", "aircraft", "aviation infrastructure"
+    ],
+    "healthcare": [
+      "healthcare", "health care", "hospital", "hospitals", "clinic", "clinics", "medical facility", "medical facilities"
+    ]
+  },
+  "mandatory_signals": [
+    "essential",
+    "required",
+    "must have",
+    "must-have",
+    "must possess",
+    "proven experience",
+    "proven track record",
+    "track record",
+    "minimum",
+    "with a focus on",
+    "years of experience",
+    "years of professional",
+    "experience in",
+    "experience delivering",
+    "experience leading",
+    "experience managing",
+    "experience working",
+    "experience with",
+    "experience on",
+    "experience across",
+    "strong knowledge",
+    "in-depth knowledge",
+    "knowledge of",
+    "demonstrated experience",
+    "background in",
+    "expertise in",
+    "deep understanding"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "career-engine/runtime-bundle.v1",
+  "title": "Career Engine Runtime Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "engine_version", "built_at", "bundle_hash", "sources", "config", "taxonomy", "claims"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "engine_version": {"type": "string"},
+    "built_at": {"type": "string"},
+    "bundle_hash": {"type": "string", "minLength": 64, "maxLength": 64},
+    "sources": {"type": "array", "items": {"type": "object"}},
+    "config": {"type": "object"},
+    "taxonomy": {"type": "object"},
+    "claims": {"type": "array", "items": {"type": "object"}}
+  }
+}

@@ -359,6 +359,37 @@ The framework supports two distinct modes of job searching:
 
 To get the most from this, invest time during `/setup` in describing not just your experience, but what energized you, what drained you, and what you'd want more of. This context directly shapes how the system evaluates fit and which roles it surfaces during `/scrape`.
 
+## Centralized Career Engine
+
+This fork includes a production multi-job Career Engine shared by the CLI, ChatGPT, Hermes, scheduled scanners and future API/SaaS clients.
+
+```bash
+./career-engine doctor
+./career-engine bundle build
+./career-engine bundle status
+./career-engine bundle validate
+./career-engine prepare --jd-file JOB.txt --company COMPANY --role ROLE --application-url OFFICIAL_URL --live-status live --live-verified-at TIMESTAMP --live-verification-source SOURCE
+./career-engine scanner ingest --file jobs.json --scanner-id chatgpt_scanner
+./career-engine scanner ingest --file jobs.json --scanner-id hermes_scanner
+```
+
+The engine separates three authorities: repository code/schemas, canonical career truth/governance in the Obsidian Vault, and one compiled versioned runtime bundle used by every client. Thin commands and skills must not duplicate candidate facts or application policy.
+
+Deterministic stages verify vacancy status, normalize the job description, match approved evidence, calculate fit and material gaps, resolve a verified email or official portal route, enforce policy, render through the approved versioned DOCX template and set the owner-approval gate. One bounded LLM pass writes original vacancy-specific CV and cover-email prose using cited claim IDs; a second review is exceptional.
+
+Hard controls include:
+
+- closed or unverified vacancies cannot generate application content;
+- mandatory domain requirements require direct claim-level evidence;
+- unsupported claims, altered chronology, prohibited names and availability wording are rejected;
+- email requires a verified real recipient; portal-only roles create no Gmail draft;
+- no email is sent and no portal is submitted without explicit owner approval;
+- runtime tracker data, generated applications, mailbox data, scanner inputs/results, prompts, caches and secrets are excluded from source control.
+
+The approved CV renderer is hash-locked to `templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx` and fails closed rather than silently changing layouts.
+
+See [docs/CAREER_ENGINE_V1.md](docs/CAREER_ENGINE_V1.md), [CAREER_ENGINE_V1_IMPLEMENTATION.md](CAREER_ENGINE_V1_IMPLEMENTATION.md) and [docs/CAREER_ENGINE_CLOSEOUT_PLAN_2026-08-03.md](docs/CAREER_ENGINE_CLOSEOUT_PLAN_2026-08-03.md).
+
 ## Contributing
 
 Thinking about a PR? Read [CONTRIBUTING.md](CONTRIBUTING.md) first - it explains what gets merged, what lives in forks, and why.

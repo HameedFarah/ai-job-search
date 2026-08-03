@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "engine_version": "1.0.0",
+  "vault": {
+    "root": "/home/hameedo/obsidian/HermesOpsVault",
+    "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",
+    "sources": [
+      "projects/job-automation/career-engine-profile.v1.json",
+      "projects/job-automation/playbooks/career-engine-application-playbook.md",
+      "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "governance/north-star.md"
+    ]
+  },
+  "runtime_bundle": "projects/job-automation/config/runtime-bundle.v1.json",
+  "tracker_base": "projects/job-automation",
+  "template": {
+    "id": "modern-executive-sidebar",
+    "version": "1.0",
+    "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+    "repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+    "expected_sha256": "fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e",
+    "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+    "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+    "page_limit": 2,
+    "headshot_required": true,
+    "body_alignment": "justified"
+  },
+  "identity": {
+    "name": "Abdelhamid Farah",
+    "outward_email": "hameedfarah@gmail.com",
+    "authenticated_email_may_differ": true,
+    "ksa_phone": "+966 53 079 6449",
+    "jordan_phone": "+962 79 540 5000",
+    "current_chronology_title": "District Manager",
+    "sce_classification": "Consultant (مستشار) - Architectural Engineering",
+    "cmp_label": "Contracts Management Professional"
+  },
+  "policy": {
+    "prohibited_experience_names": [
+      "National Bank of Iraq",
+      "Al-Ula Museum Office",
+      "PSS",
+      "Dar Al Riyadh",
+      "TMC",
+      "Tameer",
+      "Tartish",
+      "Tartesh",
+      "Lot 3"
+    ],
+    "prohibited_terms": [
+      "district-level",
+      "entitlement",
+      "H&S"
+    ],
+    "availability_patterns": [
+      "5 December 2026",
+      "05 December 2026",
+      "December 5, 2026",
+      "available to join",
+      "joining date",
+      "notice period"
+    ],
+    "forbidden_characters": ["—", "–"],
+    "max_numbers_per_bullet": 2,
+    "metric_box_count": 6,
+    "external_filename_pattern": "Abdelhamid_Farah_CV_{target_role}.pdf",
+    "self_review_addresses": ["hameedfarah@gmail.com", "hameedo@gmail.com"],
+    "email_requires_verified_recipient": true,
+    "portal_requires_official_url": true,
+    "external_action_requires_owner_approval": true,
+    "cover_email_word_range": [100, 190]
+  },
+  "scoring": {
+    "weights": {
+      "mandatory_coverage": 42,
+      "preferred_coverage": 13,
+      "leadership": 15,
+      "seniority": 12,
+      "sector": 8,
+      "geography": 5,
+      "credentials": 5
+    },
+    "thresholds": {
+      "high_priority": 80,
+      "credible": 65,
+      "selective": 50,
+      "weak": 0
+    },
+    "llm_adjustment_ceiling": 5
+  },
+  "generation": {
+    "default_adapter": "manual",
+    "routine_calls": 1,
+    "second_review_conditions": [
+      "policy_failure",
+      "material_evidence_ambiguity",
+      "owner_request"
+    ],
+    "required_claim_citations": true,
+    "free_prose_required": true
+  },
+  "daily_scanner": {
+    "minimum_score_for_generation": 65,
+    "maximum_generation_packets_per_scan": 5,
+    "send_or_submit": false,
+    "provider": "opencode-go",
+    "model": "deepseek-v4-flash"
+  }
+}

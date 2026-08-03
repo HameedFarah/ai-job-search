@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "purpose": "Sanitized generic vacancy fixtures for deterministic Career Engine gate tests. All companies, roles, references and URLs are fictional; every URL uses example.com. Tests never read runtime scanner artifacts from projects/job-automation/artifacts.",
+  "jobs": {
+    "live_control": {
+      "company": "Acme Infrastructure",
+      "role": "Senior Design Manager",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "ACME-CONTROL-1001",
+      "source_url": "https://example.com/jobs/1001",
+      "application_url": "https://example.com/jobs/1001/apply",
+      "full_job_description": "\nKey Responsibilities\n- Lead design governance and multidisciplinary design coordination across complex infrastructure programmes.\n- Manage senior client and stakeholder relationships and oversee project delivery.\n- Drive value engineering, quality assurance and design controls.\n\nRequirements\n- Bachelor degree in Architecture or a related technical field.\n- Demonstrated team leadership and people management experience.\n- Strong design management and programme delivery experience.\n- Saudi Arabia project experience and familiarity with local codes.\n\nPreferred\n- Professional registration such as RIBA or Saudi Council of Engineers.\n"
+    },
+    "closed_example": {
+      "company": "Northwind Construction",
+      "role": "Senior Design Manager",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "NORTHWIND-CLOSED-2001",
+      "source_url": "https://example.com/jobs/2001",
+      "application_url": "https://example.com/jobs/2001/apply",
+      "full_job_description": "\nKey Responsibilities\n- Coordinate design delivery and consultant integration across the assigned project portfolio.\n\nRequirements\n- Bachelor degree in Architecture or a related technical field.\n- Demonstrated design management and project coordination experience.\n"
+    },
+    "stadium": {
+      "company": "Meridian Group",
+      "role": "Stadium Design Manager",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "MERIDIAN-STADIUM-3001",
+      "source_url": "https://example.com/jobs/3001",
+      "application_url": "https://example.com/jobs/3001/apply",
+      "full_job_description": "\nKey Responsibilities\n- Lead design delivery coordination across the assigned project portfolio.\n\nRequirements\n- Stadium, Events or Sports venue experience is essential.\n- Bachelor degree in Architecture or a related technical field.\n"
+    },
+    "shopping_mall": {
+      "company": "Meridian Group",
+      "role": "Retail Destination Design Manager",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "MERIDIAN-MALL-3002",
+      "source_url": "https://example.com/jobs/3002",
+      "application_url": "https://example.com/jobs/3002/apply",
+      "full_job_description": "\nKey Responsibilities\n- Lead design delivery coordination across the assigned project portfolio.\n\nRequirements\n- Proven experience delivering major shopping malls, retail destinations.\n- Bachelor degree in Architecture or a related technical field.\n"
+    },
+    "hospitality": {
+      "company": "Northwind Hospitality",
+      "role": "Hospitality Design Director",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "NORTHWIND-HOSPITALITY-4001",
+      "source_url": "https://example.com/jobs/4001",
+      "application_url": "https://example.com/jobs/4001/apply",
+      "full_job_description": "\nKey Responsibilities\n- Lead design delivery coordination across the assigned project portfolio.\n\nRequirements\n- Proven experience delivering large-scale hospitality or leisure projects.\n- Bachelor degree in Architecture or a related technical field.\n"
+    },
+    "defense": {
+      "company": "Aegis Engineering",
+      "role": "Technical Design Director",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "AEGIS-DEFENSE-5001",
+      "source_url": "https://example.com/jobs/5001",
+      "application_url": "https://example.com/jobs/5001/apply",
+      "full_job_description": "\nKey Responsibilities\n- Lead design delivery coordination across the assigned project portfolio.\n\nRequirements\n- A proven track record on government/defense infrastructure is required.\n- Bachelor degree in Architecture or a related technical field.\n"
+    },
+    "sports_stadium": {
+      "company": "Apex Sports Developments",
+      "role": "Sports Stadium Design Manager",
+      "location": "Riyadh, Saudi Arabia",
+      "source": "test",
+      "reference": "APEX-SPORTS-6001",
+      "source_url": "https://example.com/jobs/6001",
+      "application_url": "https://example.com/jobs/6001/apply",
+      "full_job_description": "\nKey Responsibilities\n- Lead design delivery coordination across the assigned project portfolio.\n\nRequirements\n- Minimum 15 years of experience with a focus on large-scale sports stadium.\n- Bachelor degree in Architecture or a related technical field.\n"
+    }
+  }
+}

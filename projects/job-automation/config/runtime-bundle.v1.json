@@ -1,0 +1,1244 @@
+{
+  "schema_version": 1,
+  "engine_version": "1.0.0",
+  "built_at": "2026-08-03T21:27:41+00:00",
+  "source_hash": "671aa97522daa0b3bb7805a78d4fc2d83371f97779bc2d3f42f3a5d44d73b835",
+  "sources": [
+    {
+      "path": "projects/job-automation/config/career-engine.v1.json",
+      "sha256": "b555c44e3205154db7334e8fed65330ab576555b88b537f2c9f1474f2928e7e6",
+      "size": 3660,
+      "modified_ns": 1785784267517947471
+    },
+    {
+      "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
+      "sha256": "46a7801a2466993f8eb77d61305b2a7c44952c0773681c353a2e7ee9746e856e",
+      "size": 4901,
+      "modified_ns": 1785791030097166831
+    },
+    {
+      "path": "projects/job-automation/config/generated_application.schema.json",
+      "sha256": "738151a50e37a2830c6b8f19b35ca53798959027087f6908bb52396d9a9a2f3d",
+      "size": 2778,
+      "modified_ns": 1785791836173958313
+    },
+    {
+      "path": "projects/job-automation/config/runtime-bundle.schema.json",
+      "sha256": "b76217f713e6a6cbc49479c90f7dbe38481f211c9f850c39ef1ac5e21d07ab1f",
+      "size": 730,
+      "modified_ns": 1785780730665749895
+    },
+    {
+      "path": "projects/job-automation/career-engine-profile.v1.json",
+      "sha256": "bfef1de13a6b9de9aeedd10321b4bd692dd0e5f0e740e0b107387996c3a31d1c",
+      "size": 25499,
+      "modified_ns": 1785791805801952135
+    },
+    {
+      "path": "projects/job-automation/playbooks/career-engine-application-playbook.md",
+      "sha256": "2140df583bd5096d7dfbe2c8253aa7a3f6b30975e5da624893bef7074ee937dc",
+      "size": 23672,
+      "modified_ns": 1785792454009808665
+    },
+    {
+      "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "sha256": "f2cf808111b080f86ad81ac75b75f2144c260c6e32016b161d2c365b46c7417d",
+      "size": 26699,
+      "modified_ns": 1785761398542383804
+    },
+    {
+      "path": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "sha256": "6680a53610f88eb94c9fa51abbc551d60999bf92ed59f9fd382d9adc8dfce4fe",
+      "size": 11832,
+      "modified_ns": 1785761416594363019
+    },
+    {
+      "path": "governance/north-star.md",
+      "sha256": "2fd3c77230b155ff4ccfbd26e7c9f8ffd6af57393f0c1db45f1532c8b7961c4a",
+      "size": 8920,
+      "modified_ns": 1785517591212748415
+    }
+  ],
+  "config": {
+    "schema_version": 1,
+    "engine_version": "1.0.0",
+    "vault": {
+      "root": "/home/hameedo/obsidian/HermesOpsVault",
+      "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",
+      "sources": [
+        "projects/job-automation/career-engine-profile.v1.json",
+        "projects/job-automation/playbooks/career-engine-application-playbook.md",
+        "projects/job-automation/verified-career-profile-2026-08-01.md",
+        "projects/job-automation/career-metrics-bank-2026-08-03.md",
+        "governance/north-star.md"
+      ]
+    },
+    "runtime_bundle": "projects/job-automation/config/runtime-bundle.v1.json",
+    "tracker_base": "projects/job-automation",
+    "template": {
+      "id": "modern-executive-sidebar",
+      "version": "1.0",
+      "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+      "repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+      "expected_sha256": "fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e",
+      "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+      "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+      "page_limit": 2,
+      "headshot_required": true,
+      "body_alignment": "justified"
+    },
+    "identity": {
+      "name": "Abdelhamid Farah",
+      "outward_email": "hameedfarah@gmail.com",
+      "authenticated_email_may_differ": true,
+      "ksa_phone": "+966 53 079 6449",
+      "jordan_phone": "+962 79 540 5000",
+      "current_chronology_title": "District Manager",
+      "sce_classification": "Consultant (مستشار) - Architectural Engineering",
+      "cmp_label": "Contracts Management Professional"
+    },
+    "policy": {
+      "prohibited_experience_names": [
+        "National Bank of Iraq",
+        "Al-Ula Museum Office",
+        "PSS",
+        "Dar Al Riyadh",
+        "TMC",
+        "Tameer",
+        "Tartish",
+        "Tartesh",
+        "Lot 3"
+      ],
+      "prohibited_terms": [
+        "district-level",
+        "entitlement",
+        "H&S"
+      ],
+      "availability_patterns": [
+        "5 December 2026",
+        "05 December 2026",
+        "December 5, 2026",
+        "available to join",
+        "joining date",
+        "notice period"
+      ],
+      "forbidden_characters": [
+        "—",
+        "–"
+      ],
+      "max_numbers_per_bullet": 2,
+      "metric_box_count": 6,
+      "external_filename_pattern": "Abdelhamid_Farah_CV_{target_role}.pdf",
+      "self_review_addresses": [
+        "hameedfarah@gmail.com",
+        "hameedo@gmail.com"
+      ],
+      "email_requires_verified_recipient": true,
+      "portal_requires_official_url": true,
+      "external_action_requires_owner_approval": true,
+      "cover_email_word_range": [
+        100,
+        190
+      ]
+    },
+    "scoring": {
+      "weights": {
+        "mandatory_coverage": 42,
+        "preferred_coverage": 13,
+        "leadership": 15,
+        "seniority": 12,
+        "sector": 8,
+        "geography": 5,
+        "credentials": 5
+      },
+      "thresholds": {
+        "high_priority": 80,
+        "credible": 65,
+        "selective": 50,
+        "weak": 0
+      },
+      "llm_adjustment_ceiling": 5
+    },
+    "generation": {
+      "default_adapter": "manual",
+      "routine_calls": 1,
+      "second_review_conditions": [
+        "policy_failure",
+        "material_evidence_ambiguity",
+        "owner_request"
+      ],
+      "required_claim_citations": true,
+      "free_prose_required": true
+    },
+    "daily_scanner": {
+      "minimum_score_for_generation": 65,
+      "maximum_generation_packets_per_scan": 5,
+      "send_or_submit": false,
+      "provider": "opencode-go",
+      "model": "deepseek-v4-flash"
+    }
+  },
+  "taxonomy": {
+    "schema_version": 1,
+    "headings": {
+      "responsibilities": [
+        "responsibilities",
+        "key responsibilities",
+        "role responsibilities",
+        "what you will do",
+        "duties"
+      ],
+      "mandatory": [
+        "requirements",
+        "required skills",
+        "required qualifications",
+        "mandatory requirements",
+        "minimum qualifications",
+        "qualifications",
+        "what you bring",
+        "essential criteria"
+      ],
+      "preferred": [
+        "preferred",
+        "preferred skills",
+        "desired skills",
+        "desired qualifications",
+        "desirable",
+        "nice to have",
+        "advantageous"
+      ]
+    },
+    "aliases": {
+      "design governance": [
+        "design assurance",
+        "design quality",
+        "technical governance",
+        "design controls"
+      ],
+      "design management": [
+        "design coordination",
+        "multidisciplinary coordination",
+        "technical coordination"
+      ],
+      "project delivery": [
+        "programme delivery",
+        "project management",
+        "delivery management"
+      ],
+      "construction oversight": [
+        "construction supervision",
+        "site supervision",
+        "construction-stage services"
+      ],
+      "contract administration": [
+        "commercial assessment",
+        "variation assessment",
+        "payment certification",
+        "dispute avoidance"
+      ],
+      "bim": [
+        "building information modelling",
+        "building information modeling",
+        "digital delivery"
+      ],
+      "client management": [
+        "stakeholder management",
+        "client engagement",
+        "senior client interface"
+      ],
+      "leadership": [
+        "team leadership",
+        "people management",
+        "mentoring",
+        "line management"
+      ],
+      "value engineering": [
+        "value optimisation",
+        "value optimization",
+        "cost engineering"
+      ],
+      "quality assurance": [
+        "qa",
+        "quality control",
+        "technical review",
+        "design review"
+      ],
+      "saudi council of engineers": [
+        "sce",
+        "professional classification"
+      ],
+      "career tenure": [
+        "years of experience",
+        "years of related engineering",
+        "direct experience",
+        "progressive experience"
+      ],
+      "architectural degree": [
+        "bachelor degree in architecture",
+        "bachelor degree in engineering",
+        "architectural engineering",
+        "related technical field"
+      ],
+      "codes and standards": [
+        "industry standards",
+        "codes",
+        "procedural requirements",
+        "regulatory approval processes"
+      ],
+      "technical communication": [
+        "written and oral communication",
+        "technical reports",
+        "correspondence",
+        "client presentations"
+      ],
+      "professional registration": [
+        "professional certification",
+        "certification",
+        "professional classification",
+        "sce"
+      ],
+      "hse": [
+        "health safety environment",
+        "health, safety and environment"
+      ]
+    },
+    "seniority_terms": [
+      "manager",
+      "senior manager",
+      "director",
+      "principal",
+      "head",
+      "lead",
+      "regional",
+      "district"
+    ],
+    "leadership_terms": [
+      "lead",
+      "manage",
+      "direct",
+      "mentor",
+      "oversee",
+      "govern",
+      "approve"
+    ],
+    "gcc_locations": [
+      "saudi arabia",
+      "riyadh",
+      "jeddah",
+      "dammam",
+      "khobar",
+      "gcc",
+      "uae",
+      "qatar",
+      "oman",
+      "bahrain",
+      "kuwait",
+      "jordan",
+      "amman"
+    ],
+    "mandatory_domain_terms": {
+      "stadium_sports_venue": [
+        "stadium",
+        "stadiums",
+        "sports venue",
+        "sports venues",
+        "sport venue",
+        "sport venues",
+        "sports facility",
+        "sports facilities",
+        "sports infrastructure",
+        "sports arena",
+        "arena",
+        "sporting event",
+        "sporting events",
+        "sporting venue",
+        "sporting venues"
+      ],
+      "shopping_mall_retail": [
+        "shopping mall",
+        "shopping malls",
+        "mall development",
+        "mall",
+        "malls",
+        "retail destination",
+        "retail destinations",
+        "retail development",
+        "retail unit",
+        "retail units",
+        "retail planning",
+        "retail",
+        "mixed-use development",
+        "mixed use development"
+      ],
+      "hospitality_leisure": [
+        "hospitality",
+        "leisure",
+        "hotel",
+        "hotels",
+        "resort",
+        "resorts",
+        "entertainment venue",
+        "entertainment venues",
+        "f&b",
+        "food and beverage",
+        "guest experience",
+        "tourism"
+      ],
+      "high_rise_tower": [
+        "high-rise",
+        "high rise",
+        "tower",
+        "towers",
+        "vertical structure",
+        "vertical structures",
+        "supertall"
+      ],
+      "defense_military_security": [
+        "defense",
+        "defence",
+        "military",
+        "high-security",
+        "high security",
+        "civil defense",
+        "civil defence",
+        "security/defense",
+        "security/defence",
+        "defense facility",
+        "defence facility",
+        "defense infrastructure"
+      ],
+      "aviation": [
+        "aviation",
+        "airport",
+        "airports",
+        "aerodrome",
+        "runway",
+        "runways",
+        "aircraft",
+        "aviation infrastructure"
+      ],
+      "healthcare": [
+        "healthcare",
+        "health care",
+        "hospital",
+        "hospitals",
+        "clinic",
+        "clinics",
+        "medical facility",
+        "medical facilities"
+      ]
+    },
+    "mandatory_signals": [
+      "essential",
+      "required",
+      "must have",
+      "must-have",
+      "must possess",
+      "proven experience",
+      "proven track record",
+      "track record",
+      "minimum",
+      "with a focus on",
+      "years of experience",
+      "years of professional",
+      "experience in",
+      "experience delivering",
+      "experience leading",
+      "experience managing",
+      "experience working",
+      "experience with",
+      "experience on",
+      "experience across",
+      "strong knowledge",
+      "in-depth knowledge",
+      "knowledge of",
+      "demonstrated experience",
+      "background in",
+      "expertise in",
+      "deep understanding"
+    ]
+  },
+  "identity": {
+    "professional_name": "Abdelhamid Farah",
+    "location": "Riyadh, Saudi Arabia",
+    "nationalities": [
+      "Jordanian",
+      "Brazilian"
+    ],
+    "languages": [
+      "Arabic - native",
+      "English - fluent"
+    ],
+    "outward_email": "hameedfarah@gmail.com",
+    "ksa_phone": "+966 53 079 6449",
+    "jordan_phone": "+962 79 540 5000",
+    "current_role": "District Manager",
+    "current_employer": "Arab Sustainable Architecture / Tubaila Team Workshop (TTW)",
+    "current_location": "Saudi Arabia",
+    "sce_classification": "Consultant (مستشار) - Architectural Engineering",
+    "cmp_label": "Contracts Management Professional"
+  },
+  "career_chronology": [
+    {
+      "employer": "Arab Sustainable Architecture / Tubaila Team Workshop (TTW)",
+      "location": "Saudi Arabia",
+      "title": "District Manager",
+      "start": "2022-12",
+      "end": "present"
+    },
+    {
+      "employer": "Cube Architects",
+      "location": "Jordan",
+      "title": "Design Manager / Senior Architect",
+      "start": "2013-03",
+      "end": "2022-11"
+    },
+    {
+      "employer": "Cube Architects",
+      "location": "Jordan",
+      "title": "Project Architect",
+      "start": "2012-01",
+      "end": "2013-02"
+    },
+    {
+      "employer": "Creative Urban Designs",
+      "location": "Jordan",
+      "title": "Project Manager",
+      "start": "2010-09",
+      "end": "2011-12"
+    },
+    {
+      "employer": "Al-Mehanya Real Estate Investment",
+      "location": "Jordan",
+      "title": "Project Architect",
+      "start": "2008-06",
+      "end": "2010-08"
+    },
+    {
+      "employer": "Sigma Consulting Engineers",
+      "location": "Jordan",
+      "title": "Architect",
+      "start": "2004-06",
+      "end": "2008-02"
+    }
+  ],
+  "claims": [
+    {
+      "id": "career.experience.20plus",
+      "label": "20+ years of architecture and design-delivery experience",
+      "value": "20+ years",
+      "tags": [
+        "career tenure",
+        "architecture",
+        "design management",
+        "construction oversight",
+        "project delivery"
+      ],
+      "aliases": [
+        "years of experience",
+        "engineering experience",
+        "design execution",
+        "construction experience"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "career chronology from 2004 to present",
+      "safe_wording": "More than 20 years of experience across architecture, design management, construction oversight and project delivery."
+    },
+    {
+      "id": "education.bsc.architectural_engineering",
+      "label": "Bachelor of Science in Architectural Engineering",
+      "tags": [
+        "architectural degree",
+        "degree",
+        "bachelor",
+        "architecture",
+        "engineering",
+        "architectural engineering"
+      ],
+      "aliases": [
+        "bachelor degree",
+        "b.sc.",
+        "related technical field"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "verified qualification",
+      "safe_wording": "Bachelor of Science in Architectural Engineering, University of Jordan, 2004."
+    },
+    {
+      "id": "career.projects.112plus",
+      "label": "112+ documented projects and assignments",
+      "value": "112+",
+      "tags": [
+        "project delivery",
+        "portfolio",
+        "architecture",
+        "design management"
+      ],
+      "aliases": [
+        "projects",
+        "assignments",
+        "portfolio scale"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "career portfolio",
+      "safe_wording": "112+ documented projects and assignments across architecture, design management, consultancy and delivery roles."
+    },
+    {
+      "id": "career.saudi_value.1163b",
+      "label": "SAR 1.163B Saudi portfolio value",
+      "value": "SAR 1.163B",
+      "tags": [
+        "portfolio",
+        "project delivery",
+        "commercial",
+        "saudi arabia"
+      ],
+      "aliases": [
+        "portfolio value",
+        "project value",
+        "programme value"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "portfolio context",
+      "safe_wording": "Saudi operating portfolio of 74 assignments with a documented value of SAR 1.163 billion."
+    },
+    {
+      "id": "leadership.ksa_team.26plus",
+      "label": "26+ KSA professionals led at peak",
+      "value": "26+",
+      "tags": [
+        "leadership",
+        "people management",
+        "team leadership",
+        "consultancy management"
+      ],
+      "aliases": [
+        "staff",
+        "team",
+        "professionals",
+        "multidisciplinary team"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "led workforce, not necessarily all direct reports",
+      "safe_wording": "Led a KSA office and project-delivery workforce of more than 26 professionals at peak."
+    },
+    {
+      "id": "governance.turnaround.42plus",
+      "label": "42%+ faster design turnaround",
+      "value": "42%+",
+      "tags": [
+        "design governance",
+        "design management",
+        "digital delivery",
+        "process improvement"
+      ],
+      "aliases": [
+        "turnaround",
+        "workflow",
+        "design controls",
+        "delivery efficiency"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "owner-confirmed conservative estimate",
+      "safe_wording": "Improved design turnaround by more than 42% through live work-allocation and issue-control systems."
+    },
+    {
+      "id": "governance.issue_resolution.26plus",
+      "label": "26%+ faster issue resolution",
+      "value": "26%+",
+      "tags": [
+        "design governance",
+        "coordination",
+        "issue management",
+        "multidisciplinary coordination"
+      ],
+      "aliases": [
+        "issue closure",
+        "resolution",
+        "coordination",
+        "tracker"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "owner-confirmed conservative estimate",
+      "safe_wording": "Accelerated cross-discipline issue resolution by more than 26% through structured live tracking."
+    },
+    {
+      "id": "cost.ve.21_94m",
+      "label": "SAR 21.94M verified design-stage savings",
+      "value": "SAR 21.94M",
+      "tags": [
+        "value engineering",
+        "cost engineering",
+        "commercial",
+        "design management"
+      ],
+      "aliases": [
+        "cost savings",
+        "value optimisation",
+        "value optimization"
+      ],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "led programme analysis",
+      "safe_wording": "Delivered SAR 21.94 million in verified design-stage savings across 10 concurrent Saudi Aramco and TotalEnergies station packages."
+    },
+    {
+      "id": "portfolio.saudi.74",
+      "label": "74 Saudi assignments",
+      "value": "74",
+      "tags": [
+        "saudi arabia",
+        "project delivery",
+        "portfolio",
+        "architecture"
+      ],
+      "aliases": [
+        "ksa assignments",
+        "saudi portfolio"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "portfolio context",
+      "safe_wording": "Directed design, supervision and project-delivery responsibilities across a Saudi operating portfolio of 74 assignments."
+    },
+    {
+      "id": "client.amazon.27",
+      "label": "27 Amazon assignments",
+      "value": "27",
+      "tags": [
+        "amazon",
+        "client management",
+        "project delivery",
+        "technical due diligence",
+        "permitting",
+        "hse"
+      ],
+      "aliases": [
+        "global client",
+        "logistics",
+        "industrial"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "portfolio leadership and delivery",
+      "safe_wording": "Supported delivery across 27 Amazon assignments involving technical, permitting, project-management and HSE requirements."
+    },
+    {
+      "id": "stations.concurrent.10",
+      "label": "10 concurrent Saudi Aramco and TotalEnergies packages",
+      "value": "10",
+      "tags": [
+        "saudi aramco",
+        "totalenergies",
+        "programme delivery",
+        "design management",
+        "value engineering"
+      ],
+      "aliases": [
+        "service stations",
+        "fuel stations",
+        "concurrent packages"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "led programme delivery and cost optimisation",
+      "safe_wording": "Led technical and cost optimisation across 10 concurrent Saudi Aramco and TotalEnergies station packages."
+    },
+    {
+      "id": "contract.submissions.2_13m_1_31m",
+      "label": "SAR 2.13M submissions assessed and SAR 1.31M validated",
+      "value": "SAR 2.13M / SAR 1.31M",
+      "tags": [
+        "contract administration",
+        "commercial assessment",
+        "variation analysis",
+        "dispute avoidance"
+      ],
+      "aliases": [
+        "contractor submissions",
+        "commercial submissions",
+        "contractual assessment"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "directed assessment",
+      "safe_wording": "Directed assessment of SAR 2.13 million in contractor commercial submissions and validated SAR 1.31 million following contractual, time and variation analysis."
+    },
+    {
+      "id": "contract.eot.331_232",
+      "label": "331-day extension request assessed and 232-day extension determined",
+      "value": "331 days / 232 days",
+      "tags": [
+        "contract administration",
+        "extension of time",
+        "time-impact assessment",
+        "fidic",
+        "dispute avoidance"
+      ],
+      "aliases": [
+        "eot",
+        "delay analysis",
+        "time impact",
+        "scl protocol"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "directed assessment",
+      "safe_wording": "Evaluated a 331-day extension request and determined a 232-day non-compensable extension using an Impacted-as-Planned assessment under FIDIC 1999 and the SCL Delay and Disruption Protocol."
+    },
+    {
+      "id": "contract.zero_arbitration",
+      "label": "Zero escalation to arbitration",
+      "value": "Zero",
+      "tags": [
+        "contract administration",
+        "dispute avoidance",
+        "commercial resolution",
+        "client management"
+      ],
+      "aliases": [
+        "arbitration",
+        "dispute resolution"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "owner-confirmed managed matters",
+      "safe_wording": "Maintained zero escalation to arbitration through proactive contract administration and dispute avoidance."
+    },
+    {
+      "id": "bim.commercial_model.914k",
+      "label": "SAR 914,000 confidential government BIM commercial model",
+      "value": "SAR 914,000",
+      "tags": [
+        "bim",
+        "commercial",
+        "resource planning",
+        "government programme",
+        "proposal leadership"
+      ],
+      "aliases": [
+        "bim programme",
+        "staffing model",
+        "fee model"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "developed commercial model",
+      "confidential": true,
+      "safe_wording": "Developed a SAR 914,000 resource-based commercial model for a confidential government BIM programme."
+    },
+    {
+      "id": "proposal.win_rate.55_4",
+      "label": "55.4% KSA proposal portfolio win rate",
+      "value": "55.4%",
+      "tags": [
+        "proposal leadership",
+        "business development",
+        "commercial",
+        "client management"
+      ],
+      "aliases": [
+        "win rate",
+        "proposals",
+        "bids",
+        "rfp",
+        "rfq",
+        "tor"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "portfolio result under leadership, not personal authorship of every submission",
+      "safe_wording": "Managed a KSA proposal portfolio that achieved a 55.4% win rate across decided submissions."
+    },
+    {
+      "id": "credential.sce.consultant",
+      "label": "SCE Consultant classification",
+      "value": "Consultant (مستشار) - Architectural Engineering",
+      "tags": [
+        "saudi council of engineers",
+        "credential",
+        "architecture"
+      ],
+      "aliases": [
+        "sce",
+        "professional classification",
+        "consultant classification"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "current professional classification",
+      "safe_wording": "Saudi Council of Engineers - Consultant (مستشار), Architectural Engineering."
+    },
+    {
+      "id": "credential.cmp",
+      "label": "Contracts Management Professional",
+      "value": "Contracts Management Professional",
+      "tags": [
+        "contract administration",
+        "credential",
+        "commercial"
+      ],
+      "aliases": [
+        "cmp",
+        "contracts management"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "credential",
+      "safe_wording": "Contracts Management Professional (CMP)."
+    },
+    {
+      "id": "capability.codes.regulatory",
+      "label": "Codes, standards and regulatory approvals",
+      "tags": [
+        "regulatory compliance",
+        "codes and standards",
+        "authority approvals",
+        "technical review",
+        "quality assurance"
+      ],
+      "aliases": [
+        "industry standards",
+        "codes",
+        "procedural requirements",
+        "regulatory approval processes",
+        "specifications"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "personally led or reviewed through project teams",
+      "safe_wording": "Directed technical compliance reviews against project specifications, applicable codes, standards and authority approval requirements."
+    },
+    {
+      "id": "capability.communication.executive",
+      "label": "Technical reporting and senior stakeholder communication",
+      "tags": [
+        "technical communication",
+        "communication",
+        "technical reporting",
+        "client presentations",
+        "correspondence",
+        "stakeholder management"
+      ],
+      "aliases": [
+        "written communication",
+        "oral communication",
+        "technical reports",
+        "reports",
+        "presentations"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "personally prepared, presented or directed",
+      "safe_wording": "Prepared and presented technical reports, executive correspondence and project updates to clients, consultants and senior management."
+    },
+    {
+      "id": "capability.delivery.end_to_end",
+      "label": "End-to-end project delivery",
+      "tags": [
+        "project delivery",
+        "design management",
+        "construction oversight",
+        "close-out",
+        "authority approvals"
+      ],
+      "aliases": [
+        "project lifecycle",
+        "handover",
+        "procurement",
+        "construction stage"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "personally led or managed through team depending on assignment",
+      "safe_wording": "Directed end-to-end design and project delivery from client briefing and feasibility through approvals, procurement, construction oversight, close-out and handover."
+    },
+    {
+      "id": "capability.multidisciplinary.leadership",
+      "label": "Multidisciplinary team and stakeholder leadership",
+      "tags": [
+        "leadership",
+        "multidisciplinary coordination",
+        "client management",
+        "consultancy management"
+      ],
+      "aliases": [
+        "consultants",
+        "contractors",
+        "stakeholders",
+        "technical quality"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "personally led or managed through team",
+      "safe_wording": "Led multidisciplinary teams, consultants, contractors and stakeholders, aligning technical quality, resources, commercial priorities and programme commitments across concurrent assignments."
+    },
+    {
+      "id": "cube.projects.25",
+      "label": "25 Cube Architects developments",
+      "value": "25",
+      "tags": [
+        "design management",
+        "architecture",
+        "bim",
+        "qa/qc",
+        "project delivery"
+      ],
+      "aliases": [
+        "residential",
+        "office",
+        "retail",
+        "mixed use"
+      ],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "managed or contributed according to role",
+      "safe_wording": "Managed architectural and multidisciplinary delivery across 25 documented developments at Cube Architects."
+    },
+    {
+      "id": "cube.team.10plus",
+      "label": "10+ designers and engineers managed",
+      "value": "10+",
+      "tags": [
+        "leadership",
+        "design management",
+        "mentoring",
+        "multidisciplinary coordination"
+      ],
+      "aliases": [
+        "team",
+        "designers",
+        "engineers"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "managed core multidisciplinary team",
+      "safe_wording": "Managed a core multidisciplinary team of more than 10 designers and engineers."
+    },
+    {
+      "id": "cube.assets.office_scale",
+      "label": "Large office developments at Cube Architects",
+      "tags": [
+        "design management",
+        "office",
+        "commercial",
+        "technical delivery",
+        "project scale"
+      ],
+      "aliases": [
+        "large commercial assets",
+        "office tower",
+        "office complex"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "Cube Architects design-management role",
+      "safe_wording": "Managed design delivery for major office developments including a 39,562-sqm executive office tower and a 79,682-sqm office complex."
+    },
+    {
+      "id": "cube.agreements.30plus",
+      "label": "30+ agreements formalized",
+      "value": "30+",
+      "tags": [
+        "contract administration",
+        "client management",
+        "commercial",
+        "fidic"
+      ],
+      "aliases": [
+        "agreements",
+        "contracts",
+        "negotiation"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "negotiated or formalized",
+      "safe_wording": "Negotiated or formalized more than 30 client and contractor agreements under FIDIC or local conditions."
+    },
+    {
+      "id": "cube.bim.workflow.50",
+      "label": "BIM and quality-workflow adoption at Cube Architects",
+      "value": "up to 50%",
+      "tags": [
+        "bim",
+        "revit",
+        "design management",
+        "qa/qc",
+        "workflow improvement"
+      ],
+      "aliases": [
+        "digital delivery",
+        "design duration",
+        "productivity",
+        "quality workflow"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "medium",
+      "attribution": "reported historical Cube Architects outcome on relevant work",
+      "safe_wording": "Led BIM/Revit and internal quality-workflow adoption, with reported design-duration improvement of up to 50% on relevant work."
+    },
+    {
+      "id": "cube.value_engineering.15plus",
+      "label": "Value engineering at Cube Architects",
+      "value": "15%+",
+      "tags": [
+        "value engineering",
+        "cost planning",
+        "design management",
+        "commercial"
+      ],
+      "aliases": [
+        "construction cost reduction",
+        "material substitution",
+        "design rationalisation"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "medium",
+      "attribution": "reported historical Cube Architects outcome on relevant work",
+      "safe_wording": "Applied value engineering with reported construction-cost reductions above 15% on relevant work."
+    },
+    {
+      "id": "cube.procurement.tender",
+      "label": "Procurement and tender management at Cube Architects",
+      "tags": [
+        "procurement",
+        "tender",
+        "rfp",
+        "tor",
+        "technical evaluation"
+      ],
+      "aliases": [
+        "contractor selection",
+        "supplier selection",
+        "appointment recommendation"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "Cube Architects design-management role",
+      "safe_wording": "Managed procurement and tender documentation including RFPs, TORs, technical evaluations and appointment recommendations."
+    },
+    {
+      "id": "earlier.cube_project_architect.delivery",
+      "label": "Cube Architects project-architect delivery",
+      "tags": [
+        "architecture",
+        "construction documentation",
+        "consultant coordination",
+        "client coordination"
+      ],
+      "aliases": [
+        "project architect",
+        "design documentation",
+        "multidisciplinary coordination"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "Cube Architects Project Architect role, January 2012 to February 2013",
+      "safe_wording": "Coordinated architectural design, construction documentation, consultant integration and client reviews across residential, commercial and mixed-use assignments."
+    },
+    {
+      "id": "earlier.cud.smartbuy.750",
+      "label": "750-sqm SmartBuy Taj Mall retail delivery",
+      "value": "750 sqm",
+      "tags": [
+        "retail",
+        "project management",
+        "site supervision",
+        "handover",
+        "client coordination"
+      ],
+      "aliases": [
+        "landlord coordination",
+        "brand-compliant design",
+        "close-out"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "Creative Urban Designs Project Manager role",
+      "safe_wording": "Managed a 750-sqm retail branch from client and landlord coordination through design development, site supervision, close-out and handover."
+    },
+    {
+      "id": "earlier.procurement.20plus",
+      "label": "20+ earlier RFP, TOR and scope packages",
+      "value": "20+",
+      "tags": [
+        "procurement",
+        "rfp",
+        "tor",
+        "commercial",
+        "project delivery"
+      ],
+      "aliases": [
+        "tender",
+        "scope package",
+        "procurement documentation"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "Al-Mehanya Real Estate Investment Project Architect role",
+      "safe_wording": "Prepared more than 20 RFP, TOR and scope packages while coordinating feasibility, budget and multidisciplinary design work at Al-Mehanya Real Estate Investment."
+    },
+    {
+      "id": "earlier.sigma.design_packages",
+      "label": "Banking, university, medical and residential design packages",
+      "tags": [
+        "architecture",
+        "construction documentation",
+        "tender documentation",
+        "multidisciplinary coordination",
+        "regulatory comments"
+      ],
+      "aliases": [
+        "site clarification",
+        "specifications",
+        "bank branches",
+        "university buildings"
+      ],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "Sigma Consulting Engineers Architect role",
+      "safe_wording": "Developed coordinated design, tender and construction packages for banking, university, medical and residential developments, including five Arab Bank branches."
+    }
+  ],
+  "writing_rules": [
+    "Write original, coherent and persuasive vacancy-specific prose rather than canned template sentences.",
+    "Use District Manager only in career chronology and the current-role line, not as the opening identity.",
+    "Use a vacancy-aligned functional headline supported by evidence.",
+    "Use ASCII hyphens only and never use em dashes or en dashes.",
+    "Never mention availability or a joining date in external career material.",
+    "Use hameedfarah@gmail.com in outward career material.",
+    "Outside Jordan show only the KSA phone. Inside Jordan show the Jordan phone first, then the KSA phone.",
+    "Include the approved headshot in every CV unless explicitly overridden for one application.",
+    "Keep the standard CV to exactly two pages.",
+    "Justify body paragraphs, achievement bullets and project summaries.",
+    "Use one numeric figure per achievement bullet by default and never more than two.",
+    "Use exactly six vacancy-relevant metric boxes with exact figures or conservative specific lower bounds.",
+    "End the current role with up to two broad unquantified scope bullets when they clarify the overall remit.",
+    "Integrate supporting evidence into the relevant role and do not add a separate Additional Career Evidence section.",
+    "Use HSE, not H&S.",
+    "State the SCE classification as Consultant (مستشار) - Architectural Engineering.",
+    "List Contracts Management Professional without course hours.",
+    "Never present National Bank of Iraq or Al-Ula Museum Office as experience.",
+    "Do not name confidential government clients, internal project codes, or minor contractors and intermediaries in external material.",
+    "Every email draft must use the verified actual recipient in To. When none exists, provide the official application link and create no application email draft.",
+    "Never send, submit or contact externally without explicit owner approval."
+  ],
+  "policy_overrides": {
+    "never_self_address_review_draft": true,
+    "current_availability_internal_only": "2026-12-05",
+    "default_cover_letter_required": false,
+    "default_application_package": [
+      "tailored_cv_pdf",
+      "cover_email_body"
+    ]
+  },
+  "bundle_hash": "995762707774802ea0eef79733b251385d2a31f6bffe3c8b927774584db5b513",
+  "cache_reused": false
+}

@@ -8,6 +8,8 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.pytest_cache/
+.pytest-basetemp-final/
 
 # Compiled documents
 *.pdf
@@ -102,5 +104,12 @@ projects/job-automation/data/jobs.csv
 projects/job-automation/data/jobs/*.json
 !projects/job-automation/data/jobs/.gitkeep
 projects/job-automation/logs/events.jsonl
+# Flat files under artifacts/ are scanner reports, mailbox-derived JSON,
+# generated packets/results, prompts and acceptance evidence - never commit.
+# All flat JSON/Markdown files and generated per-job subdirectories under
+# artifacts/ are ignored; only the .gitkeep directory marker is re-included.
+# Source, config, tests, docs and templates live elsewhere and stay visible.
 projects/job-automation/artifacts/*/
+projects/job-automation/artifacts/*.json
+projects/job-automation/artifacts/*.md
 !projects/job-automation/artifacts/.gitkeep

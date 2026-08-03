@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "claims": [
+    {
+      "id": "career.projects.112plus",
+      "label": "112+ documented projects and assignments",
+      "value": "112+",
+      "tags": ["project delivery", "portfolio", "architecture", "design management"],
+      "aliases": ["projects", "assignments", "portfolio scale"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "career portfolio",
+      "safe_wording": "112+ documented projects and assignments across architecture, design management, consultancy and delivery roles."
+    },
+    {
+      "id": "career.saudi_value.1163b",
+      "label": "SAR 1.163B Saudi portfolio value",
+      "value": "SAR 1.163B",
+      "tags": ["portfolio", "project delivery", "commercial", "saudi arabia"],
+      "aliases": ["portfolio value", "project value", "programme value"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "portfolio context",
+      "safe_wording": "Saudi portfolio of 74 assignments with a documented value of SAR 1.163 billion."
+    },
+    {
+      "id": "leadership.ksa_team.26plus",
+      "label": "26+ KSA professionals led at peak",
+      "value": "26+",
+      "tags": ["leadership", "people management", "team leadership", "consultancy management"],
+      "aliases": ["staff", "team", "professionals", "multidisciplinary team"],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "led workforce, not necessarily all direct reports",
+      "safe_wording": "Led a KSA office and project-delivery workforce of more than 26 professionals at peak."
+    },
+    {
+      "id": "governance.turnaround.42plus",
+      "label": "42%+ faster design turnaround",
+      "value": "42%+",
+      "tags": ["design governance", "design management", "digital delivery", "process improvement"],
+      "aliases": ["turnaround", "workflow", "design controls", "delivery efficiency"],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "owner-confirmed conservative estimate",
+      "safe_wording": "Improved design turnaround by more than 42% through live work-allocation and issue-control systems."
+    },
+    {
+      "id": "governance.issue_resolution.26plus",
+      "label": "26%+ faster issue resolution",
+      "value": "26%+",
+      "tags": ["design governance", "coordination", "issue management", "multidisciplinary coordination"],
+      "aliases": ["issue closure", "resolution", "coordination", "tracker"],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "owner-confirmed conservative estimate",
+      "safe_wording": "Accelerated cross-discipline issue resolution by more than 26% through structured live tracking."
+    },
+    {
+      "id": "cost.ve.21_94m",
+      "label": "SAR 21.94M verified design-stage savings",
+      "value": "SAR 21.94M",
+      "tags": ["value engineering", "cost engineering", "commercial", "design management"],
+      "aliases": ["cost savings", "value optimisation", "value optimization"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "led programme analysis",
+      "safe_wording": "Delivered SAR 21.94 million in verified design-stage savings across 10 concurrent Saudi Aramco and TotalEnergies station packages."
+    },
+    {
+      "id": "portfolio.saudi.74",
+      "label": "74 Saudi assignments",
+      "value": "74",
+      "tags": ["saudi arabia", "project delivery", "portfolio", "architecture"],
+      "aliases": ["ksa assignments", "saudi portfolio"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "portfolio context",
+      "safe_wording": "Directed design, supervision and project-delivery responsibilities across 74 Saudi assignments."
+    },
+    {
+      "id": "client.amazon.27",
+      "label": "27 Amazon assignments",
+      "value": "27",
+      "tags": ["amazon", "client management", "project delivery", "technical due diligence", "permitting"],
+      "aliases": ["global client", "logistics", "industrial"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "portfolio leadership and delivery",
+      "safe_wording": "Supported delivery across 27 Amazon assignments involving technical, permitting and delivery requirements."
+    },
+    {
+      "id": "stations.concurrent.10",
+      "label": "10 concurrent Saudi Aramco and TotalEnergies packages",
+      "value": "10",
+      "tags": ["saudi aramco", "totalenergies", "programme delivery", "design management", "value engineering"],
+      "aliases": ["service stations", "fuel stations", "concurrent packages"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "led programme delivery and cost optimisation",
+      "safe_wording": "Led technical and cost optimisation across 10 concurrent Saudi Aramco and TotalEnergies station packages."
+    },
+    {
+      "id": "contract.submissions.2_13m_1_31m",
+      "label": "SAR 2.13M submissions assessed and SAR 1.31M validated",
+      "value": "SAR 2.13M / SAR 1.31M",
+      "tags": ["contract administration", "commercial assessment", "variation analysis", "dispute avoidance"],
+      "aliases": ["contractor submissions", "commercial submissions", "contractual assessment"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "directed assessment",
+      "safe_wording": "Directed assessment of SAR 2.13 million in contractor commercial submissions and validated SAR 1.31 million following contractual, time and variation analysis."
+    },
+    {
+      "id": "bim.commercial_model.914k",
+      "label": "SAR 914,000 confidential government BIM commercial model",
+      "value": "SAR 914,000",
+      "tags": ["bim", "commercial", "resource planning", "government programme"],
+      "aliases": ["bim programme", "staffing model", "fee model"],
+      "source": "projects/job-automation/career-metrics-bank-2026-08-03.md",
+      "confidence": "high",
+      "attribution": "developed commercial model",
+      "confidential": true,
+      "safe_wording": "Developed a SAR 914,000 resource-based commercial model for a confidential government BIM programme."
+    },
+    {
+      "id": "credential.sce.consultant",
+      "label": "SCE Consultant classification",
+      "value": "Consultant (مستشار) - Architectural Engineering",
+      "tags": ["saudi council of engineers", "credential", "architecture"],
+      "aliases": ["sce", "professional classification", "consultant classification"],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "current professional classification",
+      "safe_wording": "Saudi Council of Engineers - Consultant (مستشار), Architectural Engineering."
+    },
+    {
+      "id": "credential.cmp",
+      "label": "Contracts Management Professional",
+      "value": "Contracts Management Professional",
+      "tags": ["contract administration", "credential", "commercial"],
+      "aliases": ["cmp", "contracts management"],
+      "source": "projects/job-automation/verified-career-profile-2026-08-01.md",
+      "confidence": "high",
+      "attribution": "credential",
+      "safe_wording": "Contracts Management Professional (CMP)."
+    }
+  ]
+}

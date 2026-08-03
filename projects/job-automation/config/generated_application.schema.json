@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "career-engine/generated-application.v1",
+  "title": "Career Engine Generated Application",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "job_id",
+    "bundle_hash",
+    "headline",
+    "leadership_profile",
+    "metric_claim_ids",
+    "current_role_bullets",
+    "earlier_role_bullets",
+    "credential_claim_ids",
+    "cover_email",
+    "tailoring_rationale",
+    "acknowledged_gaps"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "job_id": {"type": "string", "minLength": 8},
+    "bundle_hash": {"type": "string", "minLength": 32},
+    "headline": {"type": "string", "minLength": 8, "maxLength": 120},
+    "leadership_profile": {
+      "type": "object",
+      "required": ["text", "claim_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {"type": "string", "minLength": 80, "maxLength": 900},
+        "claim_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "metric_claim_ids": {"type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true, "items": {"type": "string"}},
+    "current_role_bullets": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {"$ref": "#/$defs/cited_text"}
+    },
+    "earlier_role_bullets": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "description": "Seven Cube Design Manager bullets followed by one bullet for Cube Project Architect, Creative Urban Designs, Al-Mehanya and Sigma; renderer placement is determined by cited role-scoped claim IDs.",
+      "items": {"$ref": "#/$defs/cited_text"}
+    },
+    "credential_claim_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "cover_email": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "body", "claim_ids"],
+      "properties": {
+        "subject": {"type": "string", "minLength": 8, "maxLength": 160},
+        "body": {"type": "string", "minLength": 250, "maxLength": 1800},
+        "claim_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "tailoring_rationale": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string"}},
+    "acknowledged_gaps": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "cited_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "claim_ids"],
+      "properties": {
+        "text": {"type": "string", "minLength": 20, "maxLength": 600},
+        "claim_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true}
+      }
+    }
+  }
+}
