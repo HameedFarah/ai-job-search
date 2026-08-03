@@ -92,11 +92,11 @@ The renderer fails closed if the approved template is missing or invalid. LibreO
 
 ## Runtime bundle
 
-Verified production bundle hash before release documentation updates:
+Verified production bundle hash after the canonical Vault closeout:
 
-`995762707774802ea0eef79733b251385d2a31f6bffe3c8b927774584db5b513`
+`67995a223e3362c5ed3bc7501d393294e6575b945eb2706ac4bc452598f27972`
 
-The bundle compiles the canonical Vault profile, playbook, verified profile, metrics bank and North Star together with repository configuration and taxonomy. Rebuild and revalidate it after any canonical Vault or configuration change.
+The bundle compiles the canonical Vault profile, playbook, verified profile, metrics bank and North Star together with repository configuration and taxonomy. The full 4 August 2026 post-release Hermes scan validated the same engine and policy using the immediately preceding bundle. A documentation self-reference was then removed from the playbook, producing this stable final hash; a no-agent cron context check confirmed that the production pre-run script resolves this final bundle.
 
 ## Scanner behavior
 

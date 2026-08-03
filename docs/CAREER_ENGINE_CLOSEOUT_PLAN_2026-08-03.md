@@ -4,7 +4,7 @@
 
 **Owner:** Abdelhamid Farah
 
-**Status:** Release verification in progress
+**Status:** Production release complete; repository-native Gmail re-authorization remains an external integration task
 
 ## Objective
 
@@ -37,13 +37,13 @@ Close out one reusable Career Engine for direct ChatGPT requests, ChatGPT and He
 - Framework-version guard: passed.
 - Skill lint: passed.
 - Security guards: passed.
-- `git diff --check`: passed before final documentation edits and must be rerun before commit.
+- `git diff --check` and staged diff checks: passed.
 - Career Engine doctor: valid; bundle current; template verified; LibreOffice resolved.
-- Runtime bundle hash: `995762707774802ea0eef79733b251385d2a31f6bffe3c8b927774584db5b513`.
+- Runtime bundle hash after final Vault closeout: `67995a223e3362c5ed3bc7501d393294e6575b945eb2706ac4bc452598f27972`.
 - Template SHA-256: `fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e`.
 - Manifest SHA-256: `b423a1cab2d51f5df3a9901396110a73bdcbfbd6cebdb04429aa77b87ba7151e`.
-
-All tests, guards, hashes and bundle state must be rerun after the final documentation and Vault changes.
+- Post-release Hermes execution `67f7fafef682486988cc5852adc8590c`: completed successfully on 4 August 2026.
+- Post-release scan: seven roles ingested; all seven remained unverified and were blocked from generation; no send, recruiter contact or submission occurred.
 
 ## Hermes scheduler
 
@@ -57,13 +57,15 @@ Verified job definition for `edc36e531637`:
 - skill `career-engine`;
 - enabled and non-sending/non-submitting.
 
-The last completed output predates the final repository release. A newer direct durable execution is still recorded as `running` without a corresponding output artifact. The job definition is verified, but a clean post-release scheduled/manual execution is still required before claiming full cron runtime verification. Do not edit the SQLite ledger or restart the gateway merely to improve status display.
+A clean post-release manual execution completed successfully as durable run `67f7fafef682486988cc5852adc8590c` and produced `cron/output/edc36e531637/2026-08-04_02-38-50.md`. It validated the released engine and policy using the immediately preceding bundle, discovered current roles, invoked only the central Hermes scanner, respected all live-vacancy gates and performed no external action. After removing a circular documentation self-reference from the playbook, a no-agent cron context check confirmed that the production pre-run script now resolves the stable final bundle `67995a223e3362c5ed3bc7501d393294e6575b945eb2706ac4bc452598f27972`.
+
+Two earlier direct attempts were safely reconciled to `unknown` after their foreground owners were terminated by connector time limits. Recovery used Hermes' built-in execution recovery through the managed runtime; the SQLite ledger was not edited directly and the gateway was not restarted.
 
 ## Gmail
 
-- Connected ChatGPT Gmail access is operational for draft inspection.
-- Repository-native Gmail/gws authentication reports `invalid_grant` and requires re-authorization.
-- Existing legacy duplicate drafts and one self-addressed review draft were observed; no mailbox mutation was performed during closeout.
+- The connected ChatGPT Gmail profile is `hameedo@gmail.com`; it can inspect that legacy mailbox but is not the approved application identity `hameedfarah@gmail.com`.
+- Repository-native Gmail/gws authentication for the approved identity reports `invalid_grant` and requires re-authorization.
+- Existing legacy duplicate drafts and one self-addressed review draft were observed in the legacy mailbox; no mailbox mutation was performed during closeout.
 - The production engine must search existing drafts before create/update and may create only an unsent draft for a verified real recipient.
 - Portal-only roles remain portal-only.
 - No email was sent and no application was submitted.
@@ -74,13 +76,13 @@ The last completed output predates the final repository release. A newer direct 
 - [x] Harden `.gitignore` without hiding source, configuration, tests, docs or templates.
 - [x] Replace stale repository agent guidance with central-engine/Vault pointers.
 - [x] Update production implementation documentation.
-- [ ] Rerun full tests, guards, doctor, bundle validation and hashes.
-- [ ] Review staged file list and confirm no runtime/application/mailbox data.
-- [ ] Commit repository using `feat(career): centralize and harden application engine workflows`.
-- [ ] Push repository and verify local HEAD equals `origin/master`.
-- [ ] Update and separately commit the canonical Vault playbook, index and status.
-- [ ] Push Vault and verify both repositories clean.
-- [ ] Recheck Hermes durable execution state and record any remaining blocker accurately.
+- [x] Rerun full tests, guards, doctor, bundle validation and hashes.
+- [x] Review staged file list and confirm no runtime/application/mailbox data.
+- [x] Commit repository using `feat(career): centralize and harden application engine workflows`.
+- [x] Push repository and verify local HEAD equals `origin/master`.
+- [x] Update and separately commit the canonical Vault playbook, index and status.
+- [x] Push Vault and verify both repositories clean.
+- [x] Recheck Hermes durable execution state and complete a clean post-release run.
 
 ## Completion rule
 
