@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from career_engine import safety as career_safety
+
 CSV_FIELDS = [
     "job_id", "source", "external_job_id", "source_url", "company", "role",
     "location", "posting_date", "closing_date", "jd_hash", "full_jd_path",
@@ -231,6 +233,10 @@ class CareerTracker:
     ) -> dict[str, Any]:
         comment = require_comment(comment)
         validate_event_values(actor, "job", "created", confidence)
+        production_repo = Path(career_safety.__file__).resolve().parents[1]
+        production_tracker = production_repo / "projects/job-automation"
+        if self.base_dir.resolve() == production_tracker.resolve():
+            career_safety.reject_fixture_payload(payload)
         self.ensure_layout()
 
         source = normalize_text(str(payload.get("source", "manual"))) or "manual"

@@ -11,6 +11,7 @@ from .config import load_config
 from .core import decide_route, match_evidence, normalize_job, score_fit, validate_live_status
 from .generation import create_generation_packet, export_packet, validate_generated_application
 from .renderer import render_and_verify
+from .safety import reject_fixture_payload
 
 
 def stable_hash(value: Any) -> str:
@@ -49,6 +50,9 @@ def read_stage(artifact_dir: Path, name: str) -> Any:
 
 def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "chatgpt", force_weak: bool = False) -> dict[str, Any]:
     config, paths = load_config(root)
+    production_root = Path(__file__).resolve().parents[1]
+    if paths.repo_root.resolve() == production_root.resolve():
+        reject_fixture_payload(payload)
     bundle = load_bundle(root)
     normalized = normalize_job(payload, bundle["taxonomy"])
     tracker = _load_tracker(paths)

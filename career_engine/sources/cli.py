@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,22 @@ FIXTURES_DIR = str(Path(__file__).resolve().parent / "fixtures")
 # Adapter id -> (class, allowed kinds). Search discovery and inbox are handled
 # separately because they do not emit jobs without verification/auth.
 _KNOWN_KINDS = ("ats_api", "ats_web", "employer_page")
+
+
+def _report_payload(report: DiscoveryReport, *, offline: bool) -> dict[str, Any]:
+    payload = report.to_data()
+    payload["offline_fixture"] = bool(offline)
+    payload["ingest_allowed_in_production"] = not offline
+    if offline:
+        payload["notes"].append("OFFLINE FIXTURE OUTPUT: never ingest into the production tracker.")
+        for job in payload.get("jobs", []):
+            provenance = job.get("provenance")
+            if not isinstance(provenance, dict):
+                provenance = {}
+                job["provenance"] = provenance
+            provenance["offline_fixture"] = True
+            provenance["extracted_from"] = "offline_fixture"
+    return payload
 
 
 def build_adapter(adapter_id: str, *, offline: bool = False) -> SourceAdapter:
@@ -89,7 +106,7 @@ def run_probe(
         reason = entry.get("blocked_reason") or "blocked"
         report.blocked.append({"adapter": adapter_id, "reason": reason})
         report.notes.append(f"Source {adapter_id} is blocked; no probe attempted.")
-        return report.to_data()
+        return _report_payload(report, offline=offline)
 
     adapter = build_adapter(adapter_id, offline=offline)
     dedupe = DedupeStore()
@@ -106,7 +123,7 @@ def run_probe(
             _source_result(adapter_id, status="error", error=str(exc))
         )
         report.notes.append(str(exc))
-        return report.to_data()
+        return _report_payload(report, offline=offline)
 
     jobs: list[DiscoveryJob] = []
     for job in discovered:
@@ -124,7 +141,7 @@ def run_probe(
         _source_result(adapter_id, status=status, jobs_fetched=len(jobs))
     )
     report.notes.append(f"Adapter {adapter_id} probed company identifier {company!r}: {len(jobs)} jobs.")
-    return report.to_data()
+    return _report_payload(report, offline=offline)
 
 
 def _source_result(adapter_id: str, *, status: str, jobs_fetched: int = 0, error: str = "") -> Any:
@@ -157,12 +174,21 @@ def run_ingest(file_path: str, *, scanner_id: str, output: str = "") -> dict[str
     """Feed a probe output file through the central Career Engine scanner.
 
     Discovery-only by construction: the central scanner never sends or submits
-    and blocks generation for unverified vacancies.
+    and blocks generation for unverified vacancies. Offline fixture reports are
+    refused when the resolved root is the real repository.
     """
+    from ..config import repo_root
     from ..scanner import run_scan, write_report
 
-    root = Path(__file__).resolve().parents[2]
-    report = run_scan(Path(file_path), root=root, scanner_id=scanner_id)
+    source_file = Path(file_path)
+    payload = json.loads(source_file.read_text(encoding="utf-8"))
+    root = repo_root()
+    production_root = Path(__file__).resolve().parents[2]
+    fixture_report = payload.get("offline_fixture") is True or payload.get("ingest_allowed_in_production") is False
+    allow_fixture = os.environ.get("CAREER_ENGINE_ALLOW_FIXTURE_INGEST", "").strip() == "1"
+    if fixture_report and root.resolve() == production_root.resolve() and not allow_fixture:
+        raise ValueError("Offline fixture probe reports cannot be ingested into the production Career Engine tracker")
+    report = run_scan(source_file, root=root, scanner_id=scanner_id)
     if output:
         write_report(report, Path(output))
     return report

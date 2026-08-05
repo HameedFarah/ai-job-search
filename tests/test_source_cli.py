@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -80,22 +81,75 @@ def test_cli_verify_offline() -> None:
     assert out["json"]["verified_official"] is True
 
 
-def test_probe_output_is_scorable_by_the_central_engine(engine_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Discovery output must flow through the central scanner unchanged."""
+def test_offline_probe_output_is_tagged_and_can_only_enter_isolated_tracker(engine_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CAREER_ENGINE_REPO_ROOT", str(engine_root))
     from career_engine.sources.cli import run_ingest
 
     report = run_probe(adapter_id="greenhouse", company="careem", limit=5, offline=True)
+    assert report["offline_fixture"] is True
+    assert report["ingest_allowed_in_production"] is False
+    assert all(job["provenance"]["offline_fixture"] is True for job in report["jobs"])
     source = engine_root / "probe-jobs.json"
-    source.write_text(json.dumps({"jobs": report["jobs"]}, ensure_ascii=False), encoding="utf-8")
+    source.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    scan = run_ingest(str(source), scanner_id="hermes_scanner")
+    assert len(scan["results"]) == len(report["jobs"])
+    tracker = engine_root / "projects/job-automation"
+    assert (tracker / "data/jobs.csv").is_file()
+    assert (tracker / "logs/events.jsonl").is_file()
+    assert (tracker / "artifacts").is_dir()
+
+
+def test_offline_probe_report_refused_for_production_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from career_engine.sources.cli import run_ingest
+
+    monkeypatch.delenv("CAREER_ENGINE_REPO_ROOT", raising=False)
+    report = run_probe(adapter_id="greenhouse", company="careem", limit=5, offline=True)
+    source = tmp_path / "offline-probe.json"
+    source.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    repo = Path(__file__).resolve().parents[1]
+    tracker = repo / "projects/job-automation"
+    protected = [tracker / "data/jobs.csv", tracker / "logs/events.jsonl"]
+    before = {
+        str(path): hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
+        for path in protected
+    }
+    jobs_before = sorted(path.name for path in (tracker / "data/jobs").glob("*.json"))
+    artifacts_before = sorted(path.name for path in (tracker / "artifacts").iterdir())
+    with pytest.raises(ValueError, match="cannot be ingested into the production"):
+        run_ingest(str(source), scanner_id="hermes_scanner")
+    after = {
+        str(path): hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
+        for path in protected
+    }
+    assert after == before
+    assert sorted(path.name for path in (tracker / "data/jobs").glob("*.json")) == jobs_before
+    assert sorted(path.name for path in (tracker / "artifacts").iterdir()) == artifacts_before
+
+
+def test_realistic_discovery_output_is_scorable_by_the_central_engine(engine_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CAREER_ENGINE_REPO_ROOT", str(engine_root))
+    from career_engine.sources.cli import run_ingest
+
+    source = engine_root / "official-jobs.json"
+    source.write_text(json.dumps({"jobs": [{
+        "company": "Meridian Development",
+        "role": "Senior Design Manager",
+        "location": "Riyadh, Saudi Arabia",
+        "source": "greenhouse",
+        "source_url": "https://boards.greenhouse.io/meridiandevelopment/jobs/12345",
+        "external_job_id": "12345",
+        "application_url": "https://boards.greenhouse.io/meridiandevelopment/jobs/12345",
+        "full_job_description": "Lead multidisciplinary architectural design management, consultant coordination, authority compliance, technical governance, programme delivery, construction support, risk management, and client reporting across major projects.",
+        "live_status": "unverified",
+        "live_verified_at": "",
+        "live_verification_source": ""
+    }]}, ensure_ascii=False), encoding="utf-8")
     scan = run_ingest(str(source), scanner_id="hermes_scanner")
     assert scan["send_or_submit"] is False
-    assert len(scan["results"]) == len(report["jobs"])
-    for summary in scan["results"]:
-        # Discovery-only: unverified vacancies are blocked from generation.
-        assert summary["live_status"] == "unverified"
-        assert summary["generation_packet"] == ""
-        assert summary["blockers"]
+    assert len(scan["results"]) == 1
+    assert scan["results"][0]["live_status"] == "unverified"
+    assert scan["results"][0]["generation_packet"] == ""
+    assert scan["results"][0]["blockers"]
 
 
 def test_probe_dedupe_key_stable_across_scanner_and_store() -> None:
