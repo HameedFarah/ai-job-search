@@ -40,7 +40,8 @@ The bundle records every source hash. When a source changes, the bundle becomes 
 12. Select exactly one submission CV: sidebar by default for email, ATS Linear by default for portals, or the persisted per-job owner override from the preview.
 13. For an email route with a verified recipient, create one unsent draft in `hameedo@gmail.com`. Fill `To` and `Subject` from the job description when specified; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach only the selected CV PDF; put the cover letter in the email body. Do not create a portal-only self-addressed draft.
 14. Present the selected single-CV package for owner approval while retaining both generated variants for comparison and future override.
-15. Send or submit only after explicit approval.
+15. At 10:00, ChatGPT reviews the preceding 09:00 Hermes run, corrects material differences, and records one structured review with `./career-engine record-review --file <review-json>`. The record is saved under `projects/job-automation/runtime/review-diffs/`, copied to `latest.json`, and appended to affected job histories. Hermes reads the latest accepted reusable rules before its next daily scan.
+16. Send or submit only after explicit approval.
 
 ## Vacancy-status confidence
 

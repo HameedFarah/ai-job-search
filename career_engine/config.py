@@ -67,6 +67,7 @@ def validate_required_files(config: dict[str, Any], paths: Paths, *, require_vau
         paths.evidence_path,
         paths.generated_schema_path,
         paths.runtime_schema_path,
+        paths.generated_schema_path.parent / "hermes-review-diff.schema.json",
         paths.tracker_base / "tracker.py",
     ):
         if not path.is_file():

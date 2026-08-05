@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "career-engine/hermes-review-diff.v1",
+  "title": "ChatGPT Review of Hermes Career Engine Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "review_id",
+    "reviewed_at",
+    "hermes_run_id",
+    "reviewer",
+    "verdict",
+    "job_diffs",
+    "improvement_rules",
+    "send_or_submit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "review_id": {"type": "string", "minLength": 8},
+    "reviewed_at": {"type": "string", "minLength": 10},
+    "hermes_run_id": {"type": "string", "minLength": 1},
+    "hermes_report": {"type": "string"},
+    "reviewer": {"const": "chatgpt"},
+    "verdict": {"enum": ["accepted", "corrected", "rejected", "mixed"]},
+    "job_diffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["job_id", "verdict", "differences"],
+        "properties": {
+          "job_id": {"type": "string", "minLength": 8},
+          "verdict": {"enum": ["accepted", "corrected", "rejected"]},
+          "differences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["area", "before", "after", "reason", "evidence_refs", "reusable_rule"],
+              "properties": {
+                "area": {"enum": ["source_coverage", "job_data", "scoring", "evidence", "resume_content", "rendering", "selected_cv", "email_draft", "workflow", "other"]},
+                "before": {},
+                "after": {},
+                "reason": {"type": "string", "minLength": 1},
+                "evidence_refs": {"type": "array", "items": {"type": "string"}},
+                "reusable_rule": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "improvement_rules": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "notes": {"type": "array", "items": {"type": "string"}},
+    "send_or_submit": {"const": false}
+  }
+}

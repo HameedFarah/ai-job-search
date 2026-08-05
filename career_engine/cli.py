@@ -11,6 +11,7 @@ from .config import load_config, validate_required_files
 from .generation import run_adapter
 from .pipeline import finalize_render, import_generated, prepare, read_stage, status
 from .renderer import ats_template_status, build_render_input, render_ats_and_verify, render_ats_design_options, render_tooling
+from .review import record_review_diff
 from .scanner import run_scan, write_report
 from .template import install_from_transfer, status as template_status, sync_copies
 
@@ -102,6 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--application-url", default="")
     prep.add_argument("--recipient", default="")
     prep.add_argument("--recipient-source", default="")
+    prep.add_argument("--required-email-subject", default="")
+    prep.add_argument("--application-instructions", default="")
     prep.add_argument("--live-status", choices=("live", "closed", "unverified"), default="unverified")
     prep.add_argument("--live-verified-at", default="")
     prep.add_argument("--live-verification-source", default="")
@@ -161,6 +164,10 @@ def build_parser() -> argparse.ArgumentParser:
     package = sub.add_parser("package")
     add_common(package)
     package.add_argument("--job-id", required=True)
+
+    review = sub.add_parser("record-review")
+    add_common(review)
+    review.add_argument("--file", required=True, help="Structured ChatGPT review diff JSON")
 
     scanner = sub.add_parser("scanner")
     add_common(scanner)
@@ -344,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
                 "application_url": args.application_url,
                 "recipient": args.recipient,
                 "recipient_source": args.recipient_source,
+                "required_email_subject": args.required_email_subject,
+                "application_instructions": args.application_instructions,
                 "live_status": args.live_status,
                 "live_verified_at": args.live_verified_at,
                 "live_verification_source": args.live_verification_source,
@@ -407,6 +416,11 @@ def main(argv: list[str] | None = None) -> int:
             if not Path(result["generated_application"]).is_file():
                 return EXIT_OWNER_INPUT
             return EXIT_READY
+        if args.command == "record-review":
+            payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            result = record_review_diff(payload)
+            emit(result, human=args.human)
+            return EXIT_READY if result.get("valid") else EXIT_POLICY
         if args.command == "scanner":
             config, paths = load_config()
             report = run_scan(Path(args.file), root=paths.repo_root, scanner_id=args.scanner_id)
