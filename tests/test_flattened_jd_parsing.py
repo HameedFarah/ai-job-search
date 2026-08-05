@@ -72,15 +72,18 @@ Preferred
 
 def test_buro_like_flattened_jd_is_not_one_giant_requirement() -> None:
     text = (
-        "Senior Design Manager. Your key duties "
-        "Oversee design execution for major building projects in the Middle East. "
+        "Senior Design Manager\n"
+        "Example Consultancy · Riyadh, Saudi Arabia\n"
+        "Employment: Full-time\n"
+        "Your key duties Oversee design execution for major building projects in the Middle East. "
         "Lead BIM coordination and review gateway submissions. "
         "Manage design risks, changes, schedules, and client reporting. "
         "Support value engineering and consultant procurement. "
         "Your Skills And Experience Bachelor's degree in Architecture or Engineering. "
         "Proven design management experience in an engineering consultancy is required. "
         "Demonstrable leadership and stakeholder communication skills are essential. "
-        "What We Offer Attractive benefits and continuous development."
+        "What We Offer Attractive benefits and continuous development.\n"
+        "URL: https://example.com/jobs/123"
     )
     normalized = _normalize(text)
     requirements = normalized["requirements"]

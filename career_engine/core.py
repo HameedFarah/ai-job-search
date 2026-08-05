@@ -129,8 +129,8 @@ def _requirement_lines(text: str, headings: dict[str, list[str]]) -> list[str]:
     """Restore structural boundaries for flattened JDs without changing JD text."""
     original = text.splitlines()
     nonempty = [line for line in original if line.strip()]
-    flattened = len(nonempty) <= 3 and any(len(line) >= 400 for line in nonempty)
-    if not flattened:
+    has_flattened_line = any(len(line) >= 400 for line in nonempty)
+    if not has_flattened_line:
         return original
 
     heading_map: dict[str, str] = {}
