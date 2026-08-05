@@ -1,0 +1,27 @@
+{
+  "AbstractText": "Design governance, architecture and development careers in Riyadh, Saudi Arabia.",
+  "Heading": "Saudi Arabia Architecture Careers",
+  "Type": "A",
+  "RelatedTopics": [
+    {
+      "FirstURL": "https://careers.example.meridian.com/",
+      "Text": "Meridian Destination Development - Careers - official careers site.",
+      "Result": "Meridian Destination Development Careers"
+    },
+    {
+      "Topics": [
+        {
+          "FirstURL": "https://jobs.example.ashbyhq.com/gulfdev/",
+          "Text": "Gulf Development Company - public jobs board.",
+          "Result": "Gulf Development jobs"
+        }
+      ]
+    },
+    {
+      "FirstURL": "https://careers.example.smartrecruiters.com/GulfDevCo",
+      "Text": "GulfDevCo public careers portal.",
+      "Result": "GulfDevCo careers"
+    }
+  ],
+  "meta": { "sanitized": true, "shape_source": "DuckDuckGo Instant Answer API (api.duckduckgo.com)" }
+}

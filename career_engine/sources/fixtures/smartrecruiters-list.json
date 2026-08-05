@@ -1,0 +1,45 @@
+{
+  "totalFound": 2,
+  "limit": 100,
+  "offset": 0,
+  "content": [
+    {
+      "uuid": "33333333-0000-4aaa-9bbb-111111111111",
+      "id": "j-1001",
+      "name": "Design Governance Manager",
+      "refNumber": "REF-2001",
+      "releasedDate": "2026-07-10T08:29:20.852Z",
+      "location": {
+        "city": "Riyadh",
+        "region": "Riyadh Province",
+        "country": "SA",
+        "remote": false,
+        "hybrid": false
+      },
+      "typeOfEmployment": "FULL_TIME",
+      "industry": "Real Estate",
+      "function": "Architecture",
+      "language": "en",
+      "department": { "id": "d-01", "label": "Design" }
+    },
+    {
+      "uuid": "44444444-1111-4bbb-8ccc-222222222222",
+      "id": "j-1002",
+      "name": "Senior Design Review Architect",
+      "refNumber": "REF-2002",
+      "releasedDate": "2026-06-01T10:00:00.000Z",
+      "location": {
+        "city": "Jeddah",
+        "region": "Makkah Province",
+        "country": "SA",
+        "remote": false,
+        "hybrid": false
+      },
+      "typeOfEmployment": "FULL_TIME",
+      "industry": "Engineering",
+      "function": "Architecture",
+      "language": "en"
+    }
+  ],
+  "meta": { "sanitized": true, "shape_source": "SmartRecruiters Public Postings API" }
+}

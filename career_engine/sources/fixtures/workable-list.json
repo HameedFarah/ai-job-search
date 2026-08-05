@@ -1,0 +1,25 @@
+{
+  "jobs": [
+    {
+      "id": "55555555-0000",
+      "title": "Construction Programme Director",
+      "city": "Riyadh",
+      "country": "Saudi Arabia",
+      "published_on": "2026-07-08",
+      "shortlink": "https://apply.example.workable.com/horizon-dev/j/55555555-0000",
+      "url": "https://apply.example.workable.com/horizon-dev/j/55555555-0000",
+      "full_description": "<p>Horizon Development is recruiting a Construction Programme Director to lead delivery across a portfolio of major destinations in the GCC.</p><ul><li>Own programme-level delivery strategy and governance.</li><li>Coordinate consultants, contractors and authorities.</li><li>Report programme performance to the executive committee.</li></ul><p><strong>Requirements:</strong></p><ul><li>15+ years of major project delivery experience.</li><li>Deep GCC programme experience.</li><li>Strong leadership and stakeholder management.</li></ul>"
+    },
+    {
+      "id": "66666666-1111",
+      "title": "Design Review Manager",
+      "city": "Dubai",
+      "country": "United Arab Emirates",
+      "published_on": "2026-07-25",
+      "shortlink": "https://apply.example.workable.com/horizon-dev/j/66666666-1111",
+      "url": "https://apply.example.workable.com/horizon-dev/j/66666666-1111",
+      "full_description": "<p>Coordinate design reviews and consultant deliverables for destination projects.</p>"
+    }
+  ],
+  "meta": { "sanitized": true, "shape_source": "Workable public jobs feed (apply.workable.com)" }
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "a1b2c3d4-0001",
+    "text": "Senior Design Governance Manager",
+    "company": "Falcon Consulting Group",
+    "createdAt": 1750110000000,
+    "categories": { "location": "Riyadh, Saudi Arabia", "commitment": "Full-time", "team": "Design Governance" },
+    "workplaceType": "onsite",
+    "hostedUrl": "https://jobs.example.lever.co/falcon/3f9b1c2d-8a1e-4f6a-9c1d-2b3c4d5e6f70",
+    "applyUrl": "https://jobs.example.lever.co/falcon/3f9b1c2d-8a1e-4f6a-9c1d-2b3c4d5e6f70/apply",
+    "description": "<p>Falcon Consulting Group is a regional design and project-delivery consultancy. We are looking for a Senior Design Governance Manager to lead multidisciplinary coordination on large KSA programmes.</p>",
+    "lists": {
+      "position": [
+        "Own design governance frameworks across the programme portfolio.",
+        "Coordinate consultants, authorities and internal delivery teams.",
+        "Drive value engineering and design quality assurance."
+      ],
+      "qualifications": [
+        "Architecture degree with 12+ years of design delivery experience.",
+        "Strong GCC project experience and local code familiarity.",
+        "Leadership of multidisciplinary design teams."
+      ],
+      "responsibilities": [
+        "Lead design review boards and governance gateways.",
+        "Report programme design status to executive stakeholders."
+      ]
+    },
+    "additional": "None",
+    "salaryRange": {}
+  },
+  {
+    "id": "b2c3d4e5-0002",
+    "text": "Development Director (Real Estate)",
+    "company": "Falcon Consulting Group",
+    "createdAt": 1750300000000,
+    "categories": { "location": "Jeddah, Saudi Arabia", "commitment": "Full-time", "team": "Development" },
+    "workplaceType": "onsite",
+    "hostedUrl": "https://jobs.example.lever.co/falcon/4a0c2d3e-9b2f-4a7b-8d2e-3c4d5e6f7081",
+    "applyUrl": "https://jobs.example.lever.co/falcon/4a0c2d3e-9b2f-4a7b-8d2e-3c4d5e6f7081/apply",
+    "description": "<p>Lead the development delivery of mixed-use real estate assets across the GCC.</p>"
+  }
+]

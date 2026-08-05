@@ -1,0 +1,21 @@
+{
+  "uuid": "33333333-0000-4aaa-9bbb-111111111111",
+  "id": "j-1001",
+  "name": "Design Governance Manager",
+  "refNumber": "REF-2001",
+  "releasedDate": "2026-07-10T08:29:20.852Z",
+  "location": { "city": "Riyadh", "region": "Riyadh Province", "country": "SA" },
+  "postingUrl": "https://jobs.example.smartrecruiters.com/GulfDevCo/33333333-0000-4aaa-9bbb-111111111111",
+  "applyUrl": "https://jobs.example.smartrecruiters.com/GulfDevCo/33333333-0000-4aaa-9bbb-111111111111/apply",
+  "jobAd": {
+    "sections": {
+      "jobDescription": {
+        "text": "The Design Governance Manager leads multidisciplinary design coordination across complex real-estate programmes in the Kingdom.\n\nKey responsibilities:\n- Own design governance frameworks and review gateways.\n- Manage senior client and stakeholder relationships.\n- Drive value engineering, quality assurance and design controls.\n\nRequirements:\n- Degree in architecture with strong Saudi project experience.\n- Demonstrated team leadership and people management.\n- Programme delivery experience on large mixed-use developments."
+      },
+      "qualifications": {
+        "text": "Professional registration such as RIBA or Saudi Council of Engineers is preferred."
+      }
+    }
+  },
+  "meta": { "sanitized": true, "shape_source": "SmartRecruiters Posting Detail API" }
+}

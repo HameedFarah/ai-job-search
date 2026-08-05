@@ -1,0 +1,46 @@
+{
+  "jobs": [
+    {
+      "id": 910011001,
+      "title": "Senior Design Manager (Architecture)",
+      "company_name": "Oasis Development Co",
+      "location": { "name": "Riyadh, Saudi Arabia" },
+      "first_published": "2026-06-16T08:14:18-04:00",
+      "updated_at": "2026-08-05T08:02:14-04:00",
+      "absolute_url": "https://boards.example.greenhouse.io/oasis/jobs/910011001",
+      "requisition_id": "REQ-1001",
+      "content": "<div class=\"content-intro\"><p>Oasis Development Co is building the next generation of mixed-use destinations in the Kingdom. We are hiring a Senior Design Manager to lead design governance across complex programmes.</p></div><p><strong>What you'll do</strong></p><ul><li>Lead design governance and multidisciplinary design coordination across complex infrastructure programmes.</li><li>Manage senior client and stakeholder relationships and oversee project delivery.</li><li>Drive value engineering, quality assurance and design controls.</li></ul><p><strong>What you need</strong></p><ul><li>Degree in architecture and strong Saudi project experience.</li><li>Demonstrated team leadership and people management.</li><li>Experience with design management and programme delivery.</li></ul>",
+      "metadata": [
+        { "id": 10001, "name": "Country", "value": "Saudi Arabia", "value_type": "single_select" }
+      ],
+      "offices": [ { "id": 5001, "name": "Riyadh", "location": "Riyadh, Saudi Arabia" } ]
+    },
+    {
+      "id": 910011002,
+      "title": "Project Delivery Director",
+      "company_name": "Oasis Development Co",
+      "location": { "name": "Dubai, United Arab Emirates" },
+      "first_published": "2026-07-02T09:00:00+04:00",
+      "updated_at": "2026-08-04T10:11:22+04:00",
+      "absolute_url": "https://boards.example.greenhouse.io/oasis/jobs/910011002",
+      "requisition_id": "REQ-1002",
+      "content": "<p>Oasis Development Co seeks a Project Delivery Director to own end-to-end delivery across a portfolio of destination projects in the GCC.</p><ul><li>Lead multidisciplinary project delivery and consultant integration.</li><li>Own programme controls, risk and reporting to the board.</li><li>Build and manage a high-performing delivery leadership team.</li></ul>"
+    },
+    {
+      "id": 910011003,
+      "title": "Design Review Lead",
+      "company_name": "Oasis Development Co",
+      "location": { "name": "Riyadh, Saudi Arabia" },
+      "first_published": "2026-07-20T12:30:00+03:00",
+      "updated_at": "2026-08-03T09:00:00+03:00",
+      "absolute_url": "https://boards.example.greenhouse.io/oasis/jobs/910011003",
+      "requisition_id": "REQ-1003",
+      "content": "<p>Design Review Lead role at Oasis Development Co coordinating design reviews with consultants and authorities.</p>"
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "sanitized": true,
+    "shape_source": "Greenhouse Job Board API (boards-api.greenhouse.io)"
+  }
+}
