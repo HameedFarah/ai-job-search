@@ -22,8 +22,8 @@ Read the current Vault index, status and playbook, the verified profile, metrics
 - Generated factual statements must cite approved claim IDs and pass deterministic validation.
 - Render only through the approved templates and validate the PDF output: portal roles use `ats-classic` ATS Linear (no photo); verified direct-email/human-review roles use `modern-executive-sidebar` (with photo); Simplify imports use comprehensive `ats-compact-technical` (with photo) and are never submitted unchanged. Owner overrides are respected; route-specific rules supersede blanket headshot wording.
 - Never send email, contact a recruiter or submit an application without explicit owner approval.
-- Outward email is `hameedfarah@gmail.com`; the draft/auth account is `hameedo@gmail.com`; approval is internal only; availability is internal-only.
-- Create or update a normal unsent Gmail draft only for a verified real recipient. A portal-only vacancy may receive a clearly labelled preparation draft with an empty recipient, attached package and official submission link; it is not an outreach email and must never be sent. Never guess an address or create a self-addressed draft.
+- Use `hameedo@gmail.com` for outward career identity and Gmail draft ownership. Email applications attach exactly one selected CV: sidebar by default for email, ATS Linear by default for portals, with a persisted per-job owner override. Approval is internal only; availability is internal-only.
+- Create or update a normal unsent Gmail draft in `hameedo@gmail.com` only for a verified real recipient. Fill To and Subject from the vacancy instructions; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach exactly one selected CV PDF. Portal-only vacancies remain dashboard packages with their official links and receive no email draft unless a genuine email route exists. Never guess an address or create a self-addressed draft.
 - Do not include availability in routine external material unless the owner explicitly requests it.
 - Do not commit runtime artifacts, generated applications, mailbox data, scanner inputs/results, prompts, caches or secrets.
 

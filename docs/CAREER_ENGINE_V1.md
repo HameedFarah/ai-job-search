@@ -36,10 +36,10 @@ The bundle records every source hash. When a source changes, the bundle becomes 
 8. Produce one bounded `generation_packet.json`.
 9. Use one LLM pass to write original structured prose.
 10. Import the structured result and reject unsupported facts or policy violations.
-11. Produce renderer input for the approved DOCX template.
-12. Verify the DOCX, PDF, page count and PDF text layer.
-13. Create a normal unsent Gmail draft when a verified actual recipient exists. For a portal-only role, create a clearly labelled portal preparation draft with an empty recipient, attached application package and official submission link; it is never an outreach email and cannot be sent without a verified recipient.
-14. Present the package for owner approval.
+11. Render and verify both role-specific CV variants: Modern Executive Sidebar and ATS Linear.
+12. Select exactly one submission CV: sidebar by default for email, ATS Linear by default for portals, or the persisted per-job owner override from the preview.
+13. For an email route with a verified recipient, create one unsent draft in `hameedo@gmail.com`. Fill `To` and `Subject` from the job description when specified; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach only the selected CV PDF; put the cover letter in the email body. Do not create a portal-only self-addressed draft.
+14. Present the selected single-CV package for owner approval while retaining both generated variants for comparison and future override.
 15. Send or submit only after explicit approval.
 
 ## Vacancy-status confidence
@@ -196,7 +196,7 @@ The scanner:
 - rebuilds the central bundle when needed;
 - deduplicates through the canonical tracker;
 - stops roles below the 80-point generation threshold after scoring;
-- respects the live-vacancy gate: only verified-live jobs can produce generation packets or appear as generation candidates;
+- respects the live-vacancy gate: explicitly closed jobs remain blocked, while unverified or incomplete-live jobs may produce generation packets and appear as generation candidates with a visible verification warning;
 - never sends email or submits applications;
 - produces one structured report.
 
@@ -217,9 +217,9 @@ They must not duplicate evidence or policy. They call the CLI, use its generatio
 
 ## Gmail integration
 
-The repository-native Gmail/gws authentication path and the connected ChatGPT Gmail connector are separate execution paths. The native path may report `invalid_grant` until re-authorized even when the ChatGPT connector can inspect drafts.
+`hameedo@gmail.com` is the sole Career Engine mailbox and outward application identity. The repository-native Gmail/gws path and the connected ChatGPT Gmail connector are separate execution paths, but both must operate on that account only.
 
-Before draft creation the client must search existing drafts. A normal unsent draft requires a verified real recipient and must verify To, subject, body, attachment filename/hash and DRAFT status. A portal-only vacancy may instead receive a clearly labelled portal preparation draft with an empty To field, tailored body, attached files and official submission link; it is not sendable until a real recipient is verified. Duplicate drafts, guessed recipients and self-addressed review drafts are prohibited. Mailbox-derived data is runtime data and must not be committed.
+Before draft creation the client must search existing drafts. An unsent email-application draft requires a verified real recipient and must verify `To`, exact subject, body, the single selected CV attachment filename/hash, and DRAFT status. The subject must use the job-description instruction when present; otherwise it is `Abdelhamid Farah - <Post Name>`. The cover letter belongs in the message body. Portal routes do not create self-addressed preparation drafts. Duplicate drafts, guessed recipients, multiple CV attachments and self-addressed review drafts are prohibited. Mailbox-derived data is runtime data and must not be committed.
 
 ## Future SaaS integration
 
@@ -237,7 +237,7 @@ The renderer must stop with a clear blocker when this binary is absent or fails 
 
 Verified hashes:
 
-- Template SHA-256: `fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e`
+- Template SHA-256: `0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123`
 - Manifest SHA-256: `b423a1cab2d51f5df3a9901396110a73bdcbfbd6cebdb04429aa77b87ba7151e`
 
 LibreOffice discovery preserves explicit environment override precedence, then PATH precedence, supports executable permission-bit checks for binaries on `noexec` mounts and retains the user-local fallback. These resolver tests are release guards.

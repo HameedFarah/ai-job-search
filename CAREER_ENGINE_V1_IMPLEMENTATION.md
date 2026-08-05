@@ -34,7 +34,7 @@ Repository entry points include:
 ## Deterministic stage flow
 
 1. Ingest and save the complete vacancy record.
-2. Verify `live_status`, timestamp and verification source.
+2. Record `live_status`, timestamp and verification source as confidence metadata.
 3. Build or validate the runtime bundle.
 4. Normalize the job description.
 5. Extract mandatory and preferred requirements.
@@ -82,7 +82,7 @@ Template:
 
 Verified SHA-256:
 
-`fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e`
+`0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123`
 
 Manifest SHA-256:
 
@@ -90,7 +90,7 @@ Manifest SHA-256:
 
 The renderer fails closed if the approved template is missing or invalid. LibreOffice resolution preserves explicit environment override precedence, then PATH precedence, supports executable permission bits on `noexec` mounts, and retains the user-local fallback. The resolver tests must not be weakened.
 
-A second renderer, `ats-linear` (see `docs/CAREER_ENGINE_V1.md`), is generated for every application alongside the approved template. It is built programmatically from `projects/job-automation/config/ats-linear-template.v1.json` (a non-bundle source so generation packets keep their `bundle_hash`), renders via `./career-engine render-ats --job-id JOB_ID`, and is ATS-safe by construction: one column, no tables, no images, no text boxes, no floating objects, selectable text, left-aligned body and no headshot. Portal route packages recommend the ATS PDF; the email route keeps the Modern Executive Sidebar as recommended.
+A second renderer, `ats-linear` (see `docs/CAREER_ENGINE_V1.md`), is generated for every application alongside the approved sidebar template. It is built programmatically from `projects/job-automation/config/ats-linear-template.v1.json` (a non-bundle source so generation packets keep their `bundle_hash`), renders via `./career-engine render-ats --job-id JOB_ID`, and is ATS-safe by construction: one column, no tables, no images, no text boxes, no floating objects, selectable text, left-aligned body and no headshot. Both variants are retained for review, but each application selects exactly one CV: ATS Linear by default for portals and Modern Executive Sidebar by default for email. A persisted per-job preview override may change that selection. Email drafts use only `hameedo@gmail.com` and attach only the selected CV PDF.
 
 ## Runtime bundle
 

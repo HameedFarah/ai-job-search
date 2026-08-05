@@ -44,7 +44,7 @@ def engine_root(tmp_path: Path) -> Path:
         "schema_version": 1,
         "identity": {
             "professional_name": "Abdelhamid Farah",
-            "outward_email": "hameedfarah@gmail.com",
+            "outward_email": "hameedo@gmail.com",
             "current_role": "District Manager",
         },
         "career_chronology": [
@@ -276,7 +276,7 @@ def test_route_requires_verified_real_recipient_or_portal(engine_root: Path) -> 
     assert decide_route(base, bundle)["route"] == "portal"
     unverified = {"recipient": "", "recipient_source": "", "application_url": "https://example.com/apply", "live_status": "unverified"}
     assert decide_route(unverified, bundle)["route"] == "portal"
-    self_address = {"recipient": "hameedfarah@gmail.com", "recipient_source": "vacancy", "application_url": "", **live_fields}
+    self_address = {"recipient": "hameedo@gmail.com", "recipient_source": "vacancy", "application_url": "", **live_fields}
     assert decide_route(self_address, bundle)["route"] == "unresolved"
     missing_source = {"recipient": "jobs@example.com", "recipient_source": "", "application_url": "", **live_fields}
     assert decide_route(missing_source, bundle)["route"] == "unresolved"
@@ -292,6 +292,42 @@ def test_policy_and_filename_rules(engine_root: Path) -> None:
     pattern = bundle["config"]["policy"]["external_filename_pattern"]
     assert outward_filename("Manager - Design Governance", pattern) == "Abdelhamid_Farah_CV_Manager_Design_Governance.pdf"
     assert outward_filename("Senior Design Manager (Architect - Site/Delivery Experience)", pattern) == "Abdelhamid_Farah_CV_Senior_Design_Manager.pdf"
+
+
+def test_email_subject_policy_uses_job_instruction_then_fallback(job_payload: dict[str, str], engine_root: Path) -> None:
+    bundle = build_bundle(engine_root)
+
+    instructed = dict(job_payload)
+    instructed["required_email_subject"] = "REF-204 - Senior Design Manager"
+    normalized = normalize_job(instructed, bundle["taxonomy"])
+    packet = create_generation_packet(
+        job_id="subject-policy-instructed",
+        normalized_job=normalized,
+        matches=match_evidence(normalized, bundle),
+        score=score_fit(normalized, match_evidence(normalized, bundle), bundle),
+        route=decide_route(normalized, bundle),
+        bundle=bundle,
+    )
+    assert packet["email_draft_policy"]["expected_subject"] == "REF-204 - Senior Design Manager"
+    assert packet["email_draft_policy"]["subject_source"] == "job_description"
+    assert packet["email_draft_policy"]["account"] == "hameedo@gmail.com"
+    assert packet["email_draft_policy"]["attachment_count"] == 1
+
+    fallback = dict(job_payload)
+    fallback.pop("required_email_subject", None)
+    fallback.pop("email_subject", None)
+    normalized = normalize_job(fallback, bundle["taxonomy"])
+    matches = match_evidence(normalized, bundle)
+    packet = create_generation_packet(
+        job_id="subject-policy-fallback",
+        normalized_job=normalized,
+        matches=matches,
+        score=score_fit(normalized, matches, bundle),
+        route=decide_route(normalized, bundle),
+        bundle=bundle,
+    )
+    assert packet["email_draft_policy"]["expected_subject"] == f"Abdelhamid Farah - {normalized['role']}"
+    assert packet["email_draft_policy"]["subject_source"] == "fallback"
 
 
 def valid_application(packet: dict) -> dict:
@@ -333,7 +369,7 @@ def valid_application(packet: dict) -> dict:
         ],
         "credential_claim_ids": [item for item in claims if "sce" in item],
         "cover_email": {
-            "subject": "Application - Senior Design Governance Manager",
+            "subject": packet["email_draft_policy"]["expected_subject"],
             "body": "Dear Hiring Manager,\n\nPlease find attached my CV for the Senior Design Governance Manager position. My background combines senior design governance, multidisciplinary delivery, client leadership and commercial oversight across complex Saudi programmes. The attached CV highlights the most relevant evidence and outcomes for the role.\n\nKind regards,\nAbdelhamid Farah",
             "claim_ids": claims[:3]
         },
@@ -354,6 +390,11 @@ def test_free_prose_generation_contract_rejects_unsupported_claims(job_payload: 
     application["current_role_bullets"][0]["claim_ids"] = ["fabricated.claim"]
     findings = validate_generated_application(application, packet, bundle)
     assert any(item["code"] == "unsupported_claim" for item in findings)
+
+    application = valid_application(packet)
+    application["cover_email"]["subject"] = "Application - Wrong Subject"
+    findings = validate_generated_application(application, packet, bundle)
+    assert any(item["code"] == "email_subject_mismatch" for item in findings)
 
 
 def test_prepare_is_idempotent_and_uses_tracker(job_payload: dict[str, str], engine_root: Path) -> None:

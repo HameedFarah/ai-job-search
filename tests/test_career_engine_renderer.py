@@ -148,13 +148,100 @@ def test_finalize_render_moves_tracker_to_owner_approval(
 
     result = finalize_render(state["job_id"], root=engine_root, actor="chatgpt")
     assert result["valid"] is True
+    assert result["submission_package"]["default_resume_variant"] == "ats-linear"
+    assert result["submission_package"]["selected_resume_variant"] == "ats-linear"
+    assert result["submission_package"]["owner_override"] is False
+    assert result["submission_package"]["attachment_count"] == 0
+    assert result["submission_package"]["email_account"] == "hameedo@gmail.com"
     tracker_state = pipeline_status(state["job_id"], root=engine_root)
     assert tracker_state["processing_state"]["status"] == "awaiting_owner_approval"
     assert tracker_state["processing_state"]["owner"] == "owner"
     assert tracker_state["processing_state"]["external_action_allowed"] is False
+    assert tracker_state["processing_state"]["selected_resume_variant"] == "ats-linear"
+    assert tracker_state["processing_state"]["submission_package"]["selected_resume_variant"] == "ats-linear"
     record = tracker_state["job"]
     assert record["processing_status"] == "awaiting_owner_approval"
     assert record["owner"] == "owner"
+    record_path = engine_root / "projects/job-automation/data/jobs" / f"{state['job_id']}.json"
+    saved_record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert saved_record["submission_package"]["selected_resume_variant"] == "ats-linear"
+
+
+def test_finalize_render_persisted_preview_override_selects_single_cv(
+    job_payload: dict,
+    engine_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A persisted per-job preview override changes the single selected CV variant.
+
+    The portal route defaults to ATS Linear; the persisted override selects the
+    Modern Executive Sidebar variant while both variants remain generated.
+    """
+    payload = dict(job_payload)
+    payload.update({
+        "live_status": "live",
+        "live_verified_at": "2026-08-03T10:00:00+00:00",
+        "live_verification_source": "official employer careers page",
+    })
+    state = prepare(payload, root=engine_root, actor="chatgpt")
+    packet_path = Path(state["outputs"]["generation_packet"])
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    application = valid_application(packet)
+    pending = packet_path.parent / "generated_application.pending.json"
+    pending.write_text(json.dumps(application, ensure_ascii=False, indent=2), encoding="utf-8")
+    assert import_generated(state["job_id"], pending, root=engine_root, actor="chatgpt")["valid"] is True
+
+    from career_engine.config import load_config
+    from career_engine.pipeline import _load_tracker
+
+    _, paths = load_config(engine_root)
+    tracker = _load_tracker(paths)
+    tracker.update_job(
+        state["job_id"],
+        {"resume_template_override": "modern-executive-sidebar"},
+        comment="Owner preview override selects the Modern Executive Sidebar CV",
+        actor="owner",
+    )
+
+    final_docx = packet_path.parent / "Abdelhamid_Farah_CV_Test.docx"
+    final_pdf = packet_path.parent / "Abdelhamid_Farah_CV_Test.pdf"
+    ats_docx = packet_path.parent / "Abdelhamid_Farah_CV_Test_ATS.docx"
+    ats_pdf = packet_path.parent / "Abdelhamid_Farah_CV_Test_ATS.pdf"
+    for path in (final_docx, final_pdf, ats_docx, ats_pdf):
+        path.write_bytes(b"content")
+    monkeypatch.setattr(
+        "career_engine.pipeline.render_and_verify",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "docx": {"docx": str(final_docx), "sha256": "docx-sha"},
+            "verification": {"pdf": str(final_pdf), "sha256": "pdf-sha", "valid": True},
+        },
+    )
+    monkeypatch.setattr(
+        "career_engine.pipeline.render_ats_and_verify",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "docx": {"docx": str(ats_docx), "sha256": "ats-docx-sha"},
+            "verification": {"pdf": str(ats_pdf), "sha256": "ats-pdf-sha", "valid": True},
+        },
+    )
+
+    result = finalize_render(state["job_id"], root=engine_root, actor="chatgpt")
+    assert result["valid"] is True
+    package = result["submission_package"]
+    assert package["default_resume_variant"] == "ats-linear"
+    assert package["selected_resume_variant"] == "modern-executive-sidebar"
+    assert package["owner_override"] is True
+    assert package["selected_cv_pdf"].endswith("Abdelhamid_Farah_CV_Test.pdf")
+    assert package["selected_cv_docx"].endswith("Abdelhamid_Farah_CV_Test.docx")
+    # Both variants remain generated and visible in the dashboard artifacts.
+    record_path = engine_root / "projects/job-automation/data/jobs" / f"{state['job_id']}.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    generated = record["generated_artifacts"]
+    assert any(item["type"] == "ats_pdf" for item in generated)
+    assert any(item["type"] == "final_pdf" for item in generated)
+    assert record["processing_state"]["selected_resume_variant"] == "modern-executive-sidebar"
+    assert record["submission_package"]["selected_cv_pdf"].endswith("Abdelhamid_Farah_CV_Test.pdf")
 
 
 def test_render_tooling_accepts_explicit_binary_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -298,6 +385,14 @@ def test_verify_pdf_accepts_artifact_pdf(engine_root: Path) -> None:
     artifact = REPO / "projects/job-automation/artifacts/5a531dd6cfca13213694/Abdelhamid_Farah_CV_Design_Governance_Manager.pdf"
     if not artifact.is_file():
         pytest.skip("artifact PDF not present")
+    # Artifacts are untracked runtime data. A locally present artifact produced
+    # under the superseded outward-email policy cannot satisfy the current
+    # required-identity check, so skip it instead of failing on stale data.
+    extracted = subprocess.run(
+        ["pdftotext", str(artifact), "-"], capture_output=True, text=True, check=False
+    ).stdout
+    if "hameedo@gmail.com" not in extracted:
+        pytest.skip("artifact PDF predates the current hameedo@gmail.com outward-email policy")
     result = verify_pdf(artifact, root=engine_root)
     assert result["valid"] is True
     assert result["page_count"] == 2

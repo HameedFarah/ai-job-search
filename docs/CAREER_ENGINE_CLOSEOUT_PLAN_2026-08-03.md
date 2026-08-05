@@ -63,7 +63,7 @@ Two earlier direct attempts were safely reconciled to `unknown` after their fore
 
 ## Gmail
 
-- The connected ChatGPT Gmail profile is `hameedo@gmail.com`; it can inspect that legacy mailbox but is not the approved application identity `hameedfarah@gmail.com`.
+- `hameedo@gmail.com` is the sole approved application identity and Gmail draft account. The superseded `hameedfarah@gmail.com` address must not be used.
 - Repository-native Gmail/gws authentication for the approved identity reports `invalid_grant` and requires re-authorization.
 - Existing legacy duplicate drafts and one self-addressed review draft were observed in the legacy mailbox; no mailbox mutation was performed during closeout.
 - The production engine must search existing drafts before create/update and may create only an unsent draft for a verified real recipient.

@@ -1,5 +1,5 @@
 ---
-framework_version: 1.2.0
+framework_version: 1.2.2
 ---
 
 # Agent Guidelines: AI Job Search
@@ -18,14 +18,14 @@ Use these three authorities:
 
 - Before material work, read the current Vault index/status/playbook, then run `./career-engine doctor` and `./career-engine bundle status`.
 - ChatGPT, the daily scanner, Hermes and repository skills use the shared tracker and the central engine only. Treat `.claude/` commands, scanners and skills as thin clients that must not duplicate candidate facts, scoring rules or application policy.
-- Verify vacancy live status and source before generation.
+- Record vacancy verification status and source as confidence metadata; it is not a generation prerequisite. Explicitly closed roles remain blocked.
 - Preserve the posting date precision and source and the found date; never invent dates.
 - Before regenerating any package, read unresolved dashboard comments and pending AI requests (see `read_feedback` below) and version outputs while preserving history.
 - Never invent roles, projects, clients, metrics, dates, qualifications or contact addresses.
 - Never send email, contact a recruiter or submit an application without explicit owner approval.
 - Template defaults: a portal role renders `ats-classic` ATS Linear without photo; a verified direct-email/human-review role renders `modern-executive-sidebar` with photo; a Simplify import renders comprehensive `ats-compact-technical` with photo and is never submitted unchanged; owner overrides are respected. Route-specific rules supersede blanket headshot wording.
-- Outward email is `hameedfarah@gmail.com`; draft/auth account is `hameedo@gmail.com`; approval is internal only; availability is internal-only.
-- A verified-recipient role may receive a normal unsent Gmail draft. A portal-only role may receive a clearly labelled portal preparation draft with an empty recipient, tailored subject/body, attached application documents and the official submission link. It is not an outreach email and must never be sent until a real recipient is verified. Never guess a recipient or create a self-addressed review draft.
+- Use `hameedo@gmail.com` for outward career identity and Gmail draft ownership. Email applications attach exactly one selected CV: sidebar by default for email, ATS Linear by default for portals, with a persisted per-job owner override. Approval is internal only; availability is internal-only.
+- A verified-recipient email role may receive a normal unsent Gmail draft in `hameedo@gmail.com`. Fill To and Subject from the vacancy instructions; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach exactly one selected CV PDF. Portal-only roles remain dashboard packages with the official link and no email draft unless a genuine email route exists. Never guess a recipient or create a self-addressed review draft.
 - Do not commit runtime tracker data, generated application packages, mailbox data, live scan inputs/results, prompts, caches or secrets.
 
 ## Primary commands

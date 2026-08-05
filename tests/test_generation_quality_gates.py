@@ -57,6 +57,17 @@ def synthetic_packet(bundle: dict, *, selected: list[dict], job_id: str = "test-
         "selected_claims": selected,
         "selected_metric_claim_ids": [claim["id"] for claim in selected if claim.get("value")][:6],
         "vacancy": {"requirements": []},
+        "email_draft_policy": {
+            "account": "hameedo@gmail.com",
+            "recipient": "",
+            "recipient_source": "",
+            "expected_subject": "Abdelhamid Farah - Senior Design Manager",
+            "subject_source": "fallback",
+            "attachment_count": 1,
+            "default_resume_variant": "ats-linear",
+            "preview_override_allowed": True,
+            "attach_only_selected_resume_variant": True,
+        },
     }
 
 
@@ -81,7 +92,7 @@ def minimal_application(packet: dict, *, current: list[dict], earlier: list[dict
         "earlier_role_bullets": earlier,
         "credential_claim_ids": [],
         "cover_email": {
-            "subject": "Application - Senior Design Manager",
+            "subject": packet["email_draft_policy"]["expected_subject"],
             "body": "Dear Hiring Manager,\n\nPlease find attached my CV for the Senior Design Manager position. My background combines design governance, multidisciplinary delivery and commercial oversight across complex Saudi programmes.\n\nKind regards,\nAbdelhamid Farah",
             "claim_ids": [primary],
         },

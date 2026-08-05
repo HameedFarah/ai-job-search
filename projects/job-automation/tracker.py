@@ -50,7 +50,7 @@ CONFIDENCE = {"high", "medium", "low"}
 JSON_SECTIONS = {
     "full_job_description", "normalized_requirements", "provenance", "scoring",
     "evidence_matches", "processing_state", "generated_artifacts",
-    "gmail_draft_reference",
+    "gmail_draft_reference", "submission_package", "resume_template_override",
 }
 
 

@@ -19,7 +19,7 @@
     "version": "1.0",
     "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
     "repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-    "expected_sha256": "fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e",
+    "expected_sha256": "0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123",
     "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
     "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
     "page_limit": 2,
@@ -28,8 +28,9 @@
   },
   "identity": {
     "name": "Abdelhamid Farah",
-    "outward_email": "hameedfarah@gmail.com",
-    "authenticated_email_may_differ": true,
+    "outward_email": "hameedo@gmail.com",
+    "draft_account": "hameedo@gmail.com",
+    "authenticated_email_may_differ": false,
     "ksa_phone": "+966 53 079 6449",
     "jordan_phone": "+962 79 540 5000",
     "current_chronology_title": "District Manager",
@@ -61,15 +62,26 @@
       "joining date",
       "notice period"
     ],
-    "forbidden_characters": ["—", "–"],
+    "forbidden_characters": [
+      "—",
+      "–"
+    ],
     "max_numbers_per_bullet": 2,
     "metric_box_count": 6,
     "external_filename_pattern": "Abdelhamid_Farah_CV_{target_role}.pdf",
-    "self_review_addresses": ["hameedfarah@gmail.com", "hameedo@gmail.com"],
+    "self_review_addresses": [
+      "hameedo@gmail.com"
+    ],
     "email_requires_verified_recipient": true,
+    "email_draft_account": "hameedo@gmail.com",
+    "email_attachment_count": 1,
+    "email_subject_fallback": "Abdelhamid Farah - {post_name}",
     "portal_requires_official_url": true,
     "external_action_requires_owner_approval": true,
-    "cover_email_word_range": [100, 190]
+    "cover_email_word_range": [
+      100,
+      190
+    ]
   },
   "scoring": {
     "weights": {
@@ -93,8 +105,14 @@
     "default_adapter": "manual",
     "live_verification_required_before_generation": false,
     "explicitly_closed_roles_block_generation": true,
-    "resume_variants": ["modern-executive-sidebar", "ats-linear"],
+    "resume_variants": [
+      "modern-executive-sidebar",
+      "ats-linear"
+    ],
     "email_default_resume_variant": "modern-executive-sidebar",
+    "portal_default_resume_variant": "ats-linear",
+    "preview_template_override_allowed": true,
+    "attach_only_selected_resume_variant": true,
     "routine_calls": 1,
     "second_review_conditions": [
       "policy_failure",

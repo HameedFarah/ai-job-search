@@ -225,8 +225,12 @@ def normalize_job(payload: dict[str, Any], taxonomy: dict[str, Any]) -> dict[str
         "source": str(payload.get("source", "manual")),
         "source_url": str(payload.get("source_url", "")),
         "application_url": str(payload.get("application_url", "")),
-        "recipient": str(payload.get("recipient", "")),
-        "recipient_source": str(payload.get("recipient_source", "")),
+        "recipient": str(payload.get("recipient", "")).strip(),
+        "recipient_source": str(payload.get("recipient_source", "")).strip(),
+        "required_email_subject": str(
+            payload.get("required_email_subject", payload.get("email_subject", ""))
+        ).strip(),
+        "application_instructions": str(payload.get("application_instructions", "")).strip(),
         "live_status": live_status,
         "live_verified_at": live_verified_at,
         "live_verification_source": live_verification_source,

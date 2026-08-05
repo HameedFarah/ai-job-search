@@ -311,22 +311,57 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
                 "bundle_hash": packet.get("bundle_hash", ""),
             })
         processing_state = dict(record.get("processing_state") or {})
+        route_name = str(packet.get("application_route", {}).get("route", "unresolved"))
+        default_variant = str(
+            packet.get("email_draft_policy", {}).get(
+                "default_resume_variant",
+                "modern-executive-sidebar" if route_name == "email" else "ats-linear",
+            )
+        )
+        selected_variant = str(
+            processing_state.get("selected_resume_variant")
+            or record.get("resume_template_override")
+            or default_variant
+        )
+        if selected_variant not in {"modern-executive-sidebar", "ats-linear"}:
+            selected_variant = default_variant
+        selected_pdf_type = "final_pdf" if selected_variant == "modern-executive-sidebar" else "ats_pdf"
+        selected_docx_type = "final_docx" if selected_variant == "modern-executive-sidebar" else "ats_docx"
+        selected_pdf = next((item for item in final_artifacts if item.get("type") == selected_pdf_type), {})
+        selected_docx = next((item for item in final_artifacts if item.get("type") == selected_docx_type), {})
+        submission_package = {
+            "route": route_name,
+            "default_resume_variant": default_variant,
+            "selected_resume_variant": selected_variant,
+            "owner_override": selected_variant != default_variant,
+            "attachment_count": 1 if route_name == "email" else 0,
+            "selected_cv_pdf": selected_pdf.get("path", ""),
+            "selected_cv_pdf_sha256": selected_pdf.get("sha256", ""),
+            "selected_cv_docx": selected_docx.get("path", ""),
+            "selected_cv_docx_sha256": selected_docx.get("sha256", ""),
+            "email_account": packet.get("email_draft_policy", {}).get("account", "hameedo@gmail.com"),
+            "email_subject": packet.get("email_draft_policy", {}).get("expected_subject", ""),
+        }
+        result["submission_package"] = submission_package
         processing_state.update({
             "owner": "owner",
             "status": "awaiting_owner_approval",
             "bundle_hash": packet.get("bundle_hash", ""),
             "external_action_allowed": False,
+            "selected_resume_variant": selected_variant,
+            "submission_package": submission_package,
         })
         tracker.update_job(
             job_id,
             {
                 "owner": "owner",
                 "processing_status": "awaiting_owner_approval",
-                "next_action": "Owner reviews the final CV and explicitly approves any portal submission or email action",
+                "next_action": "Owner reviews the selected single-CV submission package and explicitly approves any portal submission or email action",
                 "processing_state": processing_state,
+                "submission_package": submission_package,
                 "generated_artifacts": existing_artifacts + final_artifacts,
             },
-            comment="Rendered and verified the final two-page application package; external action remains blocked pending explicit owner approval",
+            comment="Rendered and verified both CV variants, selected exactly one route-specific CV for submission, and kept external action blocked pending explicit owner approval",
             actor=actor,
             action="drafted",
             source_refs=[item["path"] for item in final_artifacts],

@@ -8,7 +8,7 @@
     "default_route": "portal",
     "portal": "ats-linear",
     "email": "modern-executive-sidebar",
-    "note": "Portal route packages recommend the ATS Linear PDF as the default upload; the email route (direct human review) keeps the approved Modern Executive Sidebar as recommended. Both templates are always generated and retained for every application."
+    "note": "Both templates are always generated and retained. Exactly one CV is selected per application: ATS Linear by default for portals and Modern Executive Sidebar by default for email, unless the persisted preview override selects the other variant. Email drafts attach only that selected CV PDF."
   },
   "page": "A4",
   "page_limit": 2,

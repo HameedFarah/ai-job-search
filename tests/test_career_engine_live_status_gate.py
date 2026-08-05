@@ -159,7 +159,7 @@ def test_live_job_missing_metadata_receives_warning_not_blocker(job_payload: dic
     assert state["outputs"]["generation_packet"]
 
 
-def test_scanner_counts_only_live_jobs_as_generation_candidates(engine_root: Path) -> None:
+def test_scanner_blocks_only_closed_jobs_from_generation_candidates(engine_root: Path) -> None:
     source = engine_root / "mixed-scan-input.json"
     source.write_text(json.dumps({"jobs": [live_control_job(), closed_example_job()]}), encoding="utf-8")
     report = run_scan(source, root=engine_root, scanner_id="chatgpt_scanner")

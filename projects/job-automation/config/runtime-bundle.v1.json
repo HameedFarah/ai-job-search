@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-05T20:50:21+00:00",
-  "source_hash": "d6209998e6ca3a41a45f748e170feab869a48c4bc056d59e945637a1dc8f6717",
+  "built_at": "2026-08-05T21:48:02+00:00",
+  "source_hash": "a949b7de794ecaea6a4999101422bd86c34dfce2a9ea5423c4e157f943c0109b",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "208421f2035a77ccd9b04bec4dcdf74d961b04b88bb9b1a642f3cafa118c93b0",
-      "size": 3904,
-      "modified_ns": 1785962494045117950
+      "sha256": "8603d5fa16500d22222b46953472684b13c9645976be3e9d5c5e64e85bcd06b6",
+      "size": 4276,
+      "modified_ns": 1785966398768125951
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
@@ -30,21 +30,21 @@
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
-      "sha256": "bfef1de13a6b9de9aeedd10321b4bd692dd0e5f0e740e0b107387996c3a31d1c",
-      "size": 25499,
-      "modified_ns": 1785791805801952135
+      "sha256": "3908a207de4cd9d39d805d529522467606903ca15b836d56eb54badd5f4750d4",
+      "size": 25805,
+      "modified_ns": 1785965215054076219
     },
     {
       "path": "projects/job-automation/playbooks/career-engine-application-playbook.md",
-      "sha256": "6f1f89251c52515567e1379ae6ebc110f91951840149d1d0546f2bb152860ddf",
-      "size": 27869,
-      "modified_ns": 1785863193333379689
+      "sha256": "ba92143efed9492903772b918565d819ac9f32b4d161aceb1bdb667c5ca78a47",
+      "size": 28147,
+      "modified_ns": 1785965296833911674
     },
     {
       "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
-      "sha256": "f2cf808111b080f86ad81ac75b75f2144c260c6e32016b161d2c365b46c7417d",
-      "size": 26699,
-      "modified_ns": 1785761398542383804
+      "sha256": "3fb8f2882c1e68105457fe6f63dbcf9a946cf469c2d66148f2abcb5482c2f8b5",
+      "size": 26782,
+      "modified_ns": 1785965247614023033
     },
     {
       "path": "projects/job-automation/career-metrics-bank-2026-08-03.md",
@@ -80,7 +80,7 @@
       "version": "1.0",
       "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
       "repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-      "expected_sha256": "fa23aaf25519ef527e52761c2a3c5738639e642cf9e6830593caaf6a8fd8629e",
+      "expected_sha256": "0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123",
       "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
       "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
       "page_limit": 2,
@@ -89,8 +89,9 @@
     },
     "identity": {
       "name": "Abdelhamid Farah",
-      "outward_email": "hameedfarah@gmail.com",
-      "authenticated_email_may_differ": true,
+      "outward_email": "hameedo@gmail.com",
+      "draft_account": "hameedo@gmail.com",
+      "authenticated_email_may_differ": false,
       "ksa_phone": "+966 53 079 6449",
       "jordan_phone": "+962 79 540 5000",
       "current_chronology_title": "District Manager",
@@ -130,10 +131,12 @@
       "metric_box_count": 6,
       "external_filename_pattern": "Abdelhamid_Farah_CV_{target_role}.pdf",
       "self_review_addresses": [
-        "hameedfarah@gmail.com",
         "hameedo@gmail.com"
       ],
       "email_requires_verified_recipient": true,
+      "email_draft_account": "hameedo@gmail.com",
+      "email_attachment_count": 1,
+      "email_subject_fallback": "Abdelhamid Farah - {post_name}",
       "portal_requires_official_url": true,
       "external_action_requires_owner_approval": true,
       "cover_email_word_range": [
@@ -168,6 +171,9 @@
         "ats-linear"
       ],
       "email_default_resume_variant": "modern-executive-sidebar",
+      "portal_default_resume_variant": "ats-linear",
+      "preview_template_override_allowed": true,
+      "attach_only_selected_resume_variant": true,
       "routine_calls": 1,
       "second_review_conditions": [
         "policy_failure",
@@ -546,7 +552,7 @@
       "Arabic - native",
       "English - fluent"
     ],
-    "outward_email": "hameedfarah@gmail.com",
+    "outward_email": "hameedo@gmail.com",
     "ksa_phone": "+966 53 079 6449",
     "jordan_phone": "+962 79 540 5000",
     "current_role": "District Manager",
@@ -1290,7 +1296,7 @@
     "Use a vacancy-aligned functional headline supported by evidence.",
     "Use ASCII hyphens only and never use em dashes or en dashes.",
     "Never mention availability or a joining date in external career material.",
-    "Use hameedfarah@gmail.com in outward career material.",
+    "Use hameedo@gmail.com in all outward career material and Gmail drafts.",
     "Outside Jordan show only the KSA phone. Inside Jordan show the Jordan phone first, then the KSA phone.",
     "Include the approved headshot in every CV unless explicitly overridden for one application.",
     "Keep the standard CV to exactly two pages.",
@@ -1312,10 +1318,16 @@
     "current_availability_internal_only": "2026-12-05",
     "default_cover_letter_required": false,
     "default_application_package": [
-      "tailored_cv_pdf",
+      "selected_tailored_cv_pdf",
       "cover_email_body"
-    ]
+    ],
+    "email_default_cv": "modern-executive-sidebar",
+    "portal_default_cv": "ats-linear",
+    "preview_override_allowed": true,
+    "maximum_cv_attachments_per_application": 1,
+    "gmail_account": "hameedo@gmail.com",
+    "email_subject_fallback": "Abdelhamid Farah - {post_name}"
   },
-  "bundle_hash": "c5c45cb4cb7f96dfac9e46f6c68142f22ec877f824c12b055b75da41051bdb95",
+  "bundle_hash": "972fba006c2ee831cc9380b625e2fd846ddaccc59abdac2b3c464333c331a115",
   "cache_reused": false
 }

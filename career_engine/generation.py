@@ -245,7 +245,21 @@ GENERATION_GUIDANCE = [
     "Career-wide and current-role claims (112+ projects, portfolio values, KSA team or office figures, TTW programme and governance metrics) belong in the profile, metric boxes or current-role bullets only.",
     "Earlier-role bullets must cite only Cube Architects or earlier-role evidence (cube.*, earlier.* claims); never place career totals or current-role metrics under an earlier role.",
     "Produce exactly eleven earlier-role bullets: seven distinct Cube Design Manager/Senior Architect bullets, then one each for Cube Project Architect, Creative Urban Designs, Al-Mehanya and Sigma. Cite the role-scoped claim that determines placement.",
+    "Use the exact deterministic cover-email subject supplied in email_draft_policy.expected_subject; do not rewrite or decorate it.",
 ]
+
+
+def expected_email_subject(normalized_job: dict[str, Any], bundle: dict[str, Any]) -> tuple[str, str]:
+    required = str(normalized_job.get("required_email_subject", "") or "").strip()
+    if required:
+        return required, "job_description"
+    identity = bundle.get("identity", {})
+    policy = bundle["config"]["policy"]
+    pattern = str(policy.get("email_subject_fallback", "{name} - {post_name}"))
+    subject = pattern.replace("{name}", str(identity.get("name", "Abdelhamid Farah"))).replace(
+        "{post_name}", str(normalized_job.get("role", "Position"))
+    )
+    return subject.strip(), "fallback"
 
 # Role-scope prefixes for the verified claim register. "career" and "current"
 # scopes must never be cited by an earlier-role bullet; "earlier" scopes are the
@@ -286,6 +300,15 @@ def create_generation_packet(
     selected_claims = [claims_by_id[item] for item in selected_claim_ids if item in claims_by_id]
     role = normalized_job["role"]
     filename = outward_filename(role, bundle["config"]["policy"]["external_filename_pattern"])
+    expected_subject, subject_source = expected_email_subject(normalized_job, bundle)
+    generation_config = bundle["config"]["generation"]
+    policy = bundle["config"]["policy"]
+    route_name = str(route.get("route", "unresolved"))
+    default_variant = (
+        generation_config.get("email_default_resume_variant", "modern-executive-sidebar")
+        if route_name == "email"
+        else generation_config.get("portal_default_resume_variant", "ats-linear")
+    )
     return {
         "schema_version": 1,
         "job_id": job_id,
@@ -301,6 +324,17 @@ def create_generation_packet(
         "writing_rules": bundle.get("writing_rules", []),
         "policy": bundle["config"]["policy"],
         "application_route": route,
+        "email_draft_policy": {
+            "account": policy.get("email_draft_account", bundle.get("identity", {}).get("outward_email", "")),
+            "recipient": route.get("recipient", ""),
+            "recipient_source": route.get("recipient_source", ""),
+            "expected_subject": expected_subject,
+            "subject_source": subject_source,
+            "attachment_count": int(policy.get("email_attachment_count", 1)),
+            "default_resume_variant": default_variant,
+            "preview_override_allowed": bool(generation_config.get("preview_template_override_allowed", True)),
+            "attach_only_selected_resume_variant": bool(generation_config.get("attach_only_selected_resume_variant", True)),
+        },
         "output_schema_path": "projects/job-automation/config/generated_application.schema.json",
         "output_contract": {
             "free_prose": True,
@@ -427,7 +461,15 @@ def validate_generated_application(application: dict[str, Any], packet: dict[str
     email = application.get("cover_email", {})
     if isinstance(email, dict):
         check_claims(email.get("claim_ids"), "cover_email")
-        text_fields.append((str(email.get("subject", "")), "cover_email.subject", []))
+        subject = str(email.get("subject", "")).strip()
+        expected_subject = str(packet.get("email_draft_policy", {}).get("expected_subject", "")).strip()
+        if expected_subject and subject != expected_subject:
+            findings.append({
+                "code": "email_subject_mismatch",
+                "severity": "error",
+                "message": f"cover_email.subject must exactly match the required subject: {expected_subject}",
+            })
+        text_fields.append((subject, "cover_email.subject", []))
         text_fields.append((str(email.get("body", "")), "cover_email.body", email.get("claim_ids", [])))
     else:
         findings.append({"code": "schema_type", "severity": "error", "message": "cover_email must be an object"})

@@ -495,7 +495,7 @@ def verify_pdf(pdf_path: Path, *, root: Path | None = None) -> dict[str, Any]:
     for value in bundle["config"]["policy"].get("forbidden_characters", []):
         if value in text:
             findings.append({"severity": "error", "code": "forbidden_character", "message": value})
-    required = ["Abdelhamid Farah", "hameedfarah@gmail.com", "+966 53 079 6449", "Consultant"]
+    required = ["Abdelhamid Farah", "hameedo@gmail.com", "+966 53 079 6449", "Consultant"]
     for value in required:
         if value.lower() not in text.lower():
             findings.append({"severity": "error", "code": "required_text_missing", "message": value})
@@ -1019,7 +1019,7 @@ def verify_ats_pdf(pdf_path: Path, *, root: Path | None = None, docx_path: Path 
     for value in bundle["config"]["policy"].get("forbidden_characters", []):
         if value in text:
             findings.append({"severity": "error", "code": "forbidden_character", "message": value})
-    required = ["Abdelhamid Farah", "hameedfarah@gmail.com", "+966 53 079 6449", "Consultant"]
+    required = ["Abdelhamid Farah", "hameedo@gmail.com", "+966 53 079 6449", "Consultant"]
     for value in required:
         if value.lower() not in text.lower():
             findings.append({"severity": "error", "code": "required_text_missing", "message": value})

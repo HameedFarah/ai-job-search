@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any
 
 
+CAREER_GMAIL_ACCOUNT = "hameedo@gmail.com"
+
+
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
@@ -212,6 +215,10 @@ def list_matching_drafts(query: str, *, max_results: int = 20) -> list[dict[str,
 def build_application_message(*, recipient: str, subject: str, body: str, pdf_path: Path, sender: str) -> bytes:
     if not recipient or "@" not in recipient:
         raise ValueError("A verified application recipient is required")
+    if sender.strip().lower() != CAREER_GMAIL_ACCOUNT:
+        raise ValueError(f"Career application drafts must use {CAREER_GMAIL_ACCOUNT}")
+    if not subject.strip():
+        raise ValueError("A deterministic application subject is required")
     if not pdf_path.is_file() or pdf_path.stat().st_size == 0:
         raise FileNotFoundError(pdf_path)
     message = EmailMessage()
