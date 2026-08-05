@@ -66,9 +66,39 @@ def hash_job_description(value: str) -> str:
     return hashlib.sha256(normalize_text(value).lower().encode("utf-8")).hexdigest()
 
 
+_LINKEDIN_SOURCE_ALIASES = {
+    "linkedin",
+    "linkedin-alert",
+    "linkedin-alerts",
+    "linkedin-public",
+    "linkedin-public-search",
+    "linkedin-search",
+    "gmail-linkedin-alert",
+}
+_LINKEDIN_JOB_URL_RE = re.compile(
+    r"https?://(?:[a-z]{2}\.)?(?:www\.)?linkedin\.com/jobs/view/(?:[^/?#]*-)?(?P<job_id>\d+)(?:[/?#]|$)",
+    re.IGNORECASE,
+)
+
+
+def canonical_source_identity(source: str) -> str:
+    """Return the identity namespace used for dedupe without rewriting provenance."""
+    normalized = re.sub(r"[\s_]+", "-", normalize_text(source).lower())
+    return "linkedin" if normalized in _LINKEDIN_SOURCE_ALIASES else normalized
+
+
+def canonical_url_identity(source_url: str) -> str:
+    """Normalize harmless URL variants while keeping different vacancies separate."""
+    value = normalize_text(source_url)
+    match = _LINKEDIN_JOB_URL_RE.search(value)
+    if match:
+        return f"linkedin-job:{match.group('job_id')}"
+    return value.rstrip("/")
+
+
 def stable_job_id(source: str, external_job_id: str, source_url: str, jd_hash: str) -> str:
-    identity = external_job_id.strip() or source_url.strip() or "no-external-id"
-    material = f"{source.strip().lower()}|{identity}|{jd_hash}"
+    identity = external_job_id.strip() or canonical_url_identity(source_url) or "no-external-id"
+    material = f"{canonical_source_identity(source)}|{identity}|{jd_hash}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:20]
 
 
@@ -215,9 +245,20 @@ class CareerTracker:
         self._write_rows(rows)
 
     def _find_duplicate(self, source: str, external_job_id: str, source_url: str, jd_hash: str) -> dict[str, str] | None:
+        source_identity = canonical_source_identity(source)
+        url_identity = canonical_url_identity(source_url)
         for row in self.list_rows():
-            external_match = bool(external_job_id) and row["source"] == source and row["external_job_id"] == external_job_id and row["jd_hash"] == jd_hash
-            url_match = bool(source_url) and row["source_url"] == source_url and row["jd_hash"] == jd_hash
+            external_match = (
+                bool(external_job_id)
+                and canonical_source_identity(row["source"]) == source_identity
+                and row["external_job_id"] == external_job_id
+                and row["jd_hash"] == jd_hash
+            )
+            url_match = (
+                bool(source_url)
+                and canonical_url_identity(row["source_url"]) == url_identity
+                and row["jd_hash"] == jd_hash
+            )
             if external_match or url_match:
                 return row
         return None

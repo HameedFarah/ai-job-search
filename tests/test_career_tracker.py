@@ -184,6 +184,89 @@ class CareerTrackerTests(unittest.TestCase):
         )
         self.assertEqual(set(event["after"]), {"source_job", "template_version", "renderer", "evidence_snapshot"})
 
+    def test_linkedin_source_aliases_dedupe_same_external_id_and_jd(self):
+        payload = dict(self.payload)
+        payload.update({
+            "source": "linkedin-search",
+            "external_job_id": "4448115308",
+            "source_url": "https://sa.linkedin.com/jobs/view/senior-design-manager-at-company-4448115308",
+        })
+        first = self.tracker.ingest(payload, comment="LinkedIn public discovery", actor="hermes")
+        alias = dict(payload)
+        alias.update({
+            "source": "gmail_linkedin_alert",
+            "source_url": "https://www.linkedin.com/jobs/view/4448115308/?trackingId=abc",
+        })
+        second = self.tracker.ingest(alias, comment="Same vacancy observed in Gmail alert", actor="hermes")
+        self.assertEqual(second["result"], "duplicate")
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertEqual(len(self.tracker.list_rows()), 1)
+        self.assertEqual(self.tracker.get_job(first["job_id"])["job"]["source"], "linkedin-search")
+
+    def test_linkedin_url_identity_dedupes_host_query_and_trailing_slash_variants(self):
+        payload = dict(self.payload)
+        payload.update({
+            "source": "linkedin_public",
+            "external_job_id": "",
+            "source_url": "https://sa.linkedin.com/jobs/view/design-manager-at-company-4446207898/",
+        })
+        first = self.tracker.ingest(payload, comment="LinkedIn guest vacancy", actor="hermes")
+        alias = dict(payload)
+        alias.update({
+            "source": "linkedin_alert",
+            "source_url": "https://www.linkedin.com/jobs/view/4446207898?refId=mail",
+        })
+        second = self.tracker.ingest(alias, comment="Same LinkedIn vacancy from email", actor="hermes")
+        self.assertEqual(second["result"], "duplicate")
+        self.assertEqual(second["job_id"], first["job_id"])
+
+    def test_same_linkedin_external_id_with_changed_jd_remains_distinct(self):
+        payload = dict(self.payload)
+        payload.update({
+            "source": "linkedin-search",
+            "external_job_id": "4445706477",
+            "source_url": "https://www.linkedin.com/jobs/view/4445706477",
+        })
+        first = self.tracker.ingest(payload, comment="Initial LinkedIn vacancy", actor="hermes")
+        changed = dict(payload)
+        changed.update({
+            "source": "linkedin_alert",
+            "full_job_description": payload["full_job_description"] + " Rail station experience is required.",
+        })
+        second = self.tracker.ingest(changed, comment="Materially changed vacancy description", actor="hermes")
+        self.assertEqual(first["result"], "created")
+        self.assertEqual(second["result"], "created")
+        self.assertNotEqual(second["job_id"], first["job_id"])
+        self.assertEqual(len(self.tracker.list_rows()), 2)
+
+    def test_different_linkedin_job_ids_remain_distinct(self):
+        first_payload = dict(self.payload)
+        first_payload.update({
+            "source": "linkedin-search",
+            "external_job_id": "4446207898",
+            "source_url": "https://www.linkedin.com/jobs/view/4446207898",
+        })
+        second_payload = dict(first_payload)
+        second_payload.update({
+            "source": "linkedin_alert",
+            "external_job_id": "4446210584",
+            "source_url": "https://sa.linkedin.com/jobs/view/design-interface-manager-4446210584",
+        })
+        first = self.tracker.ingest(first_payload, comment="First LinkedIn vacancy", actor="hermes")
+        second = self.tracker.ingest(second_payload, comment="Different LinkedIn vacancy", actor="hermes")
+        self.assertNotEqual(second["job_id"], first["job_id"])
+        self.assertEqual(len(self.tracker.list_rows()), 2)
+
+    def test_non_linkedin_sources_are_not_collapsed_by_source_alias_logic(self):
+        first_payload = dict(self.payload)
+        first_payload.update({"source": "greenhouse", "external_job_id": "123", "source_url": ""})
+        second_payload = dict(first_payload)
+        second_payload["source"] = "lever"
+        first = self.tracker.ingest(first_payload, comment="Greenhouse vacancy", actor="hermes")
+        second = self.tracker.ingest(second_payload, comment="Lever vacancy with same upstream id", actor="hermes")
+        self.assertNotEqual(second["job_id"], first["job_id"])
+        self.assertEqual(len(self.tracker.list_rows()), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
