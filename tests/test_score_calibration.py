@@ -225,10 +225,11 @@ def test_credible_score_without_80_is_blocked_below_threshold(engine_root: Path)
     assert "generation_packet" not in state["outputs"]
 
 
-def test_unverified_high_priority_never_generates(engine_root: Path) -> None:
+def test_unverified_high_priority_generates_with_warning(engine_root: Path) -> None:
     payload = _jd("Senior Design Manager", DESIGN_MANAGEMENT_JD, DESIGN_MANAGEMENT_JD)
     payload["live_status"] = "unverified"
     state = prepare(payload, root=engine_root, actor="system")
-    assert state["stage"] == "blocked"
-    assert any(item.startswith("not_live:unverified") for item in state["blockers"])
-    assert "generation_packet" not in state["outputs"]
+    assert state["stage"] == "generation_ready"
+    assert not state["blockers"]
+    assert "live_status_unverified:unverified" in state["warnings"]
+    assert state["outputs"]["generation_packet"]

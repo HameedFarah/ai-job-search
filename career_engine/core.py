@@ -460,15 +460,19 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
 
 
 def decide_route(normalized_job: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the preparation route independently from vacancy verification.
+
+    Verification is retained as provenance and confidence metadata, but an
+    unverified role may still be scored and prepared. A role explicitly known
+    to be closed remains blocked. External submission is governed separately
+    by owner approval and current-state checks.
+    """
     live_status = str(normalized_job.get("live_status", "unverified") or "unverified").strip().lower()
-    if live_status != "live":
+    if live_status == "closed":
         return to_data(RouteDecision(
             route="unresolved",
-            blocker=f"Vacancy is not verified as live (live_status={live_status})",
+            blocker="Vacancy is explicitly marked closed",
         ))
-    live_findings = validate_live_status(normalized_job)
-    if live_findings:
-        return to_data(RouteDecision(route="unresolved", blocker=live_findings[0]["message"]))
     recipient = normalized_job.get("recipient", "").strip()
     recipient_source = normalized_job.get("recipient_source", "").strip()
     application_url = normalized_job.get("application_url", "").strip()

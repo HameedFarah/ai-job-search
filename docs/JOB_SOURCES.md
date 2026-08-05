@@ -8,12 +8,12 @@ for which sources may be used, how they are accessed, what posting-date
 precision they support, and why blocked sources are blocked. Adapters, tests,
 probes and this document all derive from it.
 
-Scope: **discovery-only ingestion**. Nothing in this framework sends email,
-contacts a recruiter, submits an application, or writes mailbox data. Every
-probe report carries `send_or_submit: false`, and every emitted job defaults
-to `live_status: unverified` so the central Career Engine can score it but
-cannot generate application content until the live-vacancy gate is satisfied
-by an authoritative verification source.
+Scope: **discovery-only ingestion and application preparation**. Nothing in
+this framework sends email, contacts a recruiter, submits an application, or
+writes mailbox data. Every probe report carries `send_or_submit: false`, and
+every emitted job defaults to `live_status: unverified`. Verification is
+retained as source-confidence metadata but is not required for scoring or
+application preparation. Roles explicitly known to be closed remain blocked.
 
 ---
 
@@ -25,7 +25,7 @@ by an authoritative verification source.
 | Strict provenance | Every job carries `provenance` (source id/name/kind, official flag, fetched-at, extracted-from, raw id, verification note). |
 | Posting-date precision | Dates are never fabricated. Every value carries `exact \| day \| month \| unknown` plus the upstream field that produced it. |
 | Dedupe | Stable keys from external id (+ URL), falling back to a normalized (company, role, location) triple; the central tracker deduplicates again by `(source, external_job_id, source_url, jd_hash)`. |
-| Official-first | Non-official discovery candidates (search engines, inbox alerts) are never ingested as authoritative until verified against the employer's own page. |
+| Source confidence | Non-official discovery candidates retain `unverified` provenance until confirmed against an employer or ATS page, but may still be scored and prepared when they meet the 80-point threshold. |
 | Bounded probes | Per-request timeout (12s), body size caps, `--limit` job caps. `--offline` runs deterministic fixture probes with no network. |
 | No fragile scraping as core | Authenticated LinkedIn scraping, Bayt/NaukriGulf HTML scraping and Google/Bing keyed APIs are blocked or disabled sources (see §3). |
 
@@ -128,10 +128,10 @@ python3 -m career_engine.sources.cli probe --adapter greenhouse --company careem
 ```
 
 The `ingest` command runs the central scanner (`career_engine.scanner.run_scan`),
-which uses the same live-vacancy gate, scoring and no-send policy as the
-ChatGPT and Hermes scanners. Discovery-only records land as `unverified` and
-are therefore scored but blocked from generation until an owner or later scan
-verifies the vacancy against an authoritative source.
+which uses the same scoring, source-confidence and no-send policy as the
+ChatGPT and Hermes scanners. Discovery-only records land as `unverified`, are
+scored normally, and may be prepared at 80 or above while retaining a visible
+verification warning. Explicitly closed roles remain blocked.
 
 ## 6. Posting-date contract with the tracker
 

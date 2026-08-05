@@ -56,7 +56,7 @@ Repeated unchanged runs reuse stage outputs by input hash. A changed runtime bun
 
 ### Live-vacancy gate
 
-Only `live` vacancies with a verification timestamp and source may produce generation content. `closed`, `unverified` or incomplete-live records remain trackable but are blocked from generation.
+Verification is retained as confidence metadata and is not required for generation. `unverified` or incomplete-live records may be scored and prepared when they meet the threshold and have a usable route; records explicitly marked `closed` remain blocked.
 
 ### Mandatory-domain gate
 

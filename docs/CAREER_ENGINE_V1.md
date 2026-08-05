@@ -42,30 +42,27 @@ The bundle records every source hash. When a source changes, the bundle becomes 
 14. Present the package for owner approval.
 15. Send or submit only after explicit approval.
 
-## Live-vacancy gate
+## Vacancy-status confidence
 
 Every normalized job carries a `live_status` contract: `live`, `closed` or
 `unverified` (missing status defaults to `unverified`), plus optional
 `live_verified_at` and `live_verification_source`.
 
-- Only a `live` job with a non-empty verification source and timestamp may
-  receive a `generation_packet.json` or be counted as a generation candidate.
-- `closed` and `unverified` jobs are still normalized, tracked, scored and shown
-  for owner review, but are routed explicitly as unresolved with a clear blocker
-  (`not_live:<status>`). The engine never guesses that LinkedIn, Freehire or
-  email-derived jobs are live.
-- A `live` job missing verification metadata fails deterministic validation
-  (`invalid_live_metadata`) and is blocked from generation.
-- Manual or pasted jobs default to `unverified`; the owner confirms the vacancy
-  is live by supplying `live_status=live` with a verification source and
-  timestamp (for example via the `prepare --live-status` flags) before any
-  generation occurs.
+- Verification is recorded as source-confidence metadata and is not required
+  for scoring or application preparation.
+- `unverified` jobs can receive a `generation_packet.json` and become generation
+  candidates when they meet the score threshold and have a usable email or
+  portal route. The warning remains visible for owner review.
+- A `live` job missing verification metadata is prepared with an
+  `invalid_live_metadata` warning rather than a generation blocker.
+- A role explicitly marked `closed` remains blocked and unresolved.
+- Manual, pasted, alert and aggregator jobs default to `unverified`; neither
+  ChatGPT nor Hermes silently upgrades them to verified.
 
 ## Scoring calibration and generation threshold
 
-Generation eligibility is **threshold 80 (high priority) AND live
-verification**. A score of 80+ means credible generation eligibility only after
-the live-vacancy gate is satisfied; below 80 a role stays trackable but never
+Generation eligibility is **threshold 80 (high priority)**. Verification raises
+confidence but is not a prerequisite. Below 80 a role stays trackable but never
 receives a generation packet unless the owner explicitly forces one
 (`--force-weak` on prepare or an owner score override).
 

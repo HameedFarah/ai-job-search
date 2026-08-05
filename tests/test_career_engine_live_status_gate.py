@@ -96,25 +96,27 @@ def test_validate_live_status_accepts_closed_and_unverified(job_payload: dict, e
         assert validate_live_status(normalized) == []
 
 
-def test_route_gates_non_live_jobs_as_unresolved(job_payload: dict, engine_root: Path) -> None:
+def test_route_blocks_closed_but_allows_unverified_preparation(job_payload: dict, engine_root: Path) -> None:
     bundle = build_bundle(engine_root)
-    for status, expected in (("closed", "closed"), ("unverified", "unverified")):
-        payload = dict(job_payload)
-        payload["live_status"] = status
-        normalized = normalize_job(payload, bundle["taxonomy"])
-        route = decide_route(normalized, bundle)
-        assert route["route"] == "unresolved"
-        assert f"live_status={expected}" in route["blocker"]
+    closed = dict(job_payload)
+    closed["live_status"] = "closed"
+    closed_route = decide_route(normalize_job(closed, bundle["taxonomy"]), bundle)
+    assert closed_route["route"] == "unresolved"
+    assert "closed" in closed_route["blocker"].lower()
+
+    unverified = dict(job_payload)
+    unverified["live_status"] = "unverified"
+    unverified_route = decide_route(normalize_job(unverified, bundle["taxonomy"]), bundle)
+    assert unverified_route["route"] == "portal"
 
 
-def test_route_gates_live_without_metadata_as_unresolved(job_payload: dict, engine_root: Path) -> None:
+def test_route_allows_live_without_metadata_for_preparation(job_payload: dict, engine_root: Path) -> None:
     bundle = build_bundle(engine_root)
     payload = dict(job_payload)
     payload["live_status"] = "live"
     normalized = normalize_job(payload, bundle["taxonomy"])
     route = decide_route(normalized, bundle)
-    assert route["route"] == "unresolved"
-    assert "verification metadata" in route["blocker"]
+    assert route["route"] == "portal"
 
 
 def test_live_control_receives_generation_packet(engine_root: Path) -> None:
@@ -129,7 +131,7 @@ def test_live_control_receives_generation_packet(engine_root: Path) -> None:
 def test_closed_example_never_receives_generation_packet(engine_root: Path) -> None:
     state = prepare(closed_example_job(), root=engine_root, actor="system")
     assert state["stage"] == "blocked"
-    assert any(item.startswith("not_live:closed") for item in state["blockers"])
+    assert "vacancy_closed" in state["blockers"]
     assert state["route"]["route"] == "unresolved"
     assert "generation_packet" not in state["outputs"]
     assert not (engine_root / "projects/job-automation/artifacts" / state["job_id"] / "generation_packet.json").exists()
@@ -138,21 +140,23 @@ def test_closed_example_never_receives_generation_packet(engine_root: Path) -> N
     assert record["processing_state"]["live_status"] == "closed"
 
 
-def test_unverified_job_never_receives_generation_packet(job_payload: dict, engine_root: Path) -> None:
+def test_unverified_job_receives_generation_packet_with_warning(job_payload: dict, engine_root: Path) -> None:
     state = prepare(dict(job_payload), root=engine_root, actor="system")
-    assert state["stage"] == "blocked"
-    assert any(item.startswith("not_live:unverified") for item in state["blockers"])
-    assert state["route"]["route"] == "unresolved"
-    assert "generation_packet" not in state["outputs"]
+    assert state["stage"] == "generation_ready"
+    assert not state["blockers"]
+    assert "live_status_unverified:unverified" in state["warnings"]
+    assert state["route"]["route"] == "portal"
+    assert state["outputs"]["generation_packet"]
 
 
-def test_live_job_missing_metadata_is_blocked(job_payload: dict, engine_root: Path) -> None:
+def test_live_job_missing_metadata_receives_warning_not_blocker(job_payload: dict, engine_root: Path) -> None:
     payload = dict(job_payload)
     payload["live_status"] = "live"
     state = prepare(payload, root=engine_root, actor="system")
-    assert state["stage"] == "blocked"
-    assert any(item.startswith("invalid_live_metadata:") for item in state["blockers"])
-    assert "generation_packet" not in state["outputs"]
+    assert state["stage"] == "generation_ready"
+    assert not state["blockers"]
+    assert any(item.startswith("invalid_live_metadata:") for item in state["warnings"])
+    assert state["outputs"]["generation_packet"]
 
 
 def test_scanner_counts_only_live_jobs_as_generation_candidates(engine_root: Path) -> None:
@@ -169,7 +173,7 @@ def test_scanner_counts_only_live_jobs_as_generation_candidates(engine_root: Pat
 
 
 @pytest.mark.parametrize("scanner_id", ["chatgpt_scanner", "hermes_scanner"])
-def test_scanner_identity_cannot_bypass_unverified_gate(scanner_id: str, engine_root: Path) -> None:
+def test_scanner_identity_preserves_unverified_warning(scanner_id: str, engine_root: Path) -> None:
     live = live_control_job()
     unverified = deepcopy(live)
     unverified["company"] = "Acme Unverified Control"
@@ -187,9 +191,8 @@ def test_scanner_identity_cannot_bypass_unverified_gate(scanner_id: str, engine_
 
     assert report["scanner_id"] == scanner_id
     assert len(report["results"]) == 2
-    assert len(report["generation_candidates"]) == 1
-    assert report["generation_candidates"][0]["live_status"] == "live"
-    blocked = next(item for item in report["results"] if item["live_status"] == "unverified")
-    assert blocked["job_id"] != report["generation_candidates"][0]["job_id"]
-    assert blocked["generation_packet"] == ""
-    assert "not_live:unverified" in blocked["blockers"]
+    assert len(report["generation_candidates"]) == 2
+    unverified_summary = next(item for item in report["results"] if item["live_status"] == "unverified")
+    assert unverified_summary["generation_packet"]
+    assert not unverified_summary["blockers"]
+    assert "live_status_unverified:unverified" in unverified_summary["warnings"]

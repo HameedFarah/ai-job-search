@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-05T18:49:20+00:00",
-  "source_hash": "0a7f131801c013a89408c8289b08d91d9c048058c755094cd309030955e5aea3",
+  "built_at": "2026-08-05T20:50:21+00:00",
+  "source_hash": "d6209998e6ca3a41a45f748e170feab869a48c4bc056d59e945637a1dc8f6717",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "5f2e1a3a614c83dd975d05d7f5c64f601bfe1da878d9c5b0c68e2d725b01b9e3",
-      "size": 3660,
-      "modified_ns": 1785955726183514761
+      "sha256": "208421f2035a77ccd9b04bec4dcdf74d961b04b88bb9b1a642f3cafa118c93b0",
+      "size": 3904,
+      "modified_ns": 1785962494045117950
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
@@ -161,6 +161,13 @@
     },
     "generation": {
       "default_adapter": "manual",
+      "live_verification_required_before_generation": false,
+      "explicitly_closed_roles_block_generation": true,
+      "resume_variants": [
+        "modern-executive-sidebar",
+        "ats-linear"
+      ],
+      "email_default_resume_variant": "modern-executive-sidebar",
       "routine_calls": 1,
       "second_review_conditions": [
         "policy_failure",
@@ -1309,6 +1316,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "f00b67e152476dc2e609c7fbc1edb8beec091f7d331716e77918c9401104a5e8",
+  "bundle_hash": "c5c45cb4cb7f96dfac9e46f6c68142f22ec877f824c12b055b75da41051bdb95",
   "cache_reused": false
 }

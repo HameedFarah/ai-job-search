@@ -10,7 +10,7 @@ from .bundle import load_bundle
 from .config import load_config
 from .core import decide_route, match_evidence, normalize_job, score_fit, validate_live_status
 from .generation import create_generation_packet, export_packet, validate_generated_application
-from .renderer import render_and_verify
+from .renderer import render_and_verify, render_ats_and_verify
 from .safety import reject_fixture_payload
 
 
@@ -120,17 +120,20 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     reused["route"] = cache
 
     blockers: list[str] = []
+    warnings: list[str] = []
     live_status = normalized.get("live_status", "unverified")
-    if live_status != "live":
-        blockers.append(f"not_live:{live_status}")
+    if live_status == "closed":
+        blockers.append("vacancy_closed")
+    elif live_status != "live":
+        warnings.append(f"live_status_unverified:{live_status}")
     live_errors = [item["message"] for item in validate_live_status(normalized)]
     if live_errors:
-        blockers.append("invalid_live_metadata:" + "; ".join(live_errors))
-    # Threshold 80 (high_priority) is the credible-generation threshold: a
-    # role only becomes generation-eligible when it scores 80+ AND is
-    # live-verified. Credible (65-79) and selective (50-64) roles remain
-    # trackable but do not receive generation packets unless the owner
-    # explicitly forces a package (force_weak / owner override).
+        warnings.append("invalid_live_metadata:" + "; ".join(live_errors))
+    # Threshold 80 (high_priority) is the credible-generation threshold.
+    # Verification affects confidence and later external-action checks, but it
+    # is not required to score or prepare an application package. Roles known
+    # to be closed remain blocked. Credible (65-79) and selective (50-64)
+    # roles remain trackable unless the owner explicitly forces a package.
     threshold = config["scoring"]["thresholds"]["high_priority"]
     if score["total"] < threshold and not force_weak:
         blockers.append(f"below_generation_threshold:{score['total']}")
@@ -155,10 +158,6 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
         if stale_packet.exists():
             stale_packet.unlink()
         reused["generation_packet"] = False
-    live_gate_blocked = any(
-        item.startswith("not_live:") or item.startswith("invalid_live_metadata:")
-        for item in blockers
-    )
     tracker.update_job(
         job_id,
         {
@@ -175,14 +174,15 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
                 "live_status": live_status,
                 "route": route,
                 "blockers": blockers,
+                "warnings": warnings,
             },
             "generated_artifacts": [
                 {"type": name, "path": path_value, "bundle_hash": bundle["bundle_hash"]}
                 for name, path_value in outputs.items()
             ],
             "next_action": (
-                "Owner confirms the vacancy is live (verification source and timestamp) before generation"
-                if live_gate_blocked
+                "Generate one structured application draft; retain verification warning for owner review"
+                if not blockers and warnings
                 else ("Generate one structured application draft" if not blockers else "Resolve blockers before generation")
             ),
         },
@@ -199,6 +199,7 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
         "fit_score": score,
         "route": route,
         "blockers": blockers,
+        "warnings": warnings,
         "outputs": outputs,
         "cache_reused": reused,
     }
@@ -260,6 +261,14 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
     application = json.loads(application_path.read_text(encoding="utf-8"))
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
     result = render_and_verify(job_id, application, packet, root=root)
+    ats_result = (
+        render_ats_and_verify(job_id, application, packet, root=root)
+        if result.get("valid")
+        else {"valid": False, "blocker": "sidebar_render_failed"}
+    )
+    result["sidebar_valid"] = bool(result.get("valid"))
+    result["ats"] = ats_result
+    result["valid"] = bool(result.get("sidebar_valid") and ats_result.get("valid"))
     tracker = _load_tracker(paths)
     record = tracker.get_job(job_id)
     existing_artifacts = list(record.get("generated_artifacts", []))
@@ -270,6 +279,7 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
         if docx.get("docx"):
             final_artifacts.append({
                 "type": "final_docx",
+                "variant": "modern-executive-sidebar",
                 "path": docx["docx"],
                 "sha256": docx.get("sha256", ""),
                 "bundle_hash": packet.get("bundle_hash", ""),
@@ -277,8 +287,27 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
         if verification.get("pdf"):
             final_artifacts.append({
                 "type": "final_pdf",
+                "variant": "modern-executive-sidebar",
                 "path": verification["pdf"],
                 "sha256": verification.get("sha256", ""),
+                "bundle_hash": packet.get("bundle_hash", ""),
+            })
+        ats_docx = ats_result.get("docx", {})
+        ats_verification = ats_result.get("verification", {})
+        if ats_docx.get("docx"):
+            final_artifacts.append({
+                "type": "ats_docx",
+                "variant": "ats-linear",
+                "path": ats_docx["docx"],
+                "sha256": ats_docx.get("sha256", ""),
+                "bundle_hash": packet.get("bundle_hash", ""),
+            })
+        if ats_verification.get("pdf"):
+            final_artifacts.append({
+                "type": "ats_pdf",
+                "variant": "ats-linear",
+                "path": ats_verification["pdf"],
+                "sha256": ats_verification.get("sha256", ""),
                 "bundle_hash": packet.get("bundle_hash", ""),
             })
         processing_state = dict(record.get("processing_state") or {})

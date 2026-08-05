@@ -123,14 +123,26 @@ def test_finalize_render_moves_tracker_to_owner_approval(
 
     final_docx = packet_path.parent / "Abdelhamid_Farah_CV_Test.docx"
     final_pdf = packet_path.parent / "Abdelhamid_Farah_CV_Test.pdf"
+    ats_docx = packet_path.parent / "Abdelhamid_Farah_CV_Test_ATS.docx"
+    ats_pdf = packet_path.parent / "Abdelhamid_Farah_CV_Test_ATS.pdf"
     final_docx.write_bytes(b"docx")
     final_pdf.write_bytes(b"pdf")
+    ats_docx.write_bytes(b"ats-docx")
+    ats_pdf.write_bytes(b"ats-pdf")
     monkeypatch.setattr(
         "career_engine.pipeline.render_and_verify",
         lambda *args, **kwargs: {
             "valid": True,
             "docx": {"docx": str(final_docx), "sha256": "docx-sha"},
             "verification": {"pdf": str(final_pdf), "sha256": "pdf-sha", "valid": True},
+        },
+    )
+    monkeypatch.setattr(
+        "career_engine.pipeline.render_ats_and_verify",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "docx": {"docx": str(ats_docx), "sha256": "ats-docx-sha"},
+            "verification": {"pdf": str(ats_pdf), "sha256": "ats-pdf-sha", "valid": True},
         },
     )
 

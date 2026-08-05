@@ -275,7 +275,7 @@ def test_route_requires_verified_real_recipient_or_portal(engine_root: Path) -> 
     base = {"recipient": "", "recipient_source": "", "application_url": "https://example.com/apply", **live_fields}
     assert decide_route(base, bundle)["route"] == "portal"
     unverified = {"recipient": "", "recipient_source": "", "application_url": "https://example.com/apply", "live_status": "unverified"}
-    assert decide_route(unverified, bundle)["route"] == "unresolved"
+    assert decide_route(unverified, bundle)["route"] == "portal"
     self_address = {"recipient": "hameedfarah@gmail.com", "recipient_source": "vacancy", "application_url": "", **live_fields}
     assert decide_route(self_address, bundle)["route"] == "unresolved"
     missing_source = {"recipient": "jobs@example.com", "recipient_source": "", "application_url": "", **live_fields}

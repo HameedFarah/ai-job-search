@@ -148,8 +148,9 @@ def test_realistic_discovery_output_is_scorable_by_the_central_engine(engine_roo
     assert scan["send_or_submit"] is False
     assert len(scan["results"]) == 1
     assert scan["results"][0]["live_status"] == "unverified"
-    assert scan["results"][0]["generation_packet"] == ""
-    assert scan["results"][0]["blockers"]
+    assert scan["results"][0]["generation_packet"]
+    assert not scan["results"][0]["blockers"]
+    assert "live_status_unverified:unverified" in scan["results"][0]["warnings"]
 
 
 def test_probe_dedupe_key_stable_across_scanner_and_store() -> None:

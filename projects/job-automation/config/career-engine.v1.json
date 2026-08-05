@@ -91,6 +91,10 @@
   },
   "generation": {
     "default_adapter": "manual",
+    "live_verification_required_before_generation": false,
+    "explicitly_closed_roles_block_generation": true,
+    "resume_variants": ["modern-executive-sidebar", "ats-linear"],
+    "email_default_resume_variant": "modern-executive-sidebar",
     "routine_calls": 1,
     "second_review_conditions": [
       "policy_failure",

@@ -61,6 +61,7 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
             "recommendation": state["fit_score"]["recommendation"],
             "route": state["route"],
             "blockers": state["blockers"],
+            "warnings": state.get("warnings", []),
             "generation_packet": state["outputs"].get("generation_packet", ""),
         }
         report["results"].append(summary)
