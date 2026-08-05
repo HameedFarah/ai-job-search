@@ -84,12 +84,107 @@ def outward_filename(role: str, pattern: str) -> str:
     return pattern.format(target_role=slug(concise_role))
 
 
+_INLINE_HEADING_ALIASES: dict[str, tuple[str, ...]] = {
+    "responsibilities": ("your key duties", "key duties", "what you will be doing"),
+    "mandatory": (
+        "your skills and experience",
+        "skills and experience",
+        "experience and qualifications",
+        "about you",
+    ),
+    "preferred": ("preferred qualifications", "nice-to-have"),
+}
+_MARKETING_HEADINGS = (
+    "what we offer",
+    "what we offer you",
+    "why join us",
+    "benefits",
+    "about the company",
+    "about us",
+    "equal opportunity",
+    "a place for everyone",
+    "apply today",
+)
+_CLAUSE_STARTERS = (
+    "lead", "manage", "oversee", "provide", "review", "support", "develop",
+    "define", "evaluate", "conduct", "create", "write", "liaise", "prepare",
+    "maintain", "ensure", "coordinate", "facilitate", "identify", "establish",
+    "promote", "direct", "monitor", "deliver", "drive", "mentor", "advise",
+    "leading", "management of", "overseeing",
+)
+
+
 def _heading_kind(line: str, headings: dict[str, list[str]]) -> str | None:
     cleaned = line.lower().strip(" :")
     for kind, values in headings.items():
         if cleaned in values:
             return kind
+    for kind, values in _INLINE_HEADING_ALIASES.items():
+        if cleaned in values:
+            return kind
     return None
+
+
+def _requirement_lines(text: str, headings: dict[str, list[str]]) -> list[str]:
+    """Restore structural boundaries for flattened JDs without changing JD text."""
+    original = text.splitlines()
+    nonempty = [line for line in original if line.strip()]
+    flattened = len(nonempty) <= 3 and any(len(line) >= 400 for line in nonempty)
+    if not flattened:
+        return original
+
+    heading_map: dict[str, str] = {}
+    for kind, values in headings.items():
+        for value in values:
+            heading_map[value.lower().strip(" :")] = kind
+    for kind, values in _INLINE_HEADING_ALIASES.items():
+        for value in values:
+            heading_map[value] = kind
+
+    markers = sorted(set(heading_map) | set(_MARKETING_HEADINGS), key=len, reverse=True)
+    marker_pattern = re.compile(
+        r"(?<![A-Za-z0-9])(" + "|".join(re.escape(item) for item in markers) + r")(?:\s*:)?(?=\s|$)",
+        re.IGNORECASE,
+    )
+    expanded: list[str] = []
+    for raw in original:
+        if len(raw) < 400:
+            expanded.append(raw)
+            continue
+        cursor = 0
+        for match in marker_pattern.finditer(raw):
+            before = raw[cursor:match.start()].strip()
+            if before:
+                expanded.append(before)
+            expanded.append(match.group(1).strip())
+            cursor = match.end()
+        tail = raw[cursor:].strip()
+        if tail:
+            expanded.append(tail)
+
+    output: list[str] = []
+    stop = False
+    sentence_boundary = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+    starter_boundary = re.compile(
+        r"\s+(?=(?:" + "|".join(re.escape(item) for item in _CLAUSE_STARTERS) + r")\b)",
+        re.IGNORECASE,
+    )
+    for raw in expanded:
+        cleaned = raw.strip()
+        low = cleaned.lower().strip(" :")
+        if low in _MARKETING_HEADINGS:
+            stop = True
+            continue
+        if stop:
+            continue
+        if low in heading_map:
+            output.append(cleaned)
+            continue
+        for part in sentence_boundary.split(cleaned):
+            part = part.strip()
+            subparts = starter_boundary.split(part) if len(part) >= 320 else [part]
+            output.extend(item.strip(" ;") for item in subparts if len(item.strip(" ;")) >= 8)
+    return output
 
 
 def _terms(text: str, aliases: dict[str, list[str]]) -> list[str]:
@@ -176,7 +271,7 @@ def normalize_job(payload: dict[str, Any], taxonomy: dict[str, Any]) -> dict[str
     section = "responsibilities"
     buckets: dict[str, list[str]] = {"responsibilities": [], "mandatory": [], "preferred": []}
     ambiguous: list[str] = []
-    for raw in text.splitlines():
+    for raw in _requirement_lines(text, headings):
         kind = _heading_kind(raw, headings)
         if kind:
             section = kind
