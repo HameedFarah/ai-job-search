@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "template_id": "ats-linear",
+  "version": "1.0",
+  "effective_date": "2026-08-04",
+  "description": "Single-column, ATS-optimized linear resume. No sidebar, headshot, tables, text boxes, floating objects or columns. Conventional section headings, standard bullets, readable fonts and fully selectable/searchable text. Every factual sentence is claim-cited generated content or a verified fact already carried by the approved Modern Executive Sidebar template and the canonical Vault profile.",
+  "route_recommendation": {
+    "default_route": "portal",
+    "portal": "ats-linear",
+    "email": "modern-executive-sidebar",
+    "note": "Portal route packages recommend the ATS Linear PDF as the default upload; the email route (direct human review) keeps the approved Modern Executive Sidebar as recommended. Both templates are always generated and retained for every application."
+  },
+  "page": "A4",
+  "page_limit": 2,
+  "page_limit_note": "ATS integrity and complete relevant chronology take precedence over forcing the page count; a 3-page result is accepted with a warning finding.",
+  "headshot_required": false,
+  "body_alignment": "left",
+  "body_alignment_note": "Deliberate ATS-optimization deviation from the global justified-body writing rule; left alignment avoids the uneven inter-word spacing that some ATS parsers mis-read.",
+  "fonts": {
+    "name": "Calibri",
+    "name_size_pt": 17,
+    "contact_size_pt": 10,
+    "headline_size_pt": 11.5,
+    "section_heading_size_pt": 11.5,
+    "role_title_size_pt": 11,
+    "role_meta_size_pt": 10,
+    "body_size_pt": 10.5,
+    "bullet_size_pt": 10.5
+  },
+  "margins_cm": {
+    "top": 1.3,
+    "bottom": 1.3,
+    "left": 1.7,
+    "right": 1.7
+  },
+  "section_headings": [
+    "PROFESSIONAL SUMMARY",
+    "PROFESSIONAL EXPERIENCE",
+    "EDUCATION",
+    "PROFESSIONAL CREDENTIALS",
+    "LANGUAGES"
+  ],
+  "ats_safe_guarantees": {
+    "one_column": true,
+    "no_sidebar": true,
+    "no_headshot": true,
+    "no_tables": true,
+    "no_text_boxes": true,
+    "no_floating_objects": true,
+    "no_images": true,
+    "selectable_text": true,
+    "standard_bullets": true
+  },
+  "content_sources": {
+    "name_and_contact": "generation_packet.identity (professional_name, location, ksa_phone, outward_email) + approved template LinkedIn handle linkedin.com/in/abd-farah",
+    "headline": "generated_application.headline (LLM vacancy-tailored, claim-cited)",
+    "profile": "generated_application.leadership_profile.text (claim-cited)",
+    "current_role_bullets": "generated_application.current_role_bullets (7, claim-cited)",
+    "earlier_role_bullets": "generated_application.earlier_role_bullets (11, claim-cited)",
+    "career_chronology": "generation_packet.career_chronology (verified employers, titles, locations, dates)",
+    "education": "verified_sections.education below - mirrors approved executive template and verified-career-profile-2026-08-01.md",
+    "credentials": "verified_sections.credentials below - mirrors approved executive template and verified-career-profile-2026-08-01.md",
+    "languages_nationality": "generation_packet.identity (languages, nationalities)"
+  },
+  "verified_sections": {
+    "education": [
+      {
+        "degree": "Global Master's in Construction Project Management",
+        "institution": "Zigurat Institute / Barcelona University, Spain",
+        "year": "2022"
+      },
+      {
+        "degree": "Master of Business Administration (MBA), GPA 3.93/4.00, with honors",
+        "institution": "New York Institute of Technology, USA",
+        "year": "2010"
+      },
+      {
+        "degree": "Bachelor of Science in Architectural Engineering, GPA 3.14/4.00",
+        "institution": "University of Jordan, Jordan",
+        "year": "2004"
+      }
+    ],
+    "credentials": [
+      "Saudi Council of Engineers (SCE): Consultant (مستشار) classification, Architectural Engineering, valid to Nov 2027",
+      "Contracts Management Professional (CMP), Engineers Training Center",
+      "Engineering Consultant for Off-Plan Sales Projects, Saudi Real Estate Institute",
+      "Jordanian Engineers Association (JEA): Member"
+    ]
+  },
+  "outward_filename_pattern": "Abdelhamid_Farah_CV_<Target_Role>_ATS.pdf/.docx"
+}

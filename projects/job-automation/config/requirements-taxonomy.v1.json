@@ -84,5 +84,11 @@
     "background in",
     "expertise in",
     "deep understanding"
-  ]
+  ],
+  "specialization": {
+    "design_lane_terms": ["design", "architect", "architecture", "architectural", "technical", "station", "landscape", "public realm", "urban", "interior", "masterplan", "compliance", "governance"],
+    "out_of_lane_terms": ["planner", "planning", "planning engineer", "scheduling", "schedule manager", "project engineer", "engineering manager", "site engineer", "process engineer", "civil engineer", "structural engineer", "mechanical engineer", "electrical engineer", "estimator", "quantity surveyor", "cost engineer", "theming", "smart city", "software", "developer", "analyst", "strategy", "strategic", "data scientist", "accountant", "finance", "marketing", "sales", "legal counsel"],
+    "production_terms": ["architect", "designer", "planner", "engineer", "coordinator", "technician", "drafter", "consultant", "specialist", "associate", "analyst", "architectural designer"],
+    "junior_terms": ["junior", "graduate", "intern", "entry-level", "entry level", "assistant"]
+  }
 }

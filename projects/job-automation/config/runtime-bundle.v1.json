@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-03T23:45:48+00:00",
-  "source_hash": "b6692e7df98fd9cedbc1e841923af2504735ba4063f8a62875e588271ccfba96",
+  "built_at": "2026-08-05T18:49:20+00:00",
+  "source_hash": "0a7f131801c013a89408c8289b08d91d9c048058c755094cd309030955e5aea3",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "b555c44e3205154db7334e8fed65330ab576555b88b537f2c9f1474f2928e7e6",
+      "sha256": "5f2e1a3a614c83dd975d05d7f5c64f601bfe1da878d9c5b0c68e2d725b01b9e3",
       "size": 3660,
-      "modified_ns": 1785784267517947471
+      "modified_ns": 1785955726183514761
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "46a7801a2466993f8eb77d61305b2a7c44952c0773681c353a2e7ee9746e856e",
-      "size": 4901,
-      "modified_ns": 1785791030097166831
+      "sha256": "1c8dab244f84936864c9ad15458dd64ab545352207366347661d01088f7a996e",
+      "size": 5906,
+      "modified_ns": 1785955639499629862
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -36,9 +36,9 @@
     },
     {
       "path": "projects/job-automation/playbooks/career-engine-application-playbook.md",
-      "sha256": "3e9da29f27df4287502b12154a81de1f332df306e03fce77b776697deab9ec62",
-      "size": 27837,
-      "modified_ns": 1785800709064301231
+      "sha256": "6f1f89251c52515567e1379ae6ebc110f91951840149d1d0546f2bb152860ddf",
+      "size": 27869,
+      "modified_ns": 1785863193333379689
     },
     {
       "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
@@ -171,7 +171,7 @@
       "free_prose_required": true
     },
     "daily_scanner": {
-      "minimum_score_for_generation": 65,
+      "minimum_score_for_generation": 80,
       "maximum_generation_packets_per_scan": 5,
       "send_or_submit": false,
       "provider": "opencode-go",
@@ -456,7 +456,77 @@
       "background in",
       "expertise in",
       "deep understanding"
-    ]
+    ],
+    "specialization": {
+      "design_lane_terms": [
+        "design",
+        "architect",
+        "architecture",
+        "architectural",
+        "technical",
+        "station",
+        "landscape",
+        "public realm",
+        "urban",
+        "interior",
+        "masterplan",
+        "compliance",
+        "governance"
+      ],
+      "out_of_lane_terms": [
+        "planner",
+        "planning",
+        "planning engineer",
+        "scheduling",
+        "schedule manager",
+        "project engineer",
+        "engineering manager",
+        "site engineer",
+        "process engineer",
+        "civil engineer",
+        "structural engineer",
+        "mechanical engineer",
+        "electrical engineer",
+        "estimator",
+        "quantity surveyor",
+        "cost engineer",
+        "theming",
+        "smart city",
+        "software",
+        "developer",
+        "analyst",
+        "strategy",
+        "strategic",
+        "data scientist",
+        "accountant",
+        "finance",
+        "marketing",
+        "sales",
+        "legal counsel"
+      ],
+      "production_terms": [
+        "architect",
+        "designer",
+        "planner",
+        "engineer",
+        "coordinator",
+        "technician",
+        "drafter",
+        "consultant",
+        "specialist",
+        "associate",
+        "analyst",
+        "architectural designer"
+      ],
+      "junior_terms": [
+        "junior",
+        "graduate",
+        "intern",
+        "entry-level",
+        "entry level",
+        "assistant"
+      ]
+    }
   },
   "identity": {
     "professional_name": "Abdelhamid Farah",
@@ -1239,6 +1309,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "67995a223e3362c5ed3bc7501d393294e6575b945eb2706ac4bc452598f27972",
+  "bundle_hash": "f00b67e152476dc2e609c7fbc1edb8beec091f7d331716e77918c9401104a5e8",
   "cache_reused": false
 }

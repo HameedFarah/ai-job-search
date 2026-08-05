@@ -114,7 +114,10 @@ Requirements
 """
     state = prepare(unrelated, root=engine_root, actor="system")
     assert state["stage"] == "blocked"
-    assert any(item.startswith("weak_fit:") for item in state["blockers"])
+    assert any(
+        item.startswith("weak_fit:") or item.startswith("below_generation_threshold:")
+        for item in state["blockers"]
+    )
     assert "generation_packet" not in state["outputs"]
 
 

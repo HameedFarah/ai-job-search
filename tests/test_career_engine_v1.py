@@ -31,6 +31,7 @@ def engine_root(tmp_path: Path) -> Path:
         "generated_application.schema.json",
         "runtime-bundle.schema.json",
         "evidence-index.v1.json",
+        "ats-linear-template.v1.json",
     ):
         shutil.copy2(REPO / "projects/job-automation/config" / name, config_dir / name)
     config_path = config_dir / "career-engine.v1.json"

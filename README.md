@@ -382,7 +382,7 @@ Hard controls include:
 - closed or unverified vacancies cannot generate application content;
 - mandatory domain requirements require direct claim-level evidence;
 - unsupported claims, altered chronology, prohibited names and availability wording are rejected;
-- email requires a verified real recipient; portal-only roles create no Gmail draft;
+- normal email drafts require a verified real recipient; portal-only roles may receive a clearly labelled preparation draft with an empty recipient, attached package and official submission link, but it must never be sent;
 - no email is sent and no portal is submitted without explicit owner approval;
 - runtime tracker data, generated applications, mailbox data, scanner inputs/results, prompts, caches and secrets are excluded from source control.
 

@@ -54,6 +54,15 @@ class FitScore:
     strengths: list[str]
     gaps: list[str]
     adjustment_ceiling: int
+    # Deterministic engine score before any human override. Equal to ``total``
+    # until an owner override is applied; overrides are recorded separately in
+    # ``human_override`` so the raw evidence-based score is never lost.
+    raw_total: int = 0
+    # Calibration transparency: specialization/seniority title signals and the
+    # mismatch multiplier that suppress materially mismatched roles. Adjacent
+    # senior design-management roles always carry multiplier 1.0.
+    calibration: dict[str, Any] = field(default_factory=dict)
+    human_override: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

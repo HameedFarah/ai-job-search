@@ -32,6 +32,36 @@ The tracker may record and prepare applications, generate PDFs and create Gmail 
 
 ## CLI examples
 
+Central engine commands (verified against `career_engine/cli.py`; run from the repository root). Scanners, ChatGPT, Hermes, the daily scanner and skills must use the central engine and shared tracker only:
+
+```bash
+./career-engine doctor
+./career-engine bundle status
+./career-engine bundle build
+./career-engine bundle validate
+./career-engine scanner ingest --file <jobs.json> --scanner-id chatgpt_scanner
+./career-engine scanner ingest --file <jobs.json> --scanner-id hermes_scanner
+./career-engine prepare --jd-file <job.txt> --company <company> --role <role> --application-url <url> --live-status live --live-verified-at <timestamp> --live-verification-source <source>
+./career-engine status --job-id <id>
+./career-engine score --job-id <id>
+./career-engine route --job-id <id>
+./career-engine generate export --job-id <id>
+./career-engine generate import --job-id <id> --file <json>
+./career-engine validate --job-id <id>
+./career-engine render --job-id <id>
+./career-engine render-ats --job-id <id>
+./career-engine render-ats-options --job-id <id> [--out-dir <dir>]
+./career-engine package --job-id <id>
+```
+
+Before regenerating any package, read unresolved dashboard comments and pending AI requests:
+
+```bash
+node /home/hameedo/websites/career-review/scripts/read_feedback.js [role-key] [--pending-only]
+```
+
+Tracker CLI:
+
 ```bash
 python3 projects/job-automation/tracker.py ingest \
   --actor chatgpt \

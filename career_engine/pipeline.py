@@ -122,9 +122,14 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     live_errors = [item["message"] for item in validate_live_status(normalized)]
     if live_errors:
         blockers.append("invalid_live_metadata:" + "; ".join(live_errors))
-    threshold = config["scoring"]["thresholds"]["selective"]
+    # Threshold 80 (high_priority) is the credible-generation threshold: a
+    # role only becomes generation-eligible when it scores 80+ AND is
+    # live-verified. Credible (65-79) and selective (50-64) roles remain
+    # trackable but do not receive generation packets unless the owner
+    # explicitly forces a package (force_weak / owner override).
+    threshold = config["scoring"]["thresholds"]["high_priority"]
     if score["total"] < threshold and not force_weak:
-        blockers.append(f"weak_fit:{score['total']}")
+        blockers.append(f"below_generation_threshold:{score['total']}")
     if route["route"] == "unresolved":
         blockers.append("route_unresolved:" + route.get("blocker", ""))
 

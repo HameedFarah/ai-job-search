@@ -10,7 +10,7 @@ from .bundle import build_bundle, bundle_status, load_bundle
 from .config import load_config, validate_required_files
 from .generation import run_adapter
 from .pipeline import finalize_render, import_generated, prepare, read_stage, status
-from .renderer import build_render_input
+from .renderer import ats_template_status, build_render_input, render_ats_and_verify, render_ats_design_options, render_tooling
 from .scanner import run_scan, write_report
 from .template import install_from_transfer, status as template_status, sync_copies
 
@@ -115,6 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
     score = sub.add_parser("score")
     add_common(score)
     score.add_argument("--job-id", required=True)
+    score.add_argument("--override", type=int, default=None, help="Owner score override (0-100); raw engine score is preserved")
+    score.add_argument("--reason", default="", help="Required reason when --override is used")
+    score.add_argument("--actor", choices=("chatgpt", "hermes", "owner", "system"), default="owner")
 
     route = sub.add_parser("route")
     add_common(route)
@@ -145,6 +148,15 @@ def build_parser() -> argparse.ArgumentParser:
     render = sub.add_parser("render")
     add_common(render)
     render.add_argument("--job-id", required=True)
+
+    render_ats = sub.add_parser("render-ats")
+    add_common(render_ats)
+    render_ats.add_argument("--job-id", required=True)
+
+    render_ats_options = sub.add_parser("render-ats-options")
+    add_common(render_ats_options)
+    render_ats_options.add_argument("--job-id", required=True)
+    render_ats_options.add_argument("--out-dir", default="")
 
     package = sub.add_parser("package")
     add_common(package)
@@ -180,12 +192,76 @@ def _generation_packet(job_id: str) -> dict[str, Any]:
     return json.loads(packet.read_text(encoding="utf-8"))
 
 
-def _cmd_score(job_id: str) -> dict[str, Any]:
+def _cmd_score(job_id: str, *, override: int | None = None, reason: str = "", actor: str = "owner") -> dict[str, Any]:
     artifact_dir = _artifact_dir(job_id)
     if not (artifact_dir / "fit_score.json").is_file():
         return {"job_id": job_id, "reason": "job_not_prepared"}
     fit_score = read_stage(artifact_dir, "fit_score")
-    return {"job_id": job_id, "fit_score": fit_score}
+    if override is None:
+        return {"job_id": job_id, "fit_score": fit_score}
+    return _apply_score_override(job_id, fit_score, override, reason, actor)
+
+
+def _recommendation_for(total: int, config: dict[str, Any]) -> str:
+    thresholds = config["scoring"]["thresholds"]
+    if total >= thresholds["high_priority"]:
+        return "high_priority"
+    if total >= thresholds["credible"]:
+        return "credible"
+    if total >= thresholds["selective"]:
+        return "selective"
+    return "weak"
+
+
+def _apply_score_override(job_id: str, fit_score: dict[str, Any], override: int, reason: str, actor: str) -> dict[str, Any]:
+    """Record an owner score override while preserving the raw engine score.
+
+    The deterministic raw score (``raw_total``) is never lost: it is written
+    into ``scoring.raw_total`` and the override into ``scoring.human_override``
+    with reason, actor and timestamp. The effective ``total``, CSV fit_score and
+    priority reflect the override. An append-only event records before/after.
+    """
+    from .pipeline import _load_tracker
+    from .config import load_config
+
+    if not (reason or "").strip():
+        raise ValueError("A human score override requires a reason")
+    if not 0 <= int(override) <= 100:
+        raise ValueError("Override score must be between 0 and 100")
+    config, paths = load_config()
+    tracker = _load_tracker(paths)
+    record = tracker.get_job(job_id)
+    existing = record.get("scoring") or {}
+    raw_total = int(existing.get("raw_total") or existing.get("total") or fit_score.get("total", 0))
+    new_scoring = dict(existing)
+    new_scoring["total"] = int(override)
+    new_scoring["raw_total"] = raw_total
+    new_scoring["recommendation"] = _recommendation_for(int(override), config)
+    new_scoring["human_override"] = {
+        "score": int(override),
+        "raw_score": raw_total,
+        "reason": (reason or "").strip(),
+        "actor": actor,
+        "at": _utc_now(),
+    }
+    tracker.update_job(
+        job_id,
+        {
+            "fit_score": int(override),
+            "priority": new_scoring["recommendation"],
+            "scoring": new_scoring,
+        },
+        comment=f"Owner score override: {override}/100 (raw engine score {raw_total}/100 preserved); reason: {reason.strip()}",
+        actor=actor,
+        action="reviewed",
+        requires_owner_review=True,
+    )
+    return {"job_id": job_id, "fit_score": new_scoring, "override_recorded": True}
+
+
+def _utc_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _cmd_route(job_id: str) -> dict[str, Any]:
@@ -198,6 +274,17 @@ def _cmd_route(job_id: str) -> dict[str, Any]:
 
 def _cmd_render(job_id: str) -> dict[str, Any]:
     return finalize_render(job_id)
+
+
+def _cmd_render_ats(job_id: str) -> dict[str, Any]:
+    artifact_dir = _artifact_dir(job_id)
+    application_path = artifact_dir / "generated_application.json"
+    packet_path = artifact_dir / "generation_packet.json"
+    if not application_path.is_file() or not packet_path.is_file():
+        return {"job_id": job_id, "valid": False, "blocker": "generated_application_missing"}
+    application = json.loads(application_path.read_text(encoding="utf-8"))
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    return render_ats_and_verify(job_id, application, packet)
 
 
 def _cmd_package(job_id: str) -> dict[str, Any]:
@@ -263,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             result = prepare(payload, actor=args.actor, force_weak=args.force_weak)
             emit(result, human=args.human)
-            if any(item.startswith("weak_fit:") for item in result["blockers"]):
+            if any(item.startswith("weak_fit:") or item.startswith("below_generation_threshold:") for item in result["blockers"]):
                 return EXIT_WEAK_FIT
             if any(item.startswith("route_unresolved:") for item in result["blockers"]):
                 return EXIT_ROUTE
@@ -273,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
             emit(result, human=args.human)
             return EXIT_READY
         if args.command == "score":
-            result = _cmd_score(args.job_id)
+            result = _cmd_score(args.job_id, override=args.override, reason=args.reason, actor=args.actor)
             emit(result, human=args.human)
             if result.get("reason") == "job_not_prepared":
                 return EXIT_OWNER_INPUT
@@ -294,6 +381,22 @@ def main(argv: list[str] | None = None) -> int:
                     return EXIT_OWNER_INPUT
                 if not result.get("docx"):
                     return EXIT_SYSTEM
+                return EXIT_POLICY
+            return EXIT_READY
+        if args.command == "render-ats":
+            result = _cmd_render_ats(args.job_id)
+            emit(result, human=args.human)
+            if not result["valid"]:
+                if result.get("blocker") == "generated_application_missing":
+                    return EXIT_OWNER_INPUT
+                return EXIT_POLICY
+            return EXIT_READY
+        if args.command == "render-ats-options":
+            result = render_ats_design_options(args.job_id, out_dir=Path(args.out_dir) if args.out_dir else None)
+            emit(result, human=args.human)
+            if result.get("blocker") == "generated_application_missing":
+                return EXIT_OWNER_INPUT
+            if not result.get("valid"):
                 return EXIT_POLICY
             return EXIT_READY
         if args.command == "package":

@@ -18,6 +18,7 @@ class Paths:
     tracker_base: Path
     runtime_bundle_path: Path
     vault_root: Path
+    ats_template_path: Path
 
 
 def repo_root() -> Path:
@@ -53,6 +54,7 @@ def load_config(root: Path | None = None) -> tuple[dict[str, Any], Paths]:
         tracker_base=root / config["tracker_base"],
         runtime_bundle_path=root / config["runtime_bundle"],
         vault_root=vault_root,
+        ats_template_path=config_dir / "ats-linear-template.v1.json",
     )
     return config, paths
 

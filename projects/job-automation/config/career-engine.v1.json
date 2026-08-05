@@ -101,7 +101,7 @@
     "free_prose_required": true
   },
   "daily_scanner": {
-    "minimum_score_for_generation": 65,
+    "minimum_score_for_generation": 80,
     "maximum_generation_packets_per_scan": 5,
     "send_or_submit": false,
     "provider": "opencode-go",

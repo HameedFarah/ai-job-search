@@ -296,6 +296,68 @@ def match_evidence(normalized_job: dict[str, Any], bundle: dict[str, Any]) -> li
     return results
 
 
+def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
+    """Classify a role title against the owner's specialization/seniority lane.
+
+    The owner is positioned as a senior architecture / design-management /
+    delivery-management professional, not as a production architect or an
+    engineer/planner. The classification is used to suppress *materially
+    mismatched* specialization/seniority roles while never suppressing
+    adjacent senior design-management roles (Design Manager, Design Director,
+    Design Governance, Technical Design Director, and similar).
+
+    Returns boolean signals plus the applied factor pair:
+      - ``adjacent_design_management``: management title + design-lane word
+        (always multiplier 1.0 - never suppressed);
+      - ``out_of_lane``: materially different function (planner, engineering,
+        strategy, theming, ...);
+      - ``production``: individual-contributor function (architect, designer,
+        planner, engineer, ...) without management authority;
+      - ``junior``: explicitly junior title.
+    """
+    title = role.lower()
+    spec = taxonomy.get("specialization", {})
+    design_lane = spec.get("design_lane_terms", [])
+    out_of_lane = spec.get("out_of_lane_terms", [])
+    production = spec.get("production_terms", [])
+    junior = spec.get("junior_terms", [])
+    seniority_terms = taxonomy.get("seniority_terms", [])
+
+    has_management = any(term in title for term in seniority_terms)
+    has_design_lane = any(term in title for term in design_lane)
+    has_out_of_lane = any(term in title for term in out_of_lane)
+    has_production = any(term in title for term in production)
+    has_junior = any(term in title for term in junior)
+
+    if has_junior:
+        specialization_factor, seniority_factor, multiplier = 0.3, 0.2, 0.4
+    elif has_out_of_lane and has_management:
+        specialization_factor, seniority_factor, multiplier = 0.3, 1.0, 0.35
+    elif has_out_of_lane:
+        specialization_factor, seniority_factor, multiplier = 0.2, 0.5, 0.35
+    elif has_management and has_design_lane:
+        # Adjacent senior design-management roles are never suppressed.
+        specialization_factor, seniority_factor, multiplier = 1.0, 1.0, 1.0
+    elif has_production and not has_management:
+        specialization_factor, seniority_factor, multiplier = 0.4, 0.35, 0.6
+    elif has_management:
+        specialization_factor, seniority_factor, multiplier = 1.0, 1.0, 1.0
+    else:
+        specialization_factor, seniority_factor, multiplier = 1.0, 0.55, 1.0
+
+    return {
+        "role_title": role,
+        "adjacent_design_management": bool(has_management and has_design_lane),
+        "out_of_lane": has_out_of_lane,
+        "production": has_production and not has_management,
+        "junior": has_junior,
+        "has_management": has_management,
+        "specialization_factor": specialization_factor,
+        "seniority_factor": seniority_factor,
+        "mismatch_multiplier": multiplier,
+    }
+
+
 def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bundle: dict[str, Any]) -> dict[str, Any]:
     config = bundle["config"]
     weights = config["scoring"]["weights"]
@@ -313,19 +375,34 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         return domain_requirement_gate(str(requirement.get("text", "")), taxonomy) is not None
 
     def coverage(priority: str) -> float:
+        points = {"matched": 1.0, "adjacent": 0.55, "unmapped_context": 0.25, "gap": 0.0}
         if priority == "mandatory":
             relevant = [m for m in matches if _is_mandatory(m)]
+            if not relevant:
+                # No explicit mandatory bucket: use overall requirement match
+                # quality as the mandatory proxy instead of a fixed default, so
+                # a JD whose responsibilities genuinely match the verified
+                # evidence can still reach credible generation, while an
+                # unmatched or generic JD cannot inflate itself to 80+.
+                relevant = [
+                    m for m in matches
+                    if req_by_id.get(m["requirement_id"], {}).get("priority") != "preferred"
+                ]
+                if not relevant:
+                    return 0.4
         else:
             relevant = [m for m in matches if req_by_id.get(m["requirement_id"], {}).get("priority") == priority]
-        if not relevant:
-            return 1.0 if priority == "preferred" else 0.65
-        points = {"matched": 1.0, "adjacent": 0.55, "unmapped_context": 0.25, "gap": 0.0}
+            if not relevant:
+                # An absent preferred section is weak evidence, not a perfect
+                # score.
+                return 0.5
         return sum(points.get(m["status"], 0.0) for m in relevant) / len(relevant)
 
     text = normalized_job["full_job_description"].lower()
     taxonomy = bundle.get("taxonomy", {})
+    signals = _role_title_signals(normalized_job["role"], taxonomy)
     leadership = 1.0 if any(term in text for term in taxonomy.get("leadership_terms", [])) else 0.55
-    seniority = 1.0 if any(term in normalized_job["role"].lower() for term in taxonomy.get("seniority_terms", [])) else 0.55
+    seniority = signals["seniority_factor"]
     geography = 1.0 if any(term in (normalized_job.get("location", "") + " " + text).lower() for term in taxonomy.get("gcc_locations", [])) else 0.45
     sector_terms = {term for claim in bundle.get("claims", []) for term in claim.get("tags", []) if term in text}
     sector = min(1.0, 0.35 + 0.1 * len(sector_terms))
@@ -340,7 +417,7 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         "credentials": credential,
     }
     subscores = {name: round(weights[name] * factors[name]) for name in weights}
-    total = min(100, sum(subscores.values()))
+    raw_total = min(100, sum(subscores.values()))
     mandatory_domain_gaps = [
         match
         for match in matches
@@ -356,7 +433,13 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
     # transparency, but cap the total immediately below the high-priority
     # threshold so strong general leadership evidence cannot hide the gap.
     if mandatory_domain_gaps:
-        total = min(total, thresholds["high_priority"] - 1)
+        raw_total = min(raw_total, thresholds["high_priority"] - 1)
+    # Specialization/seniority mismatch calibration. The multiplier suppresses
+    # materially mismatched roles (planner, project engineering, production
+    # architect, junior titles) after all subscore evidence is computed; raw
+    # subscores stay preserved for transparency. Adjacent senior
+    # design-management roles keep multiplier 1.0.
+    total = min(100, round(raw_total * signals["mismatch_multiplier"]))
     if total >= thresholds["high_priority"]:
         recommendation = "high_priority"
     elif total >= thresholds["credible"]:
@@ -371,6 +454,8 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         total=total, recommendation=recommendation, subscores=subscores,
         strengths=strengths, gaps=gaps,
         adjustment_ceiling=config["scoring"]["llm_adjustment_ceiling"],
+        raw_total=raw_total,
+        calibration=signals,
     ))
 
 
