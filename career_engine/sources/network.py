@@ -1,15 +1,8 @@
-"""Bounded HTTP fetch for discovery adapters (stdlib only).
+"""Bounded HTTP requests for discovery adapters (stdlib only).
 
-All network access goes through this module so that every request has:
-
-- an explicit timeout (default 12s, never infinite);
-- a size cap on the response body (default 2 MiB);
-- a neutral browser-like User-Agent with a clear self-identification string;
-- a single exception surface (``SourceError``) the adapters translate.
-
-The module never follows blind redirects to login walls and never stores
-cookies or session state. A 404 is surfaced as ``SourceNotFound`` so adapters
-can distinguish "this board identifier does not exist" from other failures.
+All network access goes through this module so every request has an explicit
+timeout, response-size cap, identified user-agent and one exception surface.
+It never stores cookies or session state.
 """
 
 from __future__ import annotations
@@ -38,18 +31,34 @@ class HttpBlocked(SourceError):
     """The source returned a challenge or explicitly blocked automated access."""
 
 
-def fetch(
+def request(
     url: str,
     *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    json_body: Any = None,
     timeout: int = DEFAULT_TIMEOUT,
     max_bytes: int = DEFAULT_MAX_BYTES,
     user_agent: str = USER_AGENT,
 ) -> bytes:
-    """Fetch ``url`` and return the raw body, bounded by timeout/size."""
-    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    """Make one bounded stateless HTTP request and return raw bytes."""
+    if body is not None and json_body is not None:
+        raise ValueError("body and json_body are mutually exclusive")
+    request_headers = {"User-Agent": user_agent, **(headers or {})}
+    data = body
+    if json_body is not None:
+        data = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers=request_headers,
+        method=method.upper(),
+    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = response.read(max_bytes + 1)
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            payload = response.read(max_bytes + 1)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise SourceNotFound(f"Not found (HTTP 404): {url}") from exc
@@ -60,9 +69,24 @@ def fetch(
         raise SourceError(f"Network error fetching {url}: {exc.reason}") from exc
     except TimeoutError as exc:
         raise SourceError(f"Timeout after {timeout}s fetching {url}") from exc
-    if len(body) > max_bytes:
+    if len(payload) > max_bytes:
         raise SourceError(f"Response too large (> {max_bytes} bytes) for {url}")
-    return body
+    return payload
+
+
+def fetch(
+    url: str,
+    *,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    user_agent: str = USER_AGENT,
+) -> bytes:
+    return request(
+        url,
+        timeout=timeout,
+        max_bytes=max_bytes,
+        user_agent=user_agent,
+    )
 
 
 def fetch_text(
@@ -72,8 +96,9 @@ def fetch_text(
     max_bytes: int = DEFAULT_MAX_BYTES,
     user_agent: str = USER_AGENT,
 ) -> str:
-    body = fetch(url, timeout=timeout, max_bytes=max_bytes, user_agent=user_agent)
-    return body.decode("utf-8", errors="replace")
+    return fetch(url, timeout=timeout, max_bytes=max_bytes, user_agent=user_agent).decode(
+        "utf-8", errors="replace"
+    )
 
 
 def fetch_json(
@@ -83,8 +108,36 @@ def fetch_json(
     max_bytes: int = DEFAULT_MAX_BYTES,
     user_agent: str = USER_AGENT,
 ) -> Any:
-    text = fetch_text(url, timeout=timeout, max_bytes=max_bytes, user_agent=user_agent)
+    return request_json(
+        url,
+        timeout=timeout,
+        max_bytes=max_bytes,
+        user_agent=user_agent,
+    )
+
+
+def request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    json_body: Any = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    user_agent: str = USER_AGENT,
+) -> Any:
+    payload = request(
+        url,
+        method=method,
+        headers=headers,
+        body=body,
+        json_body=json_body,
+        timeout=timeout,
+        max_bytes=max_bytes,
+        user_agent=user_agent,
+    )
     try:
-        return json.loads(text)
+        return json.loads(payload.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as exc:
         raise SourceError(f"Invalid JSON from {url}: {exc}") from exc
