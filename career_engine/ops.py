@@ -130,6 +130,35 @@ def _set_pipeline_stage(root: Path | None, job_id: str, stage: str) -> None:
     temp.replace(path)
 
 
+def _set_pipeline_blockers(
+    root: Path | None,
+    job_id: str,
+    blockers: list[str],
+    *,
+    stage: str = "",
+) -> bool:
+    """Synchronize the current pipeline-state mirror without rewriting history."""
+    path = _artifact_dir(root, job_id) / "pipeline_state.json"
+    if not path.is_file():
+        return False
+    wrapper = json.loads(path.read_text(encoding="utf-8"))
+    data = dict(wrapper.get("data", {}))
+    before = list(data.get("blockers") or [])
+    changed = before != blockers
+    if stage and data.get("stage") != stage:
+        data["stage"] = stage
+        changed = True
+    if not changed:
+        return False
+    data["blockers"] = blockers
+    data["reconciled_at"] = utc_now()
+    wrapper["data"] = data
+    temp = path.with_suffix(".json.tmp")
+    temp.write_text(json.dumps(wrapper, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp.replace(path)
+    return True
+
+
 def _remove_generation_packet(root: Path | None, job_id: str) -> bool:
     removed = False
     for name in ("generation_packet.json", "generation_packet.stage.json"):
@@ -698,6 +727,176 @@ def _recommendation_name(score: int, config: dict[str, Any]) -> str:
     return "weak"
 
 
+def _is_stale_threshold_blocker(value: Any) -> bool:
+    return str(value).strip().startswith("below_generation_threshold:")
+
+
+def _truthful_retained_blocker(record: dict[str, Any], status: str) -> str:
+    """Return a truthful current-state reason when the retired threshold was
+    the only recorded blocker. This deliberately does not promote legacy jobs:
+    promotion requires the normal pipeline or an explicit owner decision."""
+    processing_state = record.get("processing_state") or {}
+    route = processing_state.get("route") or {}
+    route_blocker = str(route.get("blocker", "")).strip()
+    if route_blocker:
+        return route_blocker
+    live_status = str(processing_state.get("live_status", "")).strip().lower()
+    if live_status in {"closed", "expired", "removed", "unavailable"}:
+        return f"vacancy_{live_status}"
+    if processing_state.get("canonical_job_id") or status == "superseded":
+        return "duplicate_or_superseded_record"
+    route_name = str(route.get("route", "")).strip().lower()
+    portal_usable = route_name == "portal" and bool(str(route.get("application_url", "")).strip())
+    email_usable = route_name == "email" and bool(str(route.get("recipient", "")).strip())
+    if not (portal_usable or email_usable):
+        return "application_route_unresolved"
+    if status in {"blocked", "selective", "rejected"}:
+        return f"legacy_{status}_pending_owner_reassessment"
+    return ""
+
+
+def _cleanup_stale_threshold_blockers(
+    tracker: Any,
+    root: Path | None,
+    *,
+    threshold: int,
+) -> list[dict[str, Any]]:
+    """Remove retired threshold-80 blocker text from score >=70 records.
+
+    Current statuses, genuine blockers, protected states and owner decisions are
+    preserved. If the retired threshold was the only reason on a legacy blocked,
+    selective or rejected record, a truthful non-threshold review reason is
+    recorded instead of blindly promoting the job.
+    """
+    changes: list[dict[str, Any]] = []
+    for row in tracker.list_rows():
+        job_id = row["job_id"]
+        record = tracker.get_job(job_id)
+        score = _effective_score(record, row.get("fit_score", ""))
+        if score < threshold:
+            continue
+        status = row["processing_status"]
+        processing_state = dict(record.get("processing_state") or {})
+        before_blockers = [str(item) for item in processing_state.get("blockers", [])]
+        after_blockers = [item for item in before_blockers if not _is_stale_threshold_blocker(item)]
+
+        pipeline_path = _artifact_dir(root, job_id) / "pipeline_state.json"
+        pipeline_before: list[str] = []
+        if pipeline_path.is_file():
+            wrapper = json.loads(pipeline_path.read_text(encoding="utf-8"))
+            pipeline_before = [str(item) for item in (wrapper.get("data", {}).get("blockers") or [])]
+        pipeline_after = [item for item in pipeline_before if not _is_stale_threshold_blocker(item)]
+
+        stale_processing = len(before_blockers) != len(after_blockers)
+        stale_pipeline = len(pipeline_before) != len(pipeline_after)
+        if not stale_processing and not stale_pipeline:
+            continue
+
+        replacement = ""
+        if stale_processing and not after_blockers:
+            replacement = _truthful_retained_blocker(record, status)
+            if replacement:
+                after_blockers = [replacement]
+        if stale_pipeline and not pipeline_after:
+            pipeline_after = list(after_blockers)
+
+        comment = (
+            f"Removed obsolete below_generation_threshold blocker from score {score} record after "
+            f"the canonical generation threshold changed to {threshold}; preserved status {status} "
+            "and all genuine blockers/owner decisions."
+        )
+        if stale_processing:
+            processing_state["blockers"] = after_blockers
+            processing_state["threshold_cleanup_at"] = utc_now()
+            processing_state["threshold_cleanup_reason"] = (
+                f"retired threshold blocker removed at canonical threshold {threshold}"
+            )
+            tracker.update_job(
+                job_id,
+                {"processing_state": processing_state},
+                comment=comment,
+                actor="system",
+                action="updated",
+                requires_owner_review=bool(replacement and "pending_owner_reassessment" in replacement),
+            )
+        else:
+            tracker.record_event(
+                actor="system",
+                entity_type="job",
+                entity_id=job_id,
+                action="updated",
+                before={"pipeline_blockers": pipeline_before},
+                after={"pipeline_blockers": pipeline_after},
+                comment=comment,
+                requires_owner_review=False,
+            )
+        pipeline_changed = _set_pipeline_blockers(
+            root,
+            job_id,
+            pipeline_after if stale_pipeline else after_blockers,
+            stage=status,
+        )
+        changes.append({
+            "job_id": job_id,
+            "company": row["company"],
+            "role": row["role"],
+            "score": score,
+            "status_retained": status,
+            "removed_processing_blockers": [item for item in before_blockers if _is_stale_threshold_blocker(item)],
+            "removed_pipeline_blockers": [item for item in pipeline_before if _is_stale_threshold_blocker(item)],
+            "remaining_blockers": after_blockers,
+            "replacement_reason": replacement,
+            "pipeline_updated": pipeline_changed,
+        })
+    return changes
+
+
+def _count_stale_threshold_blockers(
+    tracker: Any,
+    root: Path | None,
+    *,
+    threshold: int,
+) -> dict[str, Any]:
+    jobs: list[str] = []
+    occurrences = 0
+    for row in tracker.list_rows():
+        record = tracker.get_job(row["job_id"])
+        if _effective_score(record, row.get("fit_score", "")) < threshold:
+            continue
+        current = list((record.get("processing_state") or {}).get("blockers") or [])
+        path = _artifact_dir(root, row["job_id"]) / "pipeline_state.json"
+        pipeline: list[Any] = []
+        if path.is_file():
+            wrapper = json.loads(path.read_text(encoding="utf-8"))
+            pipeline = list(wrapper.get("data", {}).get("blockers") or [])
+        count = sum(1 for item in [*current, *pipeline] if _is_stale_threshold_blocker(item))
+        if count:
+            jobs.append(row["job_id"])
+            occurrences += count
+    return {"jobs": jobs, "job_count": len(jobs), "occurrences": occurrences}
+
+
+def _threshold_cleanup_history(tracker: Any) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for row in tracker.list_rows():
+        record = tracker.get_job(row["job_id"])
+        state = record.get("processing_state") or {}
+        cleaned_at = str(state.get("threshold_cleanup_at", "")).strip()
+        if not cleaned_at:
+            continue
+        records.append({
+            "job_id": row["job_id"],
+            "company": row["company"],
+            "role": row["role"],
+            "score": _effective_score(record, row.get("fit_score", "")),
+            "status": row["processing_status"],
+            "cleaned_at": cleaned_at,
+            "reason": state.get("threshold_cleanup_reason", ""),
+            "current_blockers": list(state.get("blockers") or []),
+        })
+    return records
+
+
 def _reconcile_zawaya_duplicate(
     tracker: Any,
     root: Path | None,
@@ -803,6 +1002,16 @@ def reconcile(root: Path | None = None) -> dict[str, Any]:
     _apply_owner_decisions(tracker, config, root, report=changed, preserved=preserved, notes=notes, threshold=threshold)
     _reconcile_below_threshold(tracker, config, root, threshold=threshold, report=changed)
     _reconcile_zawaya_duplicate(tracker, root, report=changed, preserved=preserved)
+    stale_threshold_cleanup = _cleanup_stale_threshold_blockers(
+        tracker,
+        root,
+        threshold=threshold,
+    )
+    stale_threshold_remaining = _count_stale_threshold_blockers(
+        tracker,
+        root,
+        threshold=threshold,
+    )
     named_checks = _check_named_roles(tracker, config, threshold=threshold)
 
     after_rows = tracker.list_rows()
@@ -821,7 +1030,7 @@ def reconcile(root: Path | None = None) -> dict[str, Any]:
     protected_ids = {
         row["job_id"] for row in after_rows if row["processing_status"] in protected_statuses
     }
-    return {
+    result = {
         "schema_version": 1,
         "generated_at": utc_now(),
         "threshold": threshold,
@@ -831,6 +1040,10 @@ def reconcile(root: Path | None = None) -> dict[str, Any]:
         "changed_jobs": changed,
         "changed_job_ids": [item["job_id"] for item in changed],
         "changed_count": len(changed),
+        "stale_threshold_cleanup": stale_threshold_cleanup,
+        "stale_threshold_cleanup_count": len(stale_threshold_cleanup),
+        "stale_threshold_blockers_remaining": stale_threshold_remaining,
+        "threshold_cleanup_history": _threshold_cleanup_history(tracker),
         "notes": notes,
         "preserved": preserved,
         "protected_statuses": sorted(protected_statuses),
@@ -839,6 +1052,15 @@ def reconcile(root: Path | None = None) -> dict[str, Any]:
         "send_or_submit": False,
         "drafts_created": 0,
     }
+    _, paths = load_config(root)
+    report_dir = paths.tracker_base / "runtime"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"reconciliation-report-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
+    temp = report_path.with_suffix(".json.tmp")
+    temp.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp.replace(report_path)
+    result["report_path"] = str(report_path)
+    return result
 
 
 # ---------------------------------------------------------------------------

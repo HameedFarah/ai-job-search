@@ -126,6 +126,33 @@ def job_status(engine_root: Path, job_id: str) -> tuple[str, dict]:
     return record["job"]["processing_status"], record.get("processing_state") or {}
 
 
+def set_current_blockers(
+    engine_root: Path,
+    job_id: str,
+    blockers: list[str],
+    *,
+    pipeline_blockers: list[str] | None = None,
+) -> None:
+    _, paths = load_config(engine_root)
+    tracker = _load_tracker(paths)
+    record = tracker.get_job(job_id)
+    state = dict(record.get("processing_state") or {})
+    state["blockers"] = blockers
+    tracker.update_job(
+        job_id,
+        {"processing_state": state},
+        comment="Test fixture: set current blockers",
+        actor="system",
+    )
+    if pipeline_blockers is not None:
+        artifact_dir = tracker.artifacts_dir / job_id
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "pipeline_state.json").write_text(
+            json.dumps({"input_hash": "x", "data": {"stage": record["job"]["processing_status"], "job_id": job_id, "blockers": pipeline_blockers}}),
+            encoding="utf-8",
+        )
+
+
 def test_below_threshold_generation_ready_is_reconciled(engine_root: Path) -> None:
     seed_job(engine_root, "9c85bd0d9661c2f34978", company="Gensler", role="Architect - Senior", score=51, status="generation_ready")
     result = reconcile(engine_root)
@@ -154,6 +181,52 @@ def test_above_threshold_generation_ready_is_preserved(engine_root: Path) -> Non
     status, _ = job_status(engine_root, "fd6675da1bb6de6f40a1")
     assert status == "generation_ready"
     assert "fd6675da1bb6de6f40a1" not in result["changed_job_ids"]
+
+
+def test_stale_threshold_blocker_removed_and_genuine_blocker_preserved(engine_root: Path) -> None:
+    job_id = "11111111111111111111"
+    seed_job(engine_root, job_id, company="Example", role="Design Manager", score=74, status="blocked", route="unresolved", application_url="")
+    set_current_blockers(
+        engine_root,
+        job_id,
+        ["below_generation_threshold:74", "application_route_unresolved"],
+        pipeline_blockers=["below_generation_threshold:74", "application_route_unresolved"],
+    )
+    result = reconcile(engine_root)
+    status, state = job_status(engine_root, job_id)
+    assert status == "blocked"
+    assert state["blockers"] == ["application_route_unresolved"]
+    assert result["stale_threshold_cleanup_count"] == 1
+    assert result["stale_threshold_blockers_remaining"]["job_count"] == 0
+    pipeline = json.loads(
+        (engine_root / f"projects/job-automation/artifacts/{job_id}/pipeline_state.json").read_text(encoding="utf-8")
+    )["data"]
+    assert pipeline["blockers"] == ["application_route_unresolved"]
+
+
+def test_sole_stale_blocker_is_not_blindly_promoted(engine_root: Path) -> None:
+    job_id = "22222222222222222222"
+    seed_job(engine_root, job_id, company="Example", role="Senior Project Manager", score=76, status="blocked")
+    set_current_blockers(engine_root, job_id, ["below_generation_threshold:76"])
+    first = reconcile(engine_root)
+    status, state = job_status(engine_root, job_id)
+    assert status == "blocked"
+    assert state["blockers"] == ["legacy_blocked_pending_owner_reassessment"]
+    assert first["stale_threshold_cleanup_count"] == 1
+    second = reconcile(engine_root)
+    assert second["stale_threshold_cleanup_count"] == 0
+    assert second["changed_count"] == 0
+
+
+def test_below_current_threshold_blocker_is_retained(engine_root: Path) -> None:
+    job_id = "33333333333333333333"
+    seed_job(engine_root, job_id, company="Example", role="Architect", score=55, status="selective")
+    set_current_blockers(engine_root, job_id, ["below_generation_threshold:55"])
+    result = reconcile(engine_root)
+    status, state = job_status(engine_root, job_id)
+    assert status == "selective"
+    assert state["blockers"] == ["below_generation_threshold:55"]
+    assert result["stale_threshold_cleanup_count"] == 0
 
 
 def test_luxoft_rejected_despite_score(engine_root: Path) -> None:
