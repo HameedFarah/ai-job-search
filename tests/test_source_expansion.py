@@ -96,7 +96,7 @@ class SourceExpansionTests(unittest.TestCase):
                 user_triggered=True, user_ip="127.0.0.1", user_agent="test-agent"
             ).search(company="Design Manager")
 
-    @patch.dict(os.environ, {"CAREERJET_API_KEY": "x"}, clear=True)
+    @patch.dict(os..environ, {"CAREERJET_API_KEY": "x"}, clear=True)
     @patch("career_engine.sources.adapters.aggregators.network.request_json")
     def test_careerjet_manual_result_is_discovery_only(self, request_json) -> None:
         request_json.return_value = {"type": "JOBS", "jobs": [{
@@ -192,6 +192,23 @@ class SourceExpansionTests(unittest.TestCase):
                 for domain in item["official_domains"]
             ))
             self.assertFalse(item["residential_fallback_allowed"])
+
+
+    def test_route_check_registry_does_not_auto_enable_employer_domains(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        from career_engine.sources.cli import run_route_check
+        decision = run_route_check(
+            "https://careers.neom.com/job/1",
+            allowlist_file=str(root / "projects/job-automation/config/gcc-employers.v1.json"),
+            proxy_available=True,
+        )
+        self.assertTrue(decision["allowed"])
+        self.assertEqual(decision["route"], "vps")
+
+    def test_source_result_timestamp_path_is_exercised(self) -> None:
+        from career_engine.sources.cli import _source_result
+        row = _source_result("brave_search", status="unavailable")
+        self.assertIn("T", row.fetched_at)
 
     def test_registry_marks_aggregators_discovery_only(self) -> None:
         for source_id in ("brave_search", "jooble", "careerjet"):

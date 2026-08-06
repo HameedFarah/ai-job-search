@@ -179,7 +179,7 @@ def _source_result(
     return SourceResult(
         adapter_id=adapter_id,
         status=status,
-        fetched_at=utc_now_isono(),
+        fetched_at=utc_now_iso(),
         jobs_fetched=jobs_fetched,
         error=error,
     )
@@ -206,9 +206,13 @@ def run_route_check(
     from .routing import decide_route
 
     payload = json.loads(Path(allowlist_file).read_text(encoding="utf-8"))
-    domains: set[str] = set()
-    for employer in payload.get("employers", []):
-        domains.update(str(item) for item in employer.get("official_domains", []))
+    domains = {
+        str(item).lower().strip(".")
+        for item in payload.get("policy", {}).get(
+            "residential_allowlist_enabled_domains", []
+        )
+        if str(item).strip()
+    }
     decision = decide_route(
         url,
         residential_allowlist=domains,
