@@ -96,7 +96,7 @@ class SourceExpansionTests(unittest.TestCase):
                 user_triggered=True, user_ip="127.0.0.1", user_agent="test-agent"
             ).search(company="Design Manager")
 
-    @patch.dict(os..environ, {"CAREERJET_API_KEY": "x"}, clear=True)
+    @patch.dict(os.environ, {"CAREERJET_API_KEY": "x"}, clear=True)
     @patch("career_engine.sources.adapters.aggregators.network.request_json")
     def test_careerjet_manual_result_is_discovery_only(self, request_json) -> None:
         request_json.return_value = {"type": "JOBS", "jobs": [{
@@ -112,6 +112,29 @@ class SourceExpansionTests(unittest.TestCase):
         self.assertTrue(job.extra["manual_user_triggered"])
         self.assertFalse(job.provenance.official)
         self.assertEqual(job.application_url, "")
+
+    @patch.dict(os.environ, {"JOOBLE_API_KEY": "secret-key"}, clear=True)
+    @patch("career_engine.sources.adapters.aggregators.network.request_json")
+    def test_jooble_error_does_not_chain_secret_bearing_url(self, request_json) -> None:
+        request_json.side_effect = SourceError("https://jooble.org/api/secret-key")
+        with self.assertRaises(SourceError) as caught:
+            JoobleAdapter().search(company="Design Manager")
+        self.assertEqual(str(caught.exception), "Jooble API request failed")
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertNotIn("secret-key", str(caught.exception))
+
+    @patch.dict(os.environ, {"CAREERJET_API_KEY": "secret-key"}, clear=True)
+    @patch("career_engine.sources.adapters.aggregators.network.request_json")
+    def test_careerjet_error_does_not_chain_user_identity(self, request_json) -> None:
+        request_json.side_effect = SourceError("user_ip=1.1.1.1&user_agent=private-agent")
+        with self.assertRaises(SourceError) as caught:
+            CareerjetAdapter(
+                user_triggered=True, user_ip="1.1.1.1", user_agent="private-agent"
+            ).search(company="Design Manager")
+        self.assertEqual(str(caught.exception), "Careerjet API request failed")
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertNotIn("1.1.1.1", str(caught.exception))
+        self.assertNotIn("private-agent", str(caught.exception))
 
     def test_alert_normalizers_cover_all_approved_boards(self) -> None:
         self.assertEqual(set(SUPPORTED_ALERT_SOURCES), {

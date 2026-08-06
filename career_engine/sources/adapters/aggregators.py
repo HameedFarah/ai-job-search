@@ -194,7 +194,7 @@ class JoobleAdapter(SourceAdapter):
         except SourceError as exc:
             # The Jooble credential is part of the endpoint path. Never allow a
             # lower-level exception to echo that URL into logs or reports.
-            raise SourceError("Jooble API request failed") from exc
+            raise SourceError("Jooble API request failed") from None
         results = (payload or {}).get("jobs") or []
         jobs: list[DiscoveryJob] = []
         for item in results[:limit]:
@@ -302,7 +302,7 @@ class CareerjetAdapter(SourceAdapter):
         except SourceError as exc:
             # The request URL contains the user's IP and user-agent. Keep both
             # out of persisted error messages and source reports.
-            raise SourceError("Careerjet API request failed") from exc
+            raise SourceError("Careerjet API request failed") from None
         if not isinstance(payload, dict) or payload.get("type") != "JOBS":
             return []
         jobs: list[DiscoveryJob] = []
