@@ -31,6 +31,10 @@ class SourceError(Exception):
     """Base error for source adapters."""
 
 
+class SourceUnavailable(SourceError):
+    """A source cannot run, usually because required credentials are absent."""
+
+
 def html_to_text(value: str | None) -> str:
     """Convert job description HTML to plain text (best effort, stdlib only)."""
     if not value:
@@ -127,7 +131,7 @@ class SourceResult:
     """Outcome of one adapter probe (success or failure, never thrown away)."""
 
     adapter_id: str
-    status: str  # ok | empty | error | blocked | unverified
+    status: str  # ok | empty | error | blocked | unavailable | unverified
     fetched_at: str
     jobs_fetched: int = 0
     error: str = ""

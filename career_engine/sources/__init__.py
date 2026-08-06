@@ -7,26 +7,32 @@ Design contract (mirrors the Career Engine no-send policy):
 - Posting dates are never fabricated: every date carries a precision
   (``exact`` | ``day`` | ``month`` | ``unknown``) and its source field.
 - Every emitted report carries ``send_or_submit: false`` and every scanner
-  job defaults to ``live_status: unverified`` so the central engine can score
-  it but cannot generate application content until the live-vacancy gate is
-  satisfied with an authoritative verification source.
+  job defaults to ``live_status: unverified`` until authoritative official
+  employer or ATS verification succeeds.
 
 Package layout:
 
-- :mod:`registry` - source registry + capability matrix.
+- :mod:`registry` - source registry, capability matrix and value-free runtime status.
 - :mod:`dates` - posting-date parsing and precision model.
 - :mod:`provenance` - strict provenance records.
 - :mod:`dedupe` - deterministic dedupe keys and an in-memory store.
 - :mod:`network` - bounded HTTP fetch (stdlib only, explicit timeouts).
-- :mod:`base` - adapter contract, DiscoveryJob/DiscoveryReport.
-- :mod:`adapters` - Greenhouse, Lever, Ashby, SmartRecruiters, Workable,
-  JobPosting JSON-LD/sitemaps, search discovery, inbox contract.
-- :mod:`cli` - ``registry`` / ``probe`` / ``verify`` / ``ingest`` commands.
+- :mod:`base` - adapter contract, DiscoveryJob/DiscoveryReport and unavailable-source handling.
+- :mod:`adapters` - official ATS/employer adapters plus discovery-only Brave, Jooble and Careerjet.
+- :mod:`alerts` - authenticated job-alert normalization without direct board scraping.
+- :mod:`routing` - fail-closed normal/residential/denied route policy.
+- :mod:`cli` - ``registry`` / ``probe`` / ``verify`` / ``route-check`` / ``ingest`` commands.
 """
 
+from .base import (
+    DiscoveryJob,
+    DiscoveryReport,
+    SourceAdapter,
+    SourceError,
+    SourceUnavailable,
+)
 from .dates import PostingDate
 from .provenance import Provenance
-from .base import DiscoveryJob, DiscoveryReport, SourceAdapter, SourceError
 
 __version__ = "1.0.0"
 
@@ -37,5 +43,6 @@ __all__ = [
     "Provenance",
     "SourceAdapter",
     "SourceError",
+    "SourceUnavailable",
     "__version__",
 ]

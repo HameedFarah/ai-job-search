@@ -1,0 +1,574 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-06",
+  "purpose": "GCC priority-employer discovery and official-domain verification registry",
+  "policy": {
+    "official_source_required_for_authoritative_promotion": true,
+    "residential_fallback": "separate explicit allowlist; discovery registry entries do not grant proxy access",
+    "restricted_job_boards_explicitly_denied": true,
+    "default_route": "vps",
+    "residential_allowlist_enabled_domains": []
+  },
+  "employers": [
+    {
+      "id": "pif",
+      "name": "Public Investment Fund",
+      "market": "SA",
+      "official_domains": [
+        "pif.gov.sa"
+      ],
+      "discovery_query": "site:pif.gov.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "red-sea-global",
+      "name": "Red Sea Global",
+      "market": "SA",
+      "official_domains": [
+        "redseaglobal.com"
+      ],
+      "discovery_query": "site:redseaglobal.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "diriyah-company",
+      "name": "Diriyah Company",
+      "market": "SA",
+      "official_domains": [
+        "diriyah.sa"
+      ],
+      "discovery_query": "site:diriyah.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "qiddiya",
+      "name": "Qiddiya Investment Company",
+      "market": "SA",
+      "official_domains": [
+        "qiddiya.com"
+      ],
+      "discovery_query": "site:qiddiya.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "neom",
+      "name": "NEOM",
+      "market": "SA",
+      "official_domains": [
+        "neom.com"
+      ],
+      "discovery_query": "site:neom.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "roshn",
+      "name": "ROSHN Group",
+      "market": "SA",
+      "official_domains": [
+        "roshn.sa"
+      ],
+      "discovery_query": "site:roshn.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "new-murabba",
+      "name": "New Murabba Development Company",
+      "market": "SA",
+      "official_domains": [
+        "newmurabba.com"
+      ],
+      "discovery_query": "site:newmurabba.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "rua-al-madinah",
+      "name": "Rua Al Madinah Holding",
+      "market": "SA",
+      "official_domains": [
+        "ruaalmadinah.com"
+      ],
+      "discovery_query": "site:ruaalmadinah.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "jeddah-central",
+      "name": "Jeddah Central Development Company",
+      "market": "SA",
+      "official_domains": [
+        "jeddahcentral.com"
+      ],
+      "discovery_query": "site:jeddahcentral.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "kafd",
+      "name": "King Abdullah Financial District",
+      "market": "SA",
+      "official_domains": [
+        "kafd.sa"
+      ],
+      "discovery_query": "site:kafd.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "saudi-downtown",
+      "name": "Saudi Downtown Company",
+      "market": "SA",
+      "official_domains": [
+        "saudidowntown.com"
+      ],
+      "discovery_query": "site:saudidowntown.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "soudah-development",
+      "name": "Soudah Development",
+      "market": "SA",
+      "official_domains": [
+        "soudah.sa"
+      ],
+      "discovery_query": "site:soudah.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "royal-commission-alula",
+      "name": "Royal Commission for AlUla",
+      "market": "SA",
+      "official_domains": [
+        "rcu.gov.sa"
+      ],
+      "discovery_query": "site:rcu.gov.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "saudi-aramco",
+      "name": "Saudi Aramco",
+      "market": "SA",
+      "official_domains": [
+        "aramco.com"
+      ],
+      "discovery_query": "site:aramco.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "sabic",
+      "name": "SABIC",
+      "market": "SA",
+      "official_domains": [
+        "sabic.com"
+      ],
+      "discovery_query": "site:sabic.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "maaden",
+      "name": "Ma'aden",
+      "market": "SA",
+      "official_domains": [
+        "maaden.com.sa"
+      ],
+      "discovery_query": "site:maaden.com.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "acwa-power",
+      "name": "ACWA Power",
+      "market": "SA",
+      "official_domains": [
+        "acwapower.com"
+      ],
+      "discovery_query": "site:acwapower.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "saudi-electricity",
+      "name": "Saudi Electricity Company",
+      "market": "SA",
+      "official_domains": [
+        "se.com.sa"
+      ],
+      "discovery_query": "site:se.com.sa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "emaar",
+      "name": "Emaar Properties",
+      "market": "AE",
+      "official_domains": [
+        "emaar.com"
+      ],
+      "discovery_query": "site:emaar.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "aldar",
+      "name": "Aldar Properties",
+      "market": "AE",
+      "official_domains": [
+        "aldar.com"
+      ],
+      "discovery_query": "site:aldar.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "nakheel",
+      "name": "Nakheel",
+      "market": "AE",
+      "official_domains": [
+        "nakheel.com"
+      ],
+      "discovery_query": "site:nakheel.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "dubai-holding",
+      "name": "Dubai Holding",
+      "market": "AE",
+      "official_domains": [
+        "dubaiholding.com"
+      ],
+      "discovery_query": "site:dubaiholding.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "modon",
+      "name": "Modon Holding",
+      "market": "AE",
+      "official_domains": [
+        "modon.com"
+      ],
+      "discovery_query": "site:modon.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "miral",
+      "name": "Miral",
+      "market": "AE",
+      "official_domains": [
+        "miral.ae"
+      ],
+      "discovery_query": "site:miral.ae careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "qatari-diar",
+      "name": "Qatari Diar",
+      "market": "QA",
+      "official_domains": [
+        "qataridiar.com"
+      ],
+      "discovery_query": "site:qataridiar.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "msheireb",
+      "name": "Msheireb Properties",
+      "market": "QA",
+      "official_domains": [
+        "msheireb.com"
+      ],
+      "discovery_query": "site:msheireb.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "qatarenergy",
+      "name": "QatarEnergy",
+      "market": "QA",
+      "official_domains": [
+        "qatarenergy.qa"
+      ],
+      "discovery_query": "site:qatarenergy.qa careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "omran",
+      "name": "OMRAN Group",
+      "market": "OM",
+      "official_domains": [
+        "omran.om"
+      ],
+      "discovery_query": "site:omran.om careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "majid-al-futtaim",
+      "name": "Majid Al Futtaim",
+      "market": "AE",
+      "official_domains": [
+        "majidalfuttaim.com"
+      ],
+      "discovery_query": "site:majidalfuttaim.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "parsons",
+      "name": "Parsons",
+      "market": "GCC",
+      "official_domains": [
+        "parsons.com"
+      ],
+      "discovery_query": "site:parsons.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "atkinsrealis",
+      "name": "AtkinsRéalis",
+      "market": "GCC",
+      "official_domains": [
+        "atkinsrealis.com"
+      ],
+      "discovery_query": "site:atkinsrealis.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "aecom",
+      "name": "AECOM",
+      "market": "GCC",
+      "official_domains": [
+        "aecom.com"
+      ],
+      "discovery_query": "site:aecom.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "jacobs",
+      "name": "Jacobs",
+      "market": "GCC",
+      "official_domains": [
+        "jacobs.com"
+      ],
+      "discovery_query": "site:jacobs.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "wsp",
+      "name": "WSP",
+      "market": "GCC",
+      "official_domains": [
+        "wsp.com"
+      ],
+      "discovery_query": "site:wsp.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "egis",
+      "name": "Egis",
+      "market": "GCC",
+      "official_domains": [
+        "egis-group.com"
+      ],
+      "discovery_query": "site:egis-group.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "dar",
+      "name": "Dar Al-Handasah",
+      "market": "GCC",
+      "official_domains": [
+        "dar.com"
+      ],
+      "discovery_query": "site:dar.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "khatib-alami",
+      "name": "Khatib & Alami",
+      "market": "GCC",
+      "official_domains": [
+        "khatibalami.com"
+      ],
+      "discovery_query": "site:khatibalami.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "hill-international",
+      "name": "Hill International",
+      "market": "GCC",
+      "official_domains": [
+        "hillintl.com"
+      ],
+      "discovery_query": "site:hillintl.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "bechtel",
+      "name": "Bechtel",
+      "market": "GCC",
+      "official_domains": [
+        "bechtel.com"
+      ],
+      "discovery_query": "site:bechtel.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "turner-townsend",
+      "name": "Turner & Townsend",
+      "market": "GCC",
+      "official_domains": [
+        "turnerandtownsend.com"
+      ],
+      "discovery_query": "site:turnerandtownsend.com careers jobs",
+      "preferred_sources": [
+        "official_employer_page",
+        "official_ats"
+      ],
+      "residential_fallback_allowed": false
+    }
+  ]
+}

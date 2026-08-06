@@ -1,23 +1,29 @@
-"""Source framework CLI: registry, probe, verify and ingest.
+"""Source framework CLI: registry, probe, verify, route-check and ingest.
 
 Usage:
 
     python3 -m career_engine.sources.cli registry [--json]
     python3 -m career_engine.sources.cli probe --adapter greenhouse --company careem \
             [--limit 10] [--location ""] [--output PATH] [--offline] [--full]
+    python3 -m career_engine.sources.cli probe --adapter careerjet --company "Design Manager" \
+            --user-triggered --user-ip <actual-public-ip> --user-agent <actual-user-agent>
     python3 -m career_engine.sources.cli verify --url <careers-or-ats-url> [--offline]
+    python3 -m career_engine.sources.cli route-check --url <url> \
+            --allowlist-file <gcc-employers.json> [--proxy-available]
     python3 -m career_engine.sources.cli ingest --file probe.json \
             [--scanner-id hermes_scanner] [--output PATH]
 
 Invariants:
 
-- ``registry`` always prints ``no_send_policy: true``.
+- ``registry`` always prints ``no_send_policy: true`` and never exposes secret values.
 - ``probe`` never writes anywhere except the optional ``--output`` file and
   every emitted report carries ``send_or_submit: false``.
-- ``ingest`` feeds the probe output through the central scanner, which scores
-  jobs and blocks generation until the live-vacancy gate is satisfied.
-- Every probe is bounded: per-request timeout (12s), size caps, and a
-  ``--limit`` job cap. Use ``--offline`` for deterministic fixture probes.
+- Discovery API, aggregator and alert records remain unverified until an
+  official employer or ATS source promotes them.
+- ``ingest`` feeds the probe output through the central scanner without sending,
+  contacting recruiters or submitting applications.
+- Every probe is bounded by request timeouts, response-size caps and a job limit.
+- Missing provider credentials return ``unavailable`` without failing the wider scan.
 """
 
 from __future__ import annotations
@@ -29,15 +35,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .base import DiscoveryJob, DiscoveryReport, SourceAdapter, SourceError, html_to_text
+from .base import (
+    DiscoveryJob,
+    DiscoveryReport,
+    SourceAdapter,
+    SourceError,
+    SourceUnavailable,
+)
 from .dedupe import DedupeStore
 from .registry import get_source, registry_payload
 
 FIXTURES_DIR = str(Path(__file__).resolve().parent / "fixtures")
-
-# Adapter id -> (class, allowed kinds). Search discovery and inbox are handled
-# separately because they do not emit jobs without verification/auth.
-_KNOWN_KINDS = ("ats_api", "ats_web", "employer_page")
 
 
 def _report_payload(report: DiscoveryReport, *, offline: bool) -> dict[str, Any]:
@@ -56,30 +64,53 @@ def _report_payload(report: DiscoveryReport, *, offline: bool) -> dict[str, Any]
     return payload
 
 
-def build_adapter(adapter_id: str, *, offline: bool = False) -> SourceAdapter:
-    from .adapters.ashby import AshbyAdapter
-    from .adapters.greenhouse import GreenhouseAdapter
-    from .adapters.jsonld import JsonLdAdapter
-    from .adapters.lever import LeverAdapter
-    from .adapters.smartrecruiters import SmartRecruitersAdapter
-    from .adapters.workable import WorkableAdapter
-
-    registry = {
-        "greenhouse": GreenhouseAdapter,
-        "lever": LeverAdapter,
-        "ashby": AshbyAdapter,
-        "smartrecruiters": SmartRecruitersAdapter,
-        "workable": WorkableAdapter,
-        "jsonld": JsonLdAdapter,
-    }
-    cls = registry.get(adapter_id)
-    if cls is None:
+def build_adapter(
+    adapter_id: str,
+    *,
+    offline: bool = False,
+    user_triggered: bool = False,
+    user_ip: str = "",
+    user_agent: str = "",
+) -> SourceAdapter:
+    kwargs: dict[str, Any] = {"fixtures_dir": FIXTURES_DIR if offline else None}
+    if adapter_id == "greenhouse":
+        from .adapters.greenhouse import GreenhouseAdapter
+        cls: type[SourceAdapter] = GreenhouseAdapter
+    elif adapter_id == "lever":
+        from .adapters.lever import LeverAdapter
+        cls = LeverAdapter
+    elif adapter_id == "ashby":
+        from .adapters.ashby import AshbyAdapter
+        cls = AshbyAdapter
+    elif adapter_id == "smartrecruiters":
+        from .adapters.smartrecruiters import SmartRecruitersAdapter
+        cls = SmartRecruitersAdapter
+    elif adapter_id == "workable":
+        from .adapters.workable import WorkableAdapter
+        cls = WorkableAdapter
+    elif adapter_id == "jsonld":
+        from .adapters.jsonld import JsonLdAdapter
+        cls = JsonLdAdapter
+    elif adapter_id == "brave_search":
+        from .adapters.aggregators import BraveSearchAdapter
+        cls = BraveSearchAdapter
+    elif adapter_id == "jooble":
+        from .adapters.aggregators import JoobleAdapter
+        cls = JoobleAdapter
+    elif adapter_id == "careerjet":
+        from .adapters.aggregators import CareerjetAdapter
+        cls = CareerjetAdapter
+        kwargs.update(
+            user_triggered=user_triggered,
+            user_ip=user_ip,
+            user_agent=user_agent,
+        )
+    else:
         raise SourceError(
             f"Adapter {adapter_id!r} is not probe-runnable here. Registry status: "
             + _describe_blocked(adapter_id)
         )
-    return cls(fixtures_dir=FIXTURES_DIR if offline else None)
-
+    return cls(**kwargs)
 
 def _describe_blocked(adapter_id: str) -> str:
     try:
@@ -98,6 +129,9 @@ def run_probe(
     limit: int = 10,
     offline: bool = False,
     fetch_full: bool = False,
+    user_triggered: bool = False,
+    user_ip: str = "",
+    user_agent: str = "",
 ) -> dict[str, Any]:
     """Run one bounded probe and return a DiscoveryReport payload."""
     entry = get_source(adapter_id)
@@ -108,20 +142,30 @@ def run_probe(
         report.notes.append(f"Source {adapter_id} is blocked; no probe attempted.")
         return _report_payload(report, offline=offline)
 
-    adapter = build_adapter(adapter_id, offline=offline)
+    adapter = build_adapter(
+        adapter_id,
+        offline=offline,
+        user_triggered=user_triggered,
+        user_ip=user_ip,
+        user_agent=user_agent,
+    )
     dedupe = DedupeStore()
     try:
         discovered = adapter.search(
             company=company,
             location=location,
-            limit=limit,
+            limit=max(1, min(int(limit), 100)),
             fetch_full=fetch_full,
             offline=offline,
         )
-    except SourceError as exc:
+    except SourceUnavailable as exc:
         report.add_source(
-            _source_result(adapter_id, status="error", error=str(exc))
+            _source_result(adapter_id, status="unavailable", error=str(exc))
         )
+        report.notes.append(f"Source unavailable: {exc}")
+        return _report_payload(report, offline=offline)
+    except SourceError as exc:
+        report.add_source(_source_result(adapter_id, status="error", error=str(exc)))
         report.notes.append(str(exc))
         return _report_payload(report, offline=offline)
 
@@ -137,16 +181,26 @@ def run_probe(
         report.jobs.append(job.to_scanner_job())
         report.raw_jobs.append(job.to_data())
     status = "ok" if jobs else "empty"
-    report.add_source(
-        _source_result(adapter_id, status=status, jobs_fetched=len(jobs))
+    report.add_source(_source_result(adapter_id, status=status, jobs_fetched=len(jobs)))
+    report.notes.append(
+        f"Adapter {adapter_id} probed query/company identifier {company!r}: {len(jobs)} jobs."
     )
-    report.notes.append(f"Adapter {adapter_id} probed company identifier {company!r}: {len(jobs)} jobs.")
+    if not entry.get("official", False):
+        report.notes.append(
+            "All emitted records remain unverified until official employer/ATS verification succeeds."
+        )
     return _report_payload(report, offline=offline)
 
 
-def _source_result(adapter_id: str, *, status: str, jobs_fetched: int = 0, error: str = "") -> Any:
-    from .provenance import utc_now_iso
+def _source_result(
+    adapter_id: str,
+    *,
+    status: str,
+    jobs_fetched: int = 0,
+    error: str = "",
+) -> Any:
     from .base import SourceResult
+    from .provenance import utc_now_iso
 
     return SourceResult(
         adapter_id=adapter_id,
@@ -170,12 +224,36 @@ def run_verify(url: str, *, offline: bool = False) -> dict[str, Any]:
     }
 
 
+def run_route_check(
+    url: str,
+    *,
+    allowlist_file: str,
+    proxy_available: bool,
+) -> dict[str, Any]:
+    from .routing import decide_route
+
+    payload = json.loads(Path(allowlist_file).read_text(encoding="utf-8"))
+    domains = {
+        str(item).lower().strip(".")
+        for item in payload.get("policy", {}).get(
+            "residential_allowlist_enabled_domains", []
+        )
+        if str(item).strip()
+    }
+    decision = decide_route(
+        url,
+        residential_allowlist=domains,
+        proxy_available=proxy_available,
+    )
+    return decision.to_data()
+
+
 def run_ingest(file_path: str, *, scanner_id: str, output: str = "") -> dict[str, Any]:
     """Feed a probe output file through the central Career Engine scanner.
 
-    Discovery-only by construction: the central scanner never sends or submits
-    and blocks generation for unverified vacancies. Offline fixture reports are
-    refused when the resolved root is the real repository.
+    Discovery-only by construction: the central scanner never sends or submits.
+    Offline fixture reports are refused when the resolved root is the production
+    repository unless the explicit test-only override is present.
     """
     from ..config import repo_root
     from ..scanner import run_scan, write_report
@@ -184,29 +262,19 @@ def run_ingest(file_path: str, *, scanner_id: str, output: str = "") -> dict[str
     payload = json.loads(source_file.read_text(encoding="utf-8"))
     root = repo_root()
     production_root = Path(__file__).resolve().parents[2]
-    fixture_report = payload.get("offline_fixture") is True or payload.get("ingest_allowed_in_production") is False
+    fixture_report = (
+        payload.get("offline_fixture") is True
+        or payload.get("ingest_allowed_in_production") is False
+    )
     allow_fixture = os.environ.get("CAREER_ENGINE_ALLOW_FIXTURE_INGEST", "").strip() == "1"
     if fixture_report and root.resolve() == production_root.resolve() and not allow_fixture:
-        raise ValueError("Offline fixture probe reports cannot be ingested into the production Career Engine tracker")
+        raise ValueError(
+            "Offline fixture probe reports cannot be ingested into the production Career Engine tracker"
+        )
     report = run_scan(source_file, root=root, scanner_id=scanner_id)
     if output:
         write_report(report, Path(output))
     return report
-
-
-def _cmd_registry() -> dict[str, Any]:
-    return registry_payload()
-
-
-def _cmd_probe(args: argparse.Namespace) -> dict[str, Any]:
-    return run_probe(
-        adapter_id=args.adapter,
-        company=args.company,
-        location=args.location or None,
-        limit=args.limit,
-        offline=args.offline,
-        fetch_full=args.full,
-    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -216,25 +284,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    registry = sub.add_parser("registry", help="Print the source registry and capability matrix")
+    registry = sub.add_parser("registry", help="Print source and runtime status")
     registry.add_argument("--json", action="store_true", help="Emit JSON")
 
-    probe = sub.add_parser("probe", help="Run a bounded discovery probe against one source")
-    probe.add_argument("--adapter", required=True, help="Adapter/source id (see registry)")
-    probe.add_argument("--company", required=True, help="Board token / company id / careers URL")
-    probe.add_argument("--location", default="", help="Optional location filter")
-    probe.add_argument("--limit", type=int, default=10, help="Maximum jobs to emit (bounded)")
-    probe.add_argument("--full", action="store_true", help="Fetch full detail where required (SmartRecruiters)")
-    probe.add_argument("--offline", action="store_true", help="Use fixtures instead of the network")
-    probe.add_argument("--output", default="", help="Write the DiscoveryReport JSON to this path")
+    probe = sub.add_parser("probe", help="Run one bounded discovery probe")
+    probe.add_argument("--adapter", required=True)
+    probe.add_argument("--company", required=True, help="Board id, careers URL or search keywords")
+    probe.add_argument("--location", default="")
+    probe.add_argument("--limit", type=int, default=10)
+    probe.add_argument("--full", action="store_true")
+    probe.add_argument("--offline", action="store_true")
+    probe.add_argument("--output", default="")
+    probe.add_argument(
+        "--user-triggered",
+        action="store_true",
+        help="Required for Careerjet; confirms this query was directly requested by the user",
+    )
+    probe.add_argument("--user-ip", default="", help="Careerjet actual triggering user IP")
+    probe.add_argument("--user-agent", default="", help="Careerjet actual triggering user-agent")
 
-    verify = sub.add_parser("verify", help="Verify a candidate URL against the employer's own page")
+    verify = sub.add_parser("verify", help="Verify a candidate against an official source")
     verify.add_argument("--url", required=True)
     verify.add_argument("--offline", action="store_true")
 
-    ingest = sub.add_parser("ingest", help="Feed a probe output through the central scanner (scoring only)")
+    route = sub.add_parser("route-check", help="Evaluate the fail-closed residential route policy")
+    route.add_argument("--url", required=True)
+    route.add_argument("--allowlist-file", required=True)
+    route.add_argument("--proxy-available", action="store_true")
+
+    ingest = sub.add_parser("ingest", help="Feed probe output through the central scanner")
     ingest.add_argument("--file", required=True)
-    ingest.add_argument("--scanner-id", choices=("hermes_scanner", "chatgpt_scanner"), default="hermes_scanner")
+    ingest.add_argument(
+        "--scanner-id",
+        choices=("hermes_scanner", "chatgpt_scanner"),
+        default="hermes_scanner",
+    )
     ingest.add_argument("--output", default="")
     return parser
 
@@ -247,18 +331,40 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "registry":
-            emit(_cmd_registry())
+            emit(registry_payload())
             return 0
         if args.command == "probe":
-            result = _cmd_probe(args)
+            result = run_probe(
+                adapter_id=args.adapter,
+                company=args.company,
+                location=args.location or None,
+                limit=args.limit,
+                offline=args.offline,
+                fetch_full=args.full,
+                user_triggered=args.user_triggered,
+                user_ip=args.user_ip,
+                user_agent=args.user_agent,
+            )
             emit(result)
             if args.output:
                 out = Path(args.output)
                 out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                out.write_text(
+                    json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
             return 0
         if args.command == "verify":
             emit(run_verify(args.url, offline=args.offline))
+            return 0
+        if args.command == "route-check":
+            emit(
+                run_route_check(
+                    args.url,
+                    allowlist_file=args.allowlist_file,
+                    proxy_available=args.proxy_available,
+                )
+            )
             return 0
         if args.command == "ingest":
             emit(run_ingest(args.file, scanner_id=args.scanner_id, output=args.output))
@@ -270,7 +376,7 @@ def main(argv: list[str] | None = None) -> int:
     except (SourceError, ValueError) as exc:
         emit({"error": type(exc).__name__, "message": str(exc)})
         return 2
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         emit({"error": type(exc).__name__, "message": str(exc)})
         return 70
 

@@ -21,6 +21,7 @@ under ``.agents/skills/``.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 STATUS_ACTIVE = "active"
@@ -153,7 +154,31 @@ _SOURCES: list[dict[str, Any]] = [
             "Public career pages/feeds. published_on is a bare date (day precision). "
             "Treat as fallback/direct-source class per connector research."
         ),
-        "probe": {"verified": False, "companies": [], "verified_at": "2026-08-05"},
+        "probe": {
+            "verified": True,
+            "companies": ["qiddiya"],
+            "verified_at": "2026-08-06",
+        },
+        "probe_history": [
+            {
+                "verified": False,
+                "companies": [],
+                "verified_at": "2026-08-05",
+                "evidence": (
+                    "Legacy v3 accounts and v1 widget endpoints returned HTTP 404 for all "
+                    "tested account identifiers."
+                ),
+            },
+            {
+                "verified": True,
+                "companies": ["qiddiya"],
+                "verified_at": "2026-08-06",
+                "evidence": (
+                    "The current public account endpoint responded for Qiddiya; the existing "
+                    "adapter still requires migration before live use."
+                ),
+            },
+        ],
     },
     {
         "id": "jsonld",
@@ -173,6 +198,74 @@ _SOURCES: list[dict[str, Any]] = [
             "No fixed company identifier; probe targets a supplied careers URL."
         ),
         "probe": {"verified": False, "companies": [], "verified_at": ""},
+    },
+    {
+        "id": "brave_search",
+        "name": "Brave Search API",
+        "kind": "discovery",
+        "priority": 2,
+        "auth": "api_key",
+        "posting_date": "none",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": "Unavailable until BRAVE_SEARCH_API_KEY is configured.",
+        "base_url": "https://api.search.brave.com/res/v1/web/search",
+        "docs_url": (
+            "https://api-dashboard.search.brave.com/app/documentation/web-search/get-started"
+        ),
+        "notes": (
+            "Licensed search discovery only. Results remain unverified and cannot become "
+            "authoritative until an official employer page or ATS source verifies the vacancy."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "secret_env": "BRAVE_SEARCH_API_KEY",
+        "manual_only": False,
+    },
+    {
+        "id": "jooble",
+        "name": "Jooble REST API",
+        "kind": "aggregator_api",
+        "priority": 2,
+        "auth": "api_key",
+        "posting_date": "none",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": "Unavailable until JOOBLE_API_KEY is configured.",
+        "base_url": "https://jooble.org/api/{api_key}",
+        "docs_url": (
+            "https://help.jooble.org/en/support/solutions/articles/60001448238-rest-api-documentation"
+        ),
+        "notes": (
+            "Licensed aggregator used only for discovery. Jooble's updated field is retained as "
+            "upstream metadata and is not treated as the vacancy posting date. Official employer "
+            "or ATS verification is mandatory before authoritative ingestion."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "secret_env": "JOOBLE_API_KEY",
+        "manual_only": False,
+    },
+    {
+        "id": "careerjet",
+        "name": "Careerjet Publisher API",
+        "kind": "aggregator_api",
+        "priority": 2,
+        "auth": "api_key + actual user IP/user-agent",
+        "posting_date": "exact",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": (
+            "Manual user-triggered calls only. Requires an API key plus the actual triggering "
+            "user IP address and user-agent; scheduled or synthetic-identity calls are denied."
+        ),
+        "base_url": "https://search.api.careerjet.net/v4/query",
+        "docs_url": "https://www.careerjet.com/partners/api",
+        "notes": (
+            "Discovery-only. CAREERJET_API_KEY is canonical; CAREERJET_AFFID remains accepted "
+            "only as a compatibility alias. Official employer or ATS verification is mandatory."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "secret_env": "CAREERJET_API_KEY|CAREERJET_AFFID",
+        "manual_only": True,
     },
     {
         "id": "search_discovery",
@@ -240,6 +333,134 @@ _SOURCES: list[dict[str, Any]] = [
             "against the official employer posting before it can be ingested as authoritative."
         ),
         "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
+    },
+    {
+        "id": "bayt_alerts",
+        "name": "Bayt Job Alerts (Inbox Surface)",
+        "kind": "inbox",
+        "priority": 3,
+        "auth": "authenticated email alert",
+        "posting_date": "unknown",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": "Alerts must be configured manually in the authenticated Bayt account.",
+        "base_url": "",
+        "docs_url": "",
+        "notes": (
+            "Email-alert normalization only; no direct Bayt scraping. Every listing remains "
+            "unverified until promoted through an official employer or ATS source."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
+    },
+    {
+        "id": "naukrigulf_alerts",
+        "name": "NaukriGulf Job Alerts (Inbox Surface)",
+        "kind": "inbox",
+        "priority": 3,
+        "auth": "authenticated email alert",
+        "posting_date": "unknown",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": (
+            "Alerts must be configured manually in the authenticated NaukriGulf account."
+        ),
+        "base_url": "",
+        "docs_url": "",
+        "notes": (
+            "Email-alert normalization only; no direct NaukriGulf scraping. Every listing "
+            "requires official employer or ATS verification before authoritative ingestion."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
+    },
+    {
+        "id": "gulftalent_alerts",
+        "name": "GulfTalent Job Alerts (Inbox Surface)",
+        "kind": "inbox",
+        "priority": 3,
+        "auth": "authenticated email alert",
+        "posting_date": "unknown",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": (
+            "Alerts must be configured manually in the authenticated GulfTalent account."
+        ),
+        "base_url": "",
+        "docs_url": "",
+        "notes": (
+            "Email-alert normalization only; no direct GulfTalent scraping. Every listing "
+            "requires official employer or ATS verification before authoritative ingestion."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
+    },
+    {
+        "id": "indeed_alerts",
+        "name": "Indeed Job Alerts (Inbox Surface)",
+        "kind": "inbox",
+        "priority": 3,
+        "auth": "authenticated email alert",
+        "posting_date": "unknown",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": "Alerts must be configured manually in the authenticated Indeed account.",
+        "base_url": "",
+        "docs_url": "",
+        "notes": (
+            "Email-alert normalization only; no direct Indeed scraping. Every listing remains "
+            "unverified until promoted through an official employer or ATS source."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
+    },
+    {
+        "id": "foundit_alerts",
+        "name": "Foundit Job Alerts (Inbox Surface)",
+        "kind": "inbox",
+        "priority": 3,
+        "auth": "authenticated email alert",
+        "posting_date": "unknown",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": "Alerts must be configured manually in the authenticated Foundit account.",
+        "base_url": "",
+        "docs_url": "",
+        "notes": (
+            "Email-alert normalization only; no direct Foundit scraping. Every listing remains "
+            "unverified until promoted through an official employer or ATS source."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
+    },
+    {
+        "id": "gotogulf_alerts",
+        "name": "Gotogulf Job Alerts (Inbox Surface)",
+        "kind": "inbox",
+        "priority": 3,
+        "auth": "authenticated email alert",
+        "posting_date": "unknown",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": (
+            "Alerts must be configured manually in the authenticated Gotogulf account."
+        ),
+        "base_url": "",
+        "docs_url": "",
+        "notes": (
+            "Email-alert normalization only; no direct Gotogulf automation. Every listing "
+            "requires official employer or ATS verification before authoritative ingestion."
+        ),
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+        "alert_normalizer_available": True,
+        "manual_configuration_required": True,
     },
     {
         "id": "gcc_freehire",
@@ -334,6 +555,42 @@ _SOURCES: list[dict[str, Any]] = [
         "probe": {"verified": False, "companies": [], "verified_at": ""},
     },
     {
+        "id": "board_foundit",
+        "name": "Foundit",
+        "kind": "board_web",
+        "priority": 3,
+        "auth": "account",
+        "posting_date": "approximate",
+        "official": False,
+        "status": STATUS_BLOCKED,
+        "blocked_reason": (
+            "Authenticated or anti-bot scraping is not approved. Use authenticated email alerts "
+            "as a discovery surface and verify against the official employer posting."
+        ),
+        "base_url": "https://www.foundit.in",
+        "docs_url": "",
+        "notes": "Residential fallback is explicitly denied.",
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+    },
+    {
+        "id": "board_gotogulf",
+        "name": "Gotogulf",
+        "kind": "board_web",
+        "priority": 3,
+        "auth": "none",
+        "posting_date": "approximate",
+        "official": False,
+        "status": STATUS_BLOCKED,
+        "blocked_reason": (
+            "Direct board automation is not approved. Use authenticated email alerts as a "
+            "discovery surface and verify against the official employer posting."
+        ),
+        "base_url": "https://www.gotogulf.com",
+        "docs_url": "",
+        "notes": "Residential fallback is explicitly denied.",
+        "probe": {"verified": False, "companies": [], "verified_at": ""},
+    },
+    {
         "id": "linkedin_public",
         "name": "LinkedIn Public Jobs",
         "kind": "board_web",
@@ -377,9 +634,40 @@ def get_source(source_id: str) -> dict[str, Any]:
     return dict(item)
 
 
+def _secret_configured(spec: str) -> bool:
+    if not spec:
+        return True
+    return any(bool(os.environ.get(name, "").strip()) for name in spec.split("|"))
+
+
+def runtime_source_status() -> list[dict[str, Any]]:
+    """Return value-free configured/runnable status for every registered source."""
+    rows: list[dict[str, Any]] = []
+    for item in sorted(_SOURCES, key=lambda entry: (entry["priority"], entry["id"])):
+        configured = _secret_configured(item.get("secret_env", ""))
+        runnable = item["status"] != STATUS_BLOCKED and configured
+        rows.append(
+            {
+                "source_id": item["id"],
+                "configured": configured,
+                "runnable": runnable,
+                "manual_only": bool(item.get("manual_only")),
+                "status": (
+                    "configured"
+                    if runnable
+                    else "blocked"
+                    if item["status"] == STATUS_BLOCKED
+                    else "unconfigured"
+                ),
+            }
+        )
+    return rows
+
+
 def capability_matrix() -> list[dict[str, Any]]:
     """The capability matrix: one row per source, ordered by priority."""
     rows = []
+    runtime = {item["source_id"]: item for item in runtime_source_status()}
     for item in sorted(_SOURCES, key=lambda entry: (entry["priority"], entry["id"])):
         rows.append(
             {
@@ -393,6 +681,9 @@ def capability_matrix() -> list[dict[str, Any]]:
                 "status": item["status"],
                 "blocked_reason": item["blocked_reason"],
                 "probe_verified": bool(item.get("probe", {}).get("verified")),
+                "configured": runtime[item["id"]]["configured"],
+                "runnable": runtime[item["id"]]["runnable"],
+                "manual_only": runtime[item["id"]]["manual_only"],
             }
         )
     return rows
@@ -404,6 +695,8 @@ def registry_payload() -> dict[str, Any]:
         "schema_version": 1,
         "purpose": "Career Engine discovery source registry (canonical, in-repo)",
         "no_send_policy": True,
+        "official_verification_required_for_discovery_sources": True,
         "sources": _SOURCES,
         "capability_matrix": capability_matrix(),
+        "runtime_status": runtime_source_status(),
     }
