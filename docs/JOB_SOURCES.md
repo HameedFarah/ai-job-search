@@ -25,7 +25,7 @@ application preparation. Roles explicitly known to be closed remain blocked.
 | Strict provenance | Every job carries `provenance` (source id/name/kind, official flag, fetched-at, extracted-from, raw id, verification note). |
 | Posting-date precision | Dates are never fabricated. Every value carries `exact \| day \| month \| unknown` plus the upstream field that produced it. |
 | Dedupe | Stable keys from external id (+ URL), falling back to a normalized (company, role, location) triple; the central tracker deduplicates again by `(source, external_job_id, source_url, jd_hash)`. |
-| Source confidence | Non-official discovery candidates retain `unverified` provenance until confirmed against an employer or ATS page, but may still be scored and prepared when they meet the 80-point threshold. |
+| Source confidence | Non-official discovery candidates retain `unverified` provenance until confirmed against an employer or ATS page, but may still be scored and prepared when they meet the canonical 70-point threshold. |
 | Bounded probes | Per-request timeout (12s), body size caps, `--limit` job caps. `--offline` runs deterministic fixture probes with no network. |
 | No fragile scraping as core | Authenticated LinkedIn scraping, Bayt/NaukriGulf HTML scraping and Google/Bing keyed APIs are blocked or disabled sources (see §3). |
 
@@ -40,11 +40,28 @@ Implemented under `career_engine/sources/adapters/` and probed from
 | `lever` | Lever Postings API | `api.lever.co/v0/postings/{company}?mode=json` | `createdAt` ms (exact) | none | `leverdemo` (demo board) |
 | `ashby` | Ashby Posting API | `api.ashbyhq.com/posting-api/job-board/{company}` | `publishedAt` (exact) | none | `ramp`, `linear`, `notion`, `plaid`, `opensea` |
 | `smartrecruiters` | SmartRecruiters Public Postings | `api.smartrecruiters.com/v1/companies/{id}/postings` | `releasedDate` (exact) | none | `SmartRecruiters` (8 postings) |
-| `workable` | Workable career pages/feeds | `apply.workable.com/api/v3\|v1/.../jobs` | `published_on` (day) | none | unverified (404 on tested identifiers) |
+| `workable` | Workable public account feed | `www.workable.com/api/accounts/{account}` | `published_on` (day) | none | **Qiddiya verified live 2026-08-06; adapter migration pending** |
 | `jsonld` | Employer career pages | JobPosting JSON-LD + job sitemaps | `datePosted` (exact) | none | verified offline + gate logic |
 | `search_discovery` | Google/Bing/DuckDuckGo | DuckDuckGo Instant Answer API (public) | none | none/key | candidates only, must verify |
 | `inbox_gmail` / `linkedin_alerts` | Mailbox alert inboxes | contract only | none | oauth/session | blocked (no authorized connector) |
 | `gcc_freehire` | freehire.me aggregator API | `freehire.me` | approximate | none | shipped upstream, enabled |
+
+## 2.1 Next direct-source adapters (verified 2026-08-06)
+
+The current tracker contains many application URLs that were discovered
+indirectly but belong to public official ATS surfaces. Direct ingestion should
+replace aggregator dependence in this order:
+
+| ATS family | Verified public surface | Current decision |
+|---|---|---|
+| Workable | `www.workable.com/api/accounts/{account}` | P0: migrate the existing adapter; Qiddiya verified live |
+| Workday Candidate Experience | tenant `/wday/cxs/{tenant}/{site}/jobs` search plus public site map | P0: add a tenant/site-configured bounded adapter; Parsons verified live |
+| Oracle Recruiting Cloud Candidate Experience | public `recruitingCEJobRequisitions` and detail resources | P0: add a tenant/site-configured bounded adapter; public list/detail verified live |
+| Recruitee | public Careers Site API | P1: add when a target employer identifier is known |
+| Personio | public XML career feed | P1: add when a target employer identifier is known |
+
+These are official employer publication surfaces. They remain discovery and
+application-preparation inputs only; no adapter sends or submits.
 
 ## 3. Capability matrix and blocked sources
 
@@ -85,9 +102,11 @@ repository skill evidence under `.agents/skills/`.
   HTML descriptions plus `publishedAt`; used by many modern companies.
 - **SmartRecruiters** - public company postings API; note it returns empty
   `content` (not 404) for unknown identifiers, so probes report `empty`.
-- **Workable** - public feeds exist but the tested endpoints returned 404 for
-  every account identifier on 2026-08-05; treated as fallback/direct-source
-  class until a live identifier is confirmed.
+- **Workable** - the current public account endpoint at
+  `www.workable.com/api/accounts/{account}` returned structured live data for
+  Qiddiya on 2026-08-06, including `published_on`, location and application
+  URL. The existing adapter still targets stale endpoints and remains partial
+  until migrated and covered by live tests.
 - **JobPosting JSON-LD / sitemaps** - schema.org standard; the most portable
   official source for employers without public ATS APIs.
 - **Search engines** - DuckDuckGo Instant Answer API is a public JSON API
@@ -130,7 +149,7 @@ python3 -m career_engine.sources.cli probe --adapter greenhouse --company careem
 The `ingest` command runs the central scanner (`career_engine.scanner.run_scan`),
 which uses the same scoring, source-confidence and no-send policy as the
 ChatGPT and Hermes scanners. Discovery-only records land as `unverified`, are
-scored normally, and may be prepared at 80 or above while retaining a visible
+scored normally, and may be prepared at 70 or above while retaining a visible
 verification warning. Explicitly closed roles remain blocked.
 
 ## 6. Posting-date contract with the tracker
