@@ -3,7 +3,9 @@
 No-send policy (mirrors the Career Engine contract):
 
 - Adapters only discover and normalize. They never mutate external state.
-- Every job emitted by a probe defaults to ``live_status: unverified``.
+- Every job emitted by a probe defaults to ``live_status: unverified`` so the
+  central engine scores it but blocks generation until the live-vacancy gate
+  is satisfied by an authoritative verification source.
 - Every report carries ``send_or_submit: false``.
 """
 
@@ -30,10 +32,11 @@ class SourceError(Exception):
 
 
 class SourceUnavailable(SourceError):
-    """A configured source cannot run, usually because credentials are absent."""
+    """A source cannot run, usually because required credentials are absent."""
 
 
 def html_to_text(value: str | None) -> str:
+    """Convert job description HTML to plain text (best effort, stdlib only)."""
     if not value:
         return ""
     text = _HTML_TAG_RE.sub("\n", value)
@@ -46,6 +49,8 @@ def html_to_text(value: str | None) -> str:
 
 @dataclass(slots=True)
 class DiscoveryJob:
+    """A normalized discovery-only job record."""
+
     adapter_id: str
     company: str
     role: str
@@ -66,6 +71,12 @@ class DiscoveryJob:
         return len(text) >= 80
 
     def to_scanner_job(self, *, live_status: str = "unverified") -> dict[str, Any]:
+        """Convert to a central-engine-compatible scanner job record.
+
+        ``live_status`` defaults to ``unverified``: discovery never claims a
+        vacancy is live. Generation therefore stays blocked until an owner or
+        later scan verifies the vacancy against an authoritative source.
+        """
         posted = self.posted or unknown(self.adapter_id)
         provenance = self.provenance
         if provenance is None:
@@ -117,6 +128,8 @@ class DiscoveryJob:
 
 @dataclass(slots=True)
 class SourceResult:
+    """Outcome of one adapter probe (success or failure, never thrown away)."""
+
     adapter_id: str
     status: str  # ok | empty | error | blocked | unavailable | unverified
     fetched_at: str
@@ -127,6 +140,8 @@ class SourceResult:
 
 @dataclass(slots=True)
 class DiscoveryReport:
+    """Bounded discovery probe output, scanner-compatible by construction."""
+
     schema_version: int = 1
     generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
     adapter: str = ""
@@ -155,10 +170,13 @@ class DiscoveryReport:
 
     def as_json(self) -> str:
         import json
+
         return json.dumps(self.to_data(), ensure_ascii=False, indent=2) + "\n"
 
 
 class SourceAdapter(ABC):
+    """Base class for discovery-only source adapters."""
+
     source_id: str = ""
     source_name: str = ""
     source_kind: str = "ats_api"
@@ -191,8 +209,10 @@ class SourceAdapter(ABC):
         base = self._fixtures_dir
         if base:
             import os
+
             path = os.path.join(base, filename)
             if os.path.isfile(path):
                 return path
         import pathlib
+
         return str(pathlib.Path(__file__).resolve().parent / "fixtures" / filename)

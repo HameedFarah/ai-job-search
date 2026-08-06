@@ -1,4 +1,30 @@
-"""Source framework CLI: registry, probe, verify, route-check and ingest."""
+"""Source framework CLI: registry, probe, verify, route-check and ingest.
+
+Usage:
+
+    python3 -m career_engine.sources.cli registry [--json]
+    python3 -m career_engine.sources.cli probe --adapter greenhouse --company careem \
+            [--limit 10] [--location ""] [--output PATH] [--offline] [--full]
+    python3 -m career_engine.sources.cli probe --adapter careerjet --company "Design Manager" \
+            --user-triggered --user-ip <actual-public-ip> --user-agent <actual-user-agent>
+    python3 -m career_engine.sources.cli verify --url <careers-or-ats-url> [--offline]
+    python3 -m career_engine.sources.cli route-check --url <url> \
+            --allowlist-file <gcc-employers.json> [--proxy-available]
+    python3 -m career_engine.sources.cli ingest --file probe.json \
+            [--scanner-id hermes_scanner] [--output PATH]
+
+Invariants:
+
+- ``registry`` always prints ``no_send_policy: true`` and never exposes secret values.
+- ``probe`` never writes anywhere except the optional ``--output`` file and
+  every emitted report carries ``send_or_submit: false``.
+- Discovery API, aggregator and alert records remain unverified until an
+  official employer or ATS source promotes them.
+- ``ingest`` feeds the probe output through the central scanner without sending,
+  contacting recruiters or submitting applications.
+- Every probe is bounded by request timeouts, response-size caps and a job limit.
+- Missing provider credentials return ``unavailable`` without failing the wider scan.
+"""
 
 from __future__ import annotations
 
@@ -186,6 +212,7 @@ def _source_result(
 
 
 def run_verify(url: str, *, offline: bool = False) -> dict[str, Any]:
+    """Run the official-verification gate on one candidate URL."""
     from .adapters.jsonld import JsonLdAdapter
 
     verifier = JsonLdAdapter(fixtures_dir=FIXTURES_DIR if offline else None)
@@ -222,6 +249,12 @@ def run_route_check(
 
 
 def run_ingest(file_path: str, *, scanner_id: str, output: str = "") -> dict[str, Any]:
+    """Feed a probe output file through the central Career Engine scanner.
+
+    Discovery-only by construction: the central scanner never sends or submits.
+    Offline fixture reports are refused when the resolved root is the production
+    repository unless the explicit test-only override is present.
+    """
     from ..config import repo_root
     from ..scanner import run_scan, write_report
 

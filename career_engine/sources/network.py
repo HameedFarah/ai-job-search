@@ -1,8 +1,16 @@
 """Bounded HTTP requests for discovery adapters (stdlib only).
 
-All network access goes through this module so every request has an explicit
-timeout, response-size cap, identified user-agent and one exception surface.
-It never stores cookies or session state.
+All network access goes through this module so that every request has:
+
+- an explicit timeout (default 12s, never infinite);
+- a size cap on the response body (default 2 MiB);
+- a neutral browser-like User-Agent with a clear self-identification string;
+- a single exception surface (``SourceError``) the adapters translate;
+- explicit request methods and bounded JSON request bodies where an approved API requires POST.
+
+The module never follows blind redirects to login walls and never stores
+cookies or session state. A 404 is surfaced as ``SourceNotFound`` so adapters
+can distinguish "this board identifier does not exist" from other failures.
 """
 
 from __future__ import annotations

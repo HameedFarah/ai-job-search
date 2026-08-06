@@ -239,6 +239,22 @@ class SourceExpansionTests(unittest.TestCase):
             self.assertFalse(entry["official"])
             self.assertEqual(entry["status"], "partial")
 
+    def test_registry_preserves_historical_source_evidence_additively(self) -> None:
+        self.assertIn(
+            "first_published/updated_at",
+            get_source("greenhouse")["notes"],
+        )
+        workable = get_source("workable")
+        self.assertIn("HTTP 404", workable["blocked_reason"])
+        self.assertEqual(len(workable["probe_history"]), 2)
+        self.assertFalse(workable["probe_history"][0]["verified"])
+        self.assertTrue(workable["probe_history"][1]["verified"])
+        self.assertIn("Cloudflare bot protection", get_source("gcc_bayt")["blocked_reason"])
+        self.assertIn("Connection timeout", get_source("gcc_naukrigulf")["blocked_reason"])
+        self.assertIn("reviewed upstream PRs/issues/forks", get_source("gcc_gulftalent")["blocked_reason"])
+        self.assertIn("Strong anti-bot and policy risk", get_source("board_indeed")["blocked_reason"])
+        self.assertIn("Fragile authenticated scraping", get_source("linkedin_public")["blocked_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
