@@ -9,6 +9,7 @@ from typing import Any
 from .bundle import build_bundle, bundle_status, load_bundle
 from .config import load_config, validate_required_files
 from .generation import run_adapter
+from .ops import dashboard, list_jobs, reconcile, record_review, review_summary, run, scan, show_job, validate_all, validate_config
 from .pipeline import finalize_render, import_generated, prepare, read_stage, status
 from .renderer import ats_template_status, build_render_input, render_ats_and_verify, render_ats_design_options, render_tooling
 from .review import record_review_diff
@@ -76,9 +77,64 @@ def build_parser() -> argparse.ArgumentParser:
     bundle = sub.add_parser("bundle")
     add_common(bundle)
     bundle_sub = bundle.add_subparsers(dest="bundle_command", required=True)
-    for name in ("build", "status", "validate"):
+    for name in ("build", "rebuild", "status", "validate"):
         subparser = bundle_sub.add_parser(name)
         add_common(subparser)
+
+    validate_config = sub.add_parser(
+        "validate-config",
+        help="Validate central config, required files, bundle currency/validity and tracker schema",
+    )
+    add_common(validate_config)
+
+    list_jobs = sub.add_parser(
+        "list-jobs",
+        help="Read-only job summary with score/status/company/role filters",
+    )
+    add_common(list_jobs)
+    list_jobs.add_argument("--status", default="", help="Filter by processing_status")
+    list_jobs.add_argument("--min-score", type=int, default=None, help="Minimum fit score (inclusive)")
+    list_jobs.add_argument("--max-score", type=int, default=None, help="Maximum fit score (inclusive)")
+    list_jobs.add_argument("--company", default="", help="Substring filter on company")
+    list_jobs.add_argument("--role", default="", help="Substring filter on role")
+
+    show_job = sub.add_parser("show-job", help="Read-only canonical job detail")
+    add_common(show_job)
+    show_job.add_argument("--job-id", required=True)
+
+    dashboard_parser = sub.add_parser(
+        "dashboard",
+        help="Read-only dashboard status; --sync writes the local dashboard data export (never deploys)",
+    )
+    add_common(dashboard_parser)
+    dashboard_parser.add_argument("--sync", action="store_true", help="Write the local dashboard data export")
+
+    review = sub.add_parser(
+        "review",
+        help="Read-only review summary/diff candidate; never changes owner decisions",
+    )
+    add_common(review)
+
+    run = sub.add_parser(
+        "run",
+        help="Deterministic batch orchestration: bundle, reconcile, prepare eligible jobs, sync dashboard data",
+    )
+    add_common(run)
+
+    reconcile = sub.add_parser(
+        "reconcile",
+        help="Idempotent tracker reconciliation against the canonical threshold and owner decisions",
+    )
+    add_common(reconcile)
+
+    scan = sub.add_parser(
+        "scan",
+        help="Safe wrapper of scanner ingest with explicit input file and scanner id",
+    )
+    add_common(scan)
+    scan.add_argument("--file", required=True, help="Scan input JSON (array or jobs[] object)")
+    scan.add_argument("--scanner-id", choices=("hermes_scanner", "chatgpt_scanner"), default="hermes_scanner")
+    scan.add_argument("--output", default="", help="Optional structured scan report path")
 
     template = sub.add_parser("template")
     add_common(template)
@@ -113,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     stat = sub.add_parser("status")
     add_common(stat)
-    stat.add_argument("--job-id", required=True)
+    stat.add_argument("--job-id", default="", help="Optional job id; without it an aggregate status is shown")
 
     score = sub.add_parser("score")
     add_common(score)
@@ -146,7 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate")
     add_common(validate)
-    validate.add_argument("--job-id", required=True)
+    validate.add_argument("--job-id", default="", help="Optional job id; without it config/bundle/tracker/all generated eligible jobs are validated")
 
     render = sub.add_parser("render")
     add_common(render)
@@ -165,9 +221,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(package)
     package.add_argument("--job-id", required=True)
 
-    review = sub.add_parser("record-review")
-    add_common(review)
-    review.add_argument("--file", required=True, help="Structured ChatGPT review diff JSON")
+    review_record = sub.add_parser("record-review")
+    add_common(review_record)
+    review_record.add_argument(
+        "--file", default="",
+        help="Structured ChatGPT review diff JSON; defaults to runtime/review-diffs/latest.json when it validates",
+    )
 
     scanner = sub.add_parser("scanner")
     add_common(scanner)
@@ -320,8 +379,8 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_TEMPLATE
             return EXIT_READY
         if args.command == "bundle":
-            if args.bundle_command == "build":
-                result = build_bundle()
+            if args.bundle_command in ("build", "rebuild"):
+                result = build_bundle(force=args.bundle_command == "rebuild")
             elif args.bundle_command == "status":
                 result = bundle_status()
             else:
@@ -329,6 +388,50 @@ def main(argv: list[str] | None = None) -> int:
                 result["validated"] = bool(result.get("valid") and result.get("current"))
             emit(result, human=args.human)
             return EXIT_READY if result.get("current", True) and result.get("valid", True) else EXIT_SYSTEM
+        if args.command == "validate-config":
+            result = validate_config()
+            emit(result, human=args.human)
+            return EXIT_READY if result["valid"] else EXIT_SYSTEM
+        if args.command == "list-jobs":
+            result = list_jobs(
+                status=args.status,
+                min_score=args.min_score,
+                max_score=args.max_score,
+                company=args.company,
+                role=args.role,
+            )
+            emit(result, human=args.human)
+            return EXIT_READY
+        if args.command == "show-job":
+            try:
+                result = show_job(args.job_id)
+            except KeyError as exc:
+                emit({"job_id": args.job_id, "error": str(exc)}, human=args.human)
+                return EXIT_OWNER_INPUT
+            emit(result, human=args.human)
+            return EXIT_READY
+        if args.command == "dashboard":
+            result = dashboard(sync=args.sync)
+            emit(result, human=args.human)
+            return EXIT_READY
+        if args.command == "review":
+            result = review_summary()
+            emit(result, human=args.human)
+            return EXIT_READY
+        if args.command == "reconcile":
+            result = reconcile()
+            emit(result, human=args.human)
+            return EXIT_READY
+        if args.command == "run":
+            result = run()
+            emit(result, human=args.human)
+            if not result.get("bundle", {}).get("valid", True):
+                return EXIT_SYSTEM
+            return EXIT_READY
+        if args.command == "scan":
+            result = scan(args.file, args.scanner_id, output=args.output)
+            emit(result, human=args.human)
+            return EXIT_READY
         if args.command == "template":
             if args.template_command == "status":
                 result = template_status()
@@ -365,7 +468,11 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_ROUTE
             return EXIT_READY
         if args.command == "status":
-            result = status(args.job_id)
+            if args.job_id:
+                result = status(args.job_id)
+            else:
+                result = list_jobs()
+                result["aggregate"] = True
             emit(result, human=args.human)
             return EXIT_READY
         if args.command == "score":
@@ -417,8 +524,7 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_OWNER_INPUT
             return EXIT_READY
         if args.command == "record-review":
-            payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
-            result = record_review_diff(payload)
+            result = record_review(file=args.file)
             emit(result, human=args.human)
             return EXIT_READY if result.get("valid") else EXIT_POLICY
         if args.command == "scanner":
@@ -445,19 +551,12 @@ def main(argv: list[str] | None = None) -> int:
             emit(result, human=args.human)
             return EXIT_READY if result["valid"] else EXIT_POLICY
         if args.command == "validate":
-            config, paths = load_config()
-            artifact_dir = paths.tracker_base / "artifacts" / args.job_id
-            generated = artifact_dir / "generated_application.json"
-            if not generated.is_file():
-                result = {"valid": False, "reason": "generated_application_missing"}
-                emit(result, human=args.human)
-                return EXIT_OWNER_INPUT
-            bundle = load_bundle()
-            packet = json.loads((artifact_dir / "generation_packet.json").read_text(encoding="utf-8"))
-            from .generation import validate_generated_application
-            findings = validate_generated_application(json.loads(generated.read_text(encoding="utf-8")), packet, bundle)
-            result = {"valid": not any(item["severity"] == "error" for item in findings), "findings": findings}
+            result = validate_all(job_id=args.job_id)
             emit(result, human=args.human)
+            if not args.job_id:
+                return EXIT_READY if result["valid"] else EXIT_POLICY
+            if not result.get("present", True):
+                return EXIT_OWNER_INPUT
             return EXIT_READY if result["valid"] else EXIT_POLICY
         raise AssertionError(args.command)
     except Exception as exc:

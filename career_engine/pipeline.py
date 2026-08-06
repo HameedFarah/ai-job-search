@@ -129,10 +129,10 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     live_errors = [item["message"] for item in validate_live_status(normalized)]
     if live_errors:
         warnings.append("invalid_live_metadata:" + "; ".join(live_errors))
-    # Threshold 80 (high_priority) is the credible-generation threshold.
+    # Threshold 70 (high_priority) is the credible-generation threshold.
     # Verification affects confidence and later external-action checks, but it
     # is not required to score or prepare an application package. Roles known
-    # to be closed remain blocked. Credible (65-79) and selective (50-64)
+    # to be closed remain blocked. Credible (65-69) and selective (50-64)
     # roles remain trackable unless the owner explicitly forces a package.
     threshold = config["scoring"]["thresholds"]["high_priority"]
     if score["total"] < threshold and not force_weak:

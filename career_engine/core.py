@@ -482,7 +482,7 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
                 # quality as the mandatory proxy instead of a fixed default, so
                 # a JD whose responsibilities genuinely match the verified
                 # evidence can still reach credible generation, while an
-                # unmatched or generic JD cannot inflate itself to 80+.
+                # unmatched or generic JD cannot inflate itself to 70+.
                 relevant = [
                     m for m in matches
                     if req_by_id.get(m["requirement_id"], {}).get("priority") != "preferred"

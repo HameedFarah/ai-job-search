@@ -94,7 +94,7 @@
       "credentials": 5
     },
     "thresholds": {
-      "high_priority": 80,
+      "high_priority": 70,
       "credible": 65,
       "selective": 50,
       "weak": 0
@@ -123,7 +123,7 @@
     "free_prose_required": true
   },
   "daily_scanner": {
-    "minimum_score_for_generation": 80,
+    "minimum_score_for_generation": 70,
     "maximum_generation_packets_per_scan": 5,
     "send_or_submit": false,
     "provider": "opencode-go",

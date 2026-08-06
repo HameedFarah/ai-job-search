@@ -62,8 +62,8 @@ Every normalized job carries a `live_status` contract: `live`, `closed` or
 
 ## Scoring calibration and generation threshold
 
-Generation eligibility is **threshold 80 (high priority)**. Verification raises
-confidence but is not a prerequisite. Below 80 a role stays trackable but never
+Generation eligibility is **threshold 70 (high priority)**. Verification raises
+confidence but is not a prerequisite. Below 70 a role stays trackable but never
 receives a generation packet unless the owner explicitly forces one
 (`--force-weak` on prepare or an owner score override).
 
@@ -81,9 +81,9 @@ roles while preserving adjacent senior design-management roles:
    subscore evidence is computed; subscores remain preserved.
 2. **Requirement-coverage honesty.** When a JD has no explicit mandatory
    bucket, mandatory coverage uses the overall requirement match quality as a
-   proxy instead of a fixed default, so a strongly matched design-management JD
-   can still reach 80 while an unmatched JD cannot inflate itself. An absent
-   preferred section contributes 0.5 (not 1.0).
+    proxy instead of a fixed default, so a strongly matched design-management JD
+    can still reach 70 while an unmatched JD cannot inflate itself. An absent
+    preferred section contributes 0.5 (not 1.0).
 
 Raw score and human override evidence are preserved on every job record:
 
@@ -156,19 +156,66 @@ Each stage records its input hash and output. Re-running an unchanged applicatio
 ./career-engine doctor
 ./career-engine bundle build
 ./career-engine bundle status
+./career-engine bundle validate
+./career-engine bundle rebuild
+./career-engine validate-config
+./career-engine list-jobs [--status STATUS] [--min-score N] [--max-score N] [--company TEXT] [--role TEXT]
+./career-engine show-job --job-id JOB_ID
+./career-engine dashboard [--sync]
+./career-engine review
+./career-engine reconcile
+./career-engine run
+./career-engine validate [--job-id JOB_ID]
+./career-engine record-review [--file REVIEW_JSON]
 ./career-engine prepare --jd-file JOB.txt --company COMPANY --role ROLE --application-url OFFICIAL_URL --live-status live --live-verified-at TIMESTAMP --live-verification-source SOURCE
-./career-engine status --job-id JOB_ID
+./career-engine status [--job-id JOB_ID]
 ./career-engine score --job-id JOB_ID [--override N --reason REASON]
 ./career-engine route --job-id JOB_ID
 ./career-engine generate export --job-id JOB_ID
 ./career-engine generate run --job-id JOB_ID --adapter manual
 ./career-engine generate import --job-id JOB_ID --file generated_application.json
-./career-engine validate --job-id JOB_ID
 ./career-engine render --job-id JOB_ID
 ./career-engine render-ats --job-id JOB_ID
 ./career-engine package --job-id JOB_ID
 ./career-engine scanner ingest --file jobs.json --scanner-id hermes_scanner
+./career-engine scan --file jobs.json --scanner-id hermes_scanner
 ```
+
+## Operational commands
+
+- `validate-config` — validates the central config, required files, bundle
+  currency/validity and tracker schema (CSV header, event schema, per-job JSON).
+  Returns nonzero on errors.
+- `list-jobs` — read-only job summary with score/status/company/role filters.
+- `show-job` — read-only canonical job detail including scoring, route,
+  processing state, packet presence and artifacts.
+- `dashboard` — read-only dashboard status; `--sync` writes the local dashboard
+  data export at `projects/job-automation/runtime/dashboard-data.json`. Live
+  deployment of the career-review site is an external action requiring explicit
+  owner approval and is never performed silently.
+- `review` — read-only summary of the latest review diff; never changes owner
+  decisions.
+- `reconcile` — idempotent tracker reconciliation: enforces the centralized
+  generation threshold (no below-70 job stays `generation_ready` without a
+  persisted owner force), applies persisted owner decisions (append-only
+  events), removes stale generation-packet eligibility and produces a
+  machine-readable before/after report with changed job IDs.
+- `run` — deterministic batch orchestration. Rebuilds/validates the bundle as
+  needed, reconciles tracker statuses, prepares/generates only eligible records
+  through the configured no-send pipeline up to
+  `daily_scanner.maximum_generation_packets_per_scan`, syncs the local dashboard
+  data and emits a structured report. It preserves applied/approved/
+  awaiting-owner states, never sends or submits, never creates Gmail drafts for
+  portal-only jobs, and is idempotent.
+- `validate` — per-job validation, or without `--job-id` aggregate validation of
+  config, bundle, tracker and every generated application of eligible jobs.
+  Applications attached to terminal-status records (applied/superseded/rejected)
+  are reported as historical and never fail the aggregate result.
+- `record-review` — retains `--file`; without it, defaults to
+  `runtime/review-diffs/latest.json` when it validates.
+- `scan` — safe wrapper of `scanner ingest` with explicit input file and
+  scanner id.
+- `bundle rebuild` — safe alias of `bundle build` (forces a rebuild).
 
 The `manual` generation adapter allows ChatGPT or another approved model to consume and return the structured packet. Provider-specific adapters are optional and do not change the core application logic.
 
@@ -196,7 +243,7 @@ The scanner:
 
 - rebuilds the central bundle when needed;
 - deduplicates through the canonical tracker;
-- stops roles below the 80-point generation threshold after scoring;
+- stops roles below the 70-point generation threshold after scoring;
 - respects the live-vacancy gate: explicitly closed jobs remain blocked, while unverified or incomplete-live jobs may produce generation packets and appear as generation candidates with a visible verification warning;
 - never sends email or submits applications;
 - produces one structured report.

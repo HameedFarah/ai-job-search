@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-05T21:48:02+00:00",
-  "source_hash": "a949b7de794ecaea6a4999101422bd86c34dfce2a9ea5423c4e157f943c0109b",
+  "built_at": "2026-08-06T10:27:12+00:00",
+  "source_hash": "1b80b1ee56f92309d258bd0a010e056ec1f1e20be12d171ebe0f1646d143109a",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "8603d5fa16500d22222b46953472684b13c9645976be3e9d5c5e64e85bcd06b6",
+      "sha256": "6ca0e9ce7c6863eb1fc41271d0a7dc983da22427d0a0e90b26b674056fd22653",
       "size": 4276,
-      "modified_ns": 1785966398768125951
+      "modified_ns": 1786010935568366899
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
@@ -36,9 +36,9 @@
     },
     {
       "path": "projects/job-automation/playbooks/career-engine-application-playbook.md",
-      "sha256": "ba92143efed9492903772b918565d819ac9f32b4d161aceb1bdb667c5ca78a47",
+      "sha256": "4eaa2f914bbec1d4949bab9d6434dd4f7c0a90de6d6f863cd1622889ceba3168",
       "size": 28147,
-      "modified_ns": 1785965296833911674
+      "modified_ns": 1786012018433210669
     },
     {
       "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
@@ -155,7 +155,7 @@
         "credentials": 5
       },
       "thresholds": {
-        "high_priority": 80,
+        "high_priority": 70,
         "credible": 65,
         "selective": 50,
         "weak": 0
@@ -184,7 +184,7 @@
       "free_prose_required": true
     },
     "daily_scanner": {
-      "minimum_score_for_generation": 80,
+      "minimum_score_for_generation": 70,
       "maximum_generation_packets_per_scan": 5,
       "send_or_submit": false,
       "provider": "opencode-go",
@@ -1328,6 +1328,6 @@
     "gmail_account": "hameedo@gmail.com",
     "email_subject_fallback": "Abdelhamid Farah - {post_name}"
   },
-  "bundle_hash": "972fba006c2ee831cc9380b625e2fd846ddaccc59abdac2b3c464333c331a115",
+  "bundle_hash": "f729887e40eedfe2eee5a1363f6f22706704b8b0ea3c5861f44837fa59c3eb6c",
   "cache_reused": false
 }
