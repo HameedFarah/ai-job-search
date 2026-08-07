@@ -45,7 +45,7 @@ def engine_root(tmp_path: Path) -> Path:
         "schema_version": 1,
         "identity": {
             "professional_name": "Abdelhamid Farah",
-            "outward_email": "hameedo@gmail.com",
+            "outward_email": "hameedfarah@gmail.com",
             "current_role": "District Manager",
         },
         "career_chronology": [
@@ -287,9 +287,9 @@ def test_route_requires_verified_real_recipient_or_portal(engine_root: Path) -> 
 
 def test_policy_and_filename_rules(engine_root: Path) -> None:
     bundle = build_bundle(engine_root)
-    text = "National Bank of Iraq — available to join. H&S. CMP 50 hours."
+    text = "National Bank of Iraq — available to join. H&S. CMP 50 hours. hameedo@gmail.com"
     codes = {item["code"] for item in validate_text(text, bundle)}
-    assert {"prohibited_name", "availability", "forbidden_character", "prohibited_term", "cmp_hours"} <= codes
+    assert {"prohibited_name", "availability", "forbidden_character", "prohibited_term", "cmp_hours", "internal_email_exposed"} <= codes
     pattern = bundle["config"]["policy"]["external_filename_pattern"]
     assert outward_filename("Manager - Design Governance", pattern) == "Abdelhamid_Farah_CV_Manager_Design_Governance.pdf"
     assert outward_filename("Senior Design Manager (Architect - Site/Delivery Experience)", pattern) == "Abdelhamid_Farah_CV_Senior_Design_Manager.pdf"
@@ -312,6 +312,7 @@ def test_email_subject_policy_uses_job_instruction_then_fallback(job_payload: di
     assert packet["email_draft_policy"]["expected_subject"] == "REF-204 - Senior Design Manager"
     assert packet["email_draft_policy"]["subject_source"] == "job_description"
     assert packet["email_draft_policy"]["account"] == "hameedo@gmail.com"
+    assert packet["email_draft_policy"]["sender"] == "hameedfarah@gmail.com"
     assert packet["email_draft_policy"]["attachment_count"] == 1
 
     fallback = dict(job_payload)

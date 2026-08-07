@@ -325,7 +325,8 @@ def create_generation_packet(
         "policy": bundle["config"]["policy"],
         "application_route": route,
         "email_draft_policy": {
-            "account": policy.get("email_draft_account", bundle.get("identity", {}).get("outward_email", "")),
+            "account": policy.get("email_draft_account", "hameedo@gmail.com"),
+            "sender": bundle.get("identity", {}).get("outward_email", ""),
             "recipient": route.get("recipient", ""),
             "recipient_source": route.get("recipient_source", ""),
             "expected_subject": expected_subject,

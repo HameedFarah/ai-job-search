@@ -50,7 +50,7 @@ def _packet(job_payload: dict, engine_root: Path) -> dict:
         "location": "Riyadh, Saudi Arabia",
         "nationalities": ["Jordanian", "Brazilian"],
         "languages": ["Arabic - native", "English - fluent"],
-        "outward_email": "hameedo@gmail.com",
+        "outward_email": "hameedfarah@gmail.com",
         "ksa_phone": "+966 53 079 6449",
         "current_role": "District Manager",
         "current_employer": "Arab Sustainable Architecture / Tubaila Team Workshop (TTW)",

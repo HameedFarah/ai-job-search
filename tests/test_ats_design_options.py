@@ -163,7 +163,7 @@ def test_each_style_preserves_exact_content(engine_root: Path, tmp_path: Path, j
     assert "English: Fluent" in rendered
     assert "Nationality: Jordanian and Brazilian" in rendered
     # Contact block retained
-    assert "hameedo@gmail.com" in rendered
+    assert "hameedfarah@gmail.com" in rendered
     assert "+966 53 079 6449" in rendered
     # No invented or template-only text
     assert "[ACHIEVEMENT" not in rendered

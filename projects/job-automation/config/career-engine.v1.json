@@ -28,9 +28,9 @@
   },
   "identity": {
     "name": "Abdelhamid Farah",
-    "outward_email": "hameedo@gmail.com",
+    "outward_email": "hameedfarah@gmail.com",
     "draft_account": "hameedo@gmail.com",
-    "authenticated_email_may_differ": false,
+    "authenticated_email_may_differ": true,
     "ksa_phone": "+966 53 079 6449",
     "jordan_phone": "+962 79 540 5000",
     "current_chronology_title": "District Manager",
@@ -70,7 +70,8 @@
     "metric_box_count": 6,
     "external_filename_pattern": "Abdelhamid_Farah_CV_{target_role}.pdf",
     "self_review_addresses": [
-      "hameedo@gmail.com"
+      "hameedo@gmail.com",
+      "hameedfarah@gmail.com"
     ],
     "email_requires_verified_recipient": true,
     "email_draft_account": "hameedo@gmail.com",

@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-06T10:27:12+00:00",
-  "source_hash": "1b80b1ee56f92309d258bd0a010e056ec1f1e20be12d171ebe0f1646d143109a",
+  "built_at": "2026-08-07T17:15:05+00:00",
+  "source_hash": "d7479deaea2d5b09e9aa0ef5a4f8e05cae67787a8bae4eda1fd013f74d1a79ca",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "6ca0e9ce7c6863eb1fc41271d0a7dc983da22427d0a0e90b26b674056fd22653",
-      "size": 4276,
-      "modified_ns": 1786010935568366899
+      "sha256": "f7c68bd371654267e8cb0006d6eedf80137bc712121fc8beba7caa401447086e",
+      "size": 4310,
+      "modified_ns": 1786121885171949532
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
@@ -32,19 +32,19 @@
       "path": "projects/job-automation/career-engine-profile.v1.json",
       "sha256": "3908a207de4cd9d39d805d529522467606903ca15b836d56eb54badd5f4750d4",
       "size": 25805,
-      "modified_ns": 1785965215054076219
+      "modified_ns": 1786122865866870129
     },
     {
       "path": "projects/job-automation/playbooks/career-engine-application-playbook.md",
       "sha256": "4eaa2f914bbec1d4949bab9d6434dd4f7c0a90de6d6f863cd1622889ceba3168",
       "size": 28147,
-      "modified_ns": 1786012018433210669
+      "modified_ns": 1786122865870870125
     },
     {
       "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
       "sha256": "3fb8f2882c1e68105457fe6f63dbcf9a946cf469c2d66148f2abcb5482c2f8b5",
       "size": 26782,
-      "modified_ns": 1785965247614023033
+      "modified_ns": 1786122865870870125
     },
     {
       "path": "projects/job-automation/career-metrics-bank-2026-08-03.md",
@@ -89,9 +89,9 @@
     },
     "identity": {
       "name": "Abdelhamid Farah",
-      "outward_email": "hameedo@gmail.com",
+      "outward_email": "hameedfarah@gmail.com",
       "draft_account": "hameedo@gmail.com",
-      "authenticated_email_may_differ": false,
+      "authenticated_email_may_differ": true,
       "ksa_phone": "+966 53 079 6449",
       "jordan_phone": "+962 79 540 5000",
       "current_chronology_title": "District Manager",
@@ -131,7 +131,8 @@
       "metric_box_count": 6,
       "external_filename_pattern": "Abdelhamid_Farah_CV_{target_role}.pdf",
       "self_review_addresses": [
-        "hameedo@gmail.com"
+        "hameedo@gmail.com",
+        "hameedfarah@gmail.com"
       ],
       "email_requires_verified_recipient": true,
       "email_draft_account": "hameedo@gmail.com",
@@ -552,14 +553,18 @@
       "Arabic - native",
       "English - fluent"
     ],
-    "outward_email": "hameedo@gmail.com",
+    "outward_email": "hameedfarah@gmail.com",
     "ksa_phone": "+966 53 079 6449",
     "jordan_phone": "+962 79 540 5000",
     "current_role": "District Manager",
     "current_employer": "Arab Sustainable Architecture / Tubaila Team Workshop (TTW)",
     "current_location": "Saudi Arabia",
     "sce_classification": "Consultant (مستشار) - Architectural Engineering",
-    "cmp_label": "Contracts Management Professional"
+    "cmp_label": "Contracts Management Professional",
+    "name": "Abdelhamid Farah",
+    "draft_account": "hameedo@gmail.com",
+    "authenticated_email_may_differ": true,
+    "current_chronology_title": "District Manager"
   },
   "career_chronology": [
     {
@@ -1296,7 +1301,6 @@
     "Use a vacancy-aligned functional headline supported by evidence.",
     "Use ASCII hyphens only and never use em dashes or en dashes.",
     "Never mention availability or a joining date in external career material.",
-    "Use hameedo@gmail.com in all outward career material and Gmail drafts.",
     "Outside Jordan show only the KSA phone. Inside Jordan show the Jordan phone first, then the KSA phone.",
     "Include the approved headshot in every CV unless explicitly overridden for one application.",
     "Keep the standard CV to exactly two pages.",
@@ -1311,7 +1315,8 @@
     "Never present National Bank of Iraq or Al-Ula Museum Office as experience.",
     "Do not name confidential government clients, internal project codes, or minor contractors and intermediaries in external material.",
     "Every email draft must use the verified actual recipient in To. When none exists, provide the official application link and create no application email draft.",
-    "Never send, submit or contact externally without explicit owner approval."
+    "Never send, submit or contact externally without explicit owner approval.",
+    "Expose only hameedfarah@gmail.com in outward career material. Store Gmail drafts in hameedo@gmail.com, but use hameedfarah@gmail.com as the outward sender identity."
   ],
   "policy_overrides": {
     "never_self_address_review_draft": true,
@@ -1328,6 +1333,6 @@
     "gmail_account": "hameedo@gmail.com",
     "email_subject_fallback": "Abdelhamid Farah - {post_name}"
   },
-  "bundle_hash": "f729887e40eedfe2eee5a1363f6f22706704b8b0ea3c5861f44837fa59c3eb6c",
+  "bundle_hash": "fc0d037de034285f49d4224244a6188271c8e092b4e76512180d3013f3a42f54",
   "cache_reused": false
 }

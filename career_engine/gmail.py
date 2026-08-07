@@ -15,6 +15,7 @@ from typing import Any
 
 
 CAREER_GMAIL_ACCOUNT = "hameedo@gmail.com"
+CAREER_OUTWARD_EMAIL = "hameedfarah@gmail.com"
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -215,8 +216,8 @@ def list_matching_drafts(query: str, *, max_results: int = 20) -> list[dict[str,
 def build_application_message(*, recipient: str, subject: str, body: str, pdf_path: Path, sender: str) -> bytes:
     if not recipient or "@" not in recipient:
         raise ValueError("A verified application recipient is required")
-    if sender.strip().lower() != CAREER_GMAIL_ACCOUNT:
-        raise ValueError(f"Career application drafts must use {CAREER_GMAIL_ACCOUNT}")
+    if sender.strip().lower() != CAREER_OUTWARD_EMAIL:
+        raise ValueError(f"Career application drafts must expose only {CAREER_OUTWARD_EMAIL} as the sender")
     if not subject.strip():
         raise ValueError("A deterministic application subject is required")
     if not pdf_path.is_file() or pdf_path.stat().st_size == 0:
@@ -259,6 +260,7 @@ def save_application_draft(
     return verify_draft(
         draft_id,
         expected_recipient=recipient,
+        expected_sender=sender,
         expected_subject=subject,
         expected_body=body,
         expected_pdf=pdf_path,
@@ -268,7 +270,7 @@ def save_application_draft(
 
 
 def verify_draft(
-    draft_id: str, *, expected_recipient: str, expected_subject: str, expected_body: str,
+    draft_id: str, *, expected_recipient: str, expected_sender: str, expected_subject: str, expected_body: str,
     expected_pdf: Path, recipient_source: str, action: str = "verified",
 ) -> dict[str, Any]:
     params = json.dumps({"userId": "me", "id": draft_id, "format": "raw"}, separators=(",", ":"))
@@ -296,6 +298,7 @@ def verify_draft(
     expected_bytes = expected_pdf.read_bytes()
     verified = (
         str(parsed.get("To", "")) == expected_recipient
+        and str(parsed.get("From", "")) == expected_sender
         and str(parsed.get("Subject", "")) == expected_subject
         and body_text.replace("\r\n", "\n").strip() == expected_body.replace("\r\n", "\n").strip()
         and len(attachments) == 1
@@ -310,6 +313,7 @@ def verify_draft(
         "message_id": saved.get("message", {}).get("id", ""),
         "thread_id": saved.get("message", {}).get("threadId", ""),
         "to": str(parsed.get("To", "")),
+        "from": str(parsed.get("From", "")),
         "recipient_source": recipient_source,
         "subject": str(parsed.get("Subject", "")),
         "body_matches": body_text.replace("\r\n", "\n").strip() == expected_body.replace("\r\n", "\n").strip(),

@@ -153,6 +153,7 @@ def test_finalize_render_moves_tracker_to_owner_approval(
     assert result["submission_package"]["owner_override"] is False
     assert result["submission_package"]["attachment_count"] == 0
     assert result["submission_package"]["email_account"] == "hameedo@gmail.com"
+    assert result["submission_package"]["email_sender"] == "hameedfarah@gmail.com"
     tracker_state = pipeline_status(state["job_id"], root=engine_root)
     assert tracker_state["processing_state"]["status"] == "awaiting_owner_approval"
     assert tracker_state["processing_state"]["owner"] == "owner"
@@ -391,8 +392,8 @@ def test_verify_pdf_accepts_artifact_pdf(engine_root: Path) -> None:
     extracted = subprocess.run(
         ["pdftotext", str(artifact), "-"], capture_output=True, text=True, check=False
     ).stdout
-    if "hameedo@gmail.com" not in extracted:
-        pytest.skip("artifact PDF predates the current hameedo@gmail.com outward-email policy")
+    if "hameedfarah@gmail.com" not in extracted:
+        pytest.skip("artifact PDF predates the current hameedfarah@gmail.com outward-email policy")
     result = verify_pdf(artifact, root=engine_root)
     assert result["valid"] is True
     assert result["page_count"] == 2

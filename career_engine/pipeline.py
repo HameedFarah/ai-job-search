@@ -340,6 +340,7 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             "selected_cv_docx": selected_docx.get("path", ""),
             "selected_cv_docx_sha256": selected_docx.get("sha256", ""),
             "email_account": packet.get("email_draft_policy", {}).get("account", "hameedo@gmail.com"),
+            "email_sender": packet.get("email_draft_policy", {}).get("sender", "hameedfarah@gmail.com"),
             "email_subject": packet.get("email_draft_policy", {}).get("expected_subject", ""),
         }
         result["submission_package"] = submission_package

@@ -233,6 +233,12 @@ def render_docx(job_id: str, generated_application: dict[str, Any], packet: dict
     document = Document(template)
     paragraphs = list(_all_paragraphs(document))
 
+    outward_email = str((packet.get("identity") or {}).get("outward_email", "")).strip()
+    if outward_email:
+        for paragraph in paragraphs:
+            if "hameedo@gmail.com" in paragraph.text.lower():
+                _replace_text(paragraph, re.sub(r"hameedo@gmail\.com", outward_email, paragraph.text, flags=re.IGNORECASE))
+
     headline = str(generated_application["headline"]).strip()
     profile = str(generated_application["leadership_profile"]["text"]).strip()
     current_bullets = [str(item["text"]).strip() for item in generated_application["current_role_bullets"]]
@@ -495,9 +501,14 @@ def verify_pdf(pdf_path: Path, *, root: Path | None = None) -> dict[str, Any]:
     for value in bundle["config"]["policy"].get("forbidden_characters", []):
         if value in text:
             findings.append({"severity": "error", "code": "forbidden_character", "message": value})
-    required = ["Abdelhamid Farah", "hameedo@gmail.com", "+966 53 079 6449", "Consultant"]
+    required = [
+        "Abdelhamid Farah",
+        str(bundle.get("identity", {}).get("outward_email", "")).strip(),
+        "+966 53 079 6449",
+        "Consultant",
+    ]
     for value in required:
-        if value.lower() not in text.lower():
+        if value and value.lower() not in text.lower():
             findings.append({"severity": "error", "code": "required_text_missing", "message": value})
     return {
         "valid": not any(item["severity"] == "error" for item in findings),
@@ -1019,9 +1030,14 @@ def verify_ats_pdf(pdf_path: Path, *, root: Path | None = None, docx_path: Path 
     for value in bundle["config"]["policy"].get("forbidden_characters", []):
         if value in text:
             findings.append({"severity": "error", "code": "forbidden_character", "message": value})
-    required = ["Abdelhamid Farah", "hameedo@gmail.com", "+966 53 079 6449", "Consultant"]
+    required = [
+        "Abdelhamid Farah",
+        str(bundle.get("identity", {}).get("outward_email", "")).strip(),
+        "+966 53 079 6449",
+        "Consultant",
+    ]
     for value in required:
-        if value.lower() not in text.lower():
+        if value and value.lower() not in text.lower():
             findings.append({"severity": "error", "code": "required_text_missing", "message": value})
     if shutil.which("pdfimages"):
         code, out, _err = _command_output(["pdfimages", "-list", str(pdf_path)])

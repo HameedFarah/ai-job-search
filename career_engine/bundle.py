@@ -57,6 +57,13 @@ def build_bundle(root: Path | None = None, *, force: bool = False) -> dict[str, 
         if current.get("source_hash") == source_hash:
             current["cache_reused"] = True
             return current
+    writing_rules = [
+        rule for rule in profile.get("writing_rules", [])
+        if "hameedo@gmail.com" not in str(rule).lower()
+    ]
+    writing_rules.append(
+        "Expose only hameedfarah@gmail.com in outward career material. Store Gmail drafts in hameedo@gmail.com, but use hameedfarah@gmail.com as the outward sender identity."
+    )
     body = {
         "schema_version": 1,
         "engine_version": config["engine_version"],
@@ -65,10 +72,10 @@ def build_bundle(root: Path | None = None, *, force: bool = False) -> dict[str, 
         "sources": sources,
         "config": config,
         "taxonomy": taxonomy,
-        "identity": profile.get("identity", config.get("identity", {})),
+        "identity": {**profile.get("identity", {}), **config.get("identity", {})},
         "career_chronology": profile.get("career_chronology", []),
         "claims": profile.get("claims", []),
-        "writing_rules": profile.get("writing_rules", []),
+        "writing_rules": writing_rules,
         "policy_overrides": profile.get("policy_overrides", {}),
     }
     body["bundle_hash"] = sha256_bytes(stable_json(body))

@@ -63,7 +63,7 @@ Two earlier direct attempts were safely reconciled to `unknown` after their fore
 
 ## Gmail
 
-- `hameedo@gmail.com` is the sole approved application identity and Gmail draft account. The superseded `hameedfarah@gmail.com` address must not be used.
+- Historical 2026-08-03 rule (superseded 2026-08-07): `hameedo@gmail.com` was previously the sole application identity and draft account. Current policy stores drafts in `hameedo@gmail.com` but exposes only `hameedfarah@gmail.com` to employers.
 - Repository-native Gmail/gws authentication for the approved identity reports `invalid_grant` and requires re-authorization.
 - Existing legacy duplicate drafts and one self-addressed review draft were observed in the legacy mailbox; no mailbox mutation was performed during closeout.
 - The production engine must search existing drafts before create/update and may create only an unsent draft for a verified real recipient.

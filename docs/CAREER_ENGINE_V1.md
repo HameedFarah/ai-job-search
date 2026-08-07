@@ -38,7 +38,7 @@ The bundle records every source hash. When a source changes, the bundle becomes 
 10. Import the structured result and reject unsupported facts or policy violations.
 11. Render and verify both role-specific CV variants: Modern Executive Sidebar and ATS Linear.
 12. Select exactly one submission CV: sidebar by default for email, ATS Linear by default for portals, or the persisted per-job owner override from the preview.
-13. For an email route with a verified recipient, create one unsent draft in `hameedo@gmail.com`. Fill `To` and `Subject` from the job description when specified; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach only the selected CV PDF; put the cover letter in the email body. Do not create a portal-only self-addressed draft.
+13. For an email route with a verified recipient, create one unsent draft stored in `hameedo@gmail.com` and set `hameedfarah@gmail.com` as the outward sender identity. Fill `To` and `Subject` from the job description when specified; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach only the selected CV PDF; put the cover letter in the email body. Do not create a portal-only self-addressed draft.
 14. Present the selected single-CV package for owner approval while retaining both generated variants for comparison and future override.
 15. At 10:00, ChatGPT reviews the preceding 09:00 Hermes run, corrects material differences, and records one structured review with `./career-engine record-review --file <review-json>`. The record is saved under `projects/job-automation/runtime/review-diffs/`, copied to `latest.json`, and appended to affected job histories. Hermes reads the latest accepted reusable rules before its next daily scan.
 16. Send or submit only after explicit approval.
@@ -265,7 +265,7 @@ They must not duplicate evidence or policy. They call the CLI, use its generatio
 
 ## Gmail integration
 
-`hameedo@gmail.com` is the sole Career Engine mailbox and outward application identity. The repository-native Gmail/gws path and the connected ChatGPT Gmail connector are separate execution paths, but both must operate on that account only.
+`hameedo@gmail.com` is the sole authenticated Career Engine mailbox and Gmail draft-storage account. `hameedfarah@gmail.com` is the sole employer-facing application email and outward From identity. The repository-native Gmail/gws path can set and verify the sender alias and is the approved career-draft creation path. A connected ChatGPT Gmail connector that cannot explicitly set/verify `From` may be used for reading/searching but must not create an employer-facing Career Engine application draft.
 
 Before draft creation the client must search existing drafts. An unsent email-application draft requires a verified real recipient and must verify `To`, exact subject, body, the single selected CV attachment filename/hash, and DRAFT status. The subject must use the job-description instruction when present; otherwise it is `Abdelhamid Farah - <Post Name>`. The cover letter belongs in the message body. Portal routes do not create self-addressed preparation drafts. Duplicate drafts, guessed recipients, multiple CV attachments and self-addressed review drafts are prohibited. Mailbox-derived data is runtime data and must not be committed.
 

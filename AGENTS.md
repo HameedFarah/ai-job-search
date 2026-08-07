@@ -1,5 +1,5 @@
 ---
-framework_version: 1.2.4
+framework_version: 1.2.5
 ---
 
 # Agent Guidelines: AI Job Search
@@ -28,8 +28,8 @@ Before material work, read the central machine policy, operating contract, curre
 - Never invent roles, projects, clients, metrics, dates, qualifications or contact addresses.
 - Never send email, contact a recruiter or submit an application without explicit owner approval.
 - Template defaults: a portal role renders `ats-classic` ATS Linear without photo; a verified direct-email/human-review role renders `modern-executive-sidebar` with photo; a Simplify import renders comprehensive `ats-compact-technical` with photo and is never submitted unchanged; owner overrides are respected. Route-specific rules supersede blanket headshot wording.
-- Use `hameedo@gmail.com` for outward career identity and Gmail draft ownership. Email applications attach exactly one selected CV: sidebar by default for email, ATS Linear by default for portals, with a persisted per-job owner override. Approval is internal only; availability is internal-only.
-- A verified-recipient email role may receive a normal unsent Gmail draft in `hameedo@gmail.com`. Fill To and Subject from the vacancy instructions; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach exactly one selected CV PDF. Portal-only roles remain dashboard packages with the official link and no email draft unless a genuine email route exists. Never guess a recipient or create a self-addressed review draft.
+- Use `hameedo@gmail.com` only as the authenticated mailbox and Gmail draft-storage account. Expose only `hameedfarah@gmail.com` to employers in CVs, cover letters, application forms and the outward From identity. Email applications attach exactly one selected CV: sidebar by default for email, ATS Linear by default for portals, with a persisted per-job owner override. Approval is internal only; availability is internal-only.
+- A verified-recipient email role may receive a normal unsent Gmail draft stored in `hameedo@gmail.com`, with `hameedfarah@gmail.com` as the outward sender identity. Use only a draft-creation path that can set and verify that From alias; a connector or compose path without sender control is not acceptable for employer-facing career drafts. Fill To and Subject from the vacancy instructions; otherwise use the verified recipient and `Abdelhamid Farah - <Post Name>`. Attach exactly one selected CV PDF. Portal-only roles remain dashboard packages with the official link and no email draft unless a genuine email route exists. Never guess a recipient or create a self-addressed review draft.
 - Do not commit runtime tracker data, generated application packages, mailbox data, live scan inputs/results, prompts, caches or secrets.
 
 ## Primary commands

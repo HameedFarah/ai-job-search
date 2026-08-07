@@ -382,7 +382,7 @@ Hard controls include:
 - vacancies explicitly marked `closed` remain blocked; `unverified` or incomplete-live vacancies are prepared with a visible verification warning rather than blocked;
 - mandatory domain requirements require direct claim-level evidence;
 - unsupported claims, altered chronology, prohibited names and availability wording are rejected;
-- email-application drafts are created only in `hameedo@gmail.com` for verified real recipients, with `To` and `Subject` taken from the job description when specified or the fallback `Abdelhamid Farah - <Post Name>`; attach exactly one selected CV PDF (sidebar by default for email, ATS Linear by default for portals, or the persisted preview override); portal-only roles do not receive self-addressed preparation drafts;
+- email-application drafts are stored only in `hameedo@gmail.com` for verified real recipients, while `hameedfarah@gmail.com` is the only employer-facing email and outward From identity; `To` and `Subject` come from the job description when specified or the fallback `Abdelhamid Farah - <Post Name>`; attach exactly one selected CV PDF (sidebar by default for email, ATS Linear by default for portals, or the persisted preview override); portal-only roles do not receive self-addressed preparation drafts;
 - no email is sent and no portal is submitted without explicit owner approval;
 - runtime tracker data, generated applications, mailbox data, scanner inputs/results, prompts, caches and secrets are excluded from source control.
 

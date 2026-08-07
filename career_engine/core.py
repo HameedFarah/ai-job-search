@@ -605,6 +605,15 @@ def validate_text(text: str, bundle: dict[str, Any], *, location: str = "") -> l
     for char in policy.get("forbidden_characters", []):
         if char in text:
             findings.append(ValidationFinding("forbidden_character", "error", f"Forbidden dash character: U+{ord(char):04X}", location))
+    draft_account = str(bundle.get("identity", {}).get("draft_account", "")).strip().lower()
+    outward_email = str(bundle.get("identity", {}).get("outward_email", "")).strip().lower()
+    if draft_account and draft_account != outward_email and draft_account in low:
+        findings.append(ValidationFinding(
+            "internal_email_exposed",
+            "error",
+            f"Internal draft mailbox must not appear in employer-facing material: {draft_account}",
+            location,
+        ))
     if "50 hours" in low and ("cmp" in low or "contracts management professional" in low):
         findings.append(ValidationFinding("cmp_hours", "error", "CMP must be listed without course hours", location))
     return [to_data(item) for item in findings]
