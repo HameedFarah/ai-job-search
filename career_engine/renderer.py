@@ -87,9 +87,24 @@ def _libreoffice_profile_dir(home: Path | None = None) -> Path:
     otherwise aborts conversion with a write error; the user cache directory lives on
     the main disk and is writable for non-root installs.
     """
-    base = (home or Path.home()) / ".cache" / "career-engine" / "libreoffice-profiles"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    override = os.environ.get("CAREER_ENGINE_LIBREOFFICE_PROFILE_DIR", "").strip()
+    candidates = [
+        Path(override).expanduser() if override else None,
+        (home or Path.home()) / ".cache" / "career-engine" / "libreoffice-profiles",
+        Path(tempfile.gettempdir()) / "career-engine" / "libreoffice-profiles",
+    ]
+    for base in candidates:
+        if base is None:
+            continue
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            probe = base / ".write-probe"
+            probe.touch()
+            probe.unlink()
+            return base
+        except OSError:
+            continue
+    raise OSError("No writable LibreOffice profile directory available")
 
 
 def render_tooling() -> dict[str, Any]:
@@ -423,6 +438,12 @@ def convert_docx_to_pdf(docx_path: Path, output_dir: Path) -> dict[str, Any]:
     if not libreoffice:
         return {"converted": False, "blocker": "libreoffice_missing"}
     output_dir.mkdir(parents=True, exist_ok=True)
+    pdf = output_dir / (docx_path.stem + ".pdf")
+    # LibreOffice 26.x can exit 1 without diagnostics when the destination PDF
+    # is left by a rejected/stale render attempt. Remove only this derived file
+    # so rerenders are deterministic and never touch unrelated artifacts.
+    if pdf.exists():
+        pdf.unlink()
     with tempfile.TemporaryDirectory(prefix="career-engine-lo-", dir=_libreoffice_profile_dir()) as profile_dir:
         profile = Path(profile_dir).resolve()
         # Keep LibreOffice's own scratch space on the main disk next to the fresh
@@ -448,7 +469,6 @@ def convert_docx_to_pdf(docx_path: Path, output_dir: Path) -> dict[str, Any]:
             check=False,
             env=env,
         )
-    pdf = output_dir / (docx_path.stem + ".pdf")
     return {
         "converted": completed.returncode == 0 and pdf.is_file(),
         "returncode": completed.returncode,

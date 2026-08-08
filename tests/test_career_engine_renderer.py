@@ -327,6 +327,7 @@ def test_convert_docx_to_pdf_builds_headless_command(tmp_path: Path, monkeypatch
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
         captured["command"] = list(command)
         captured["env"] = kwargs.get("env")
+        pdf.write_bytes(b"fake pdf")
         return subprocess.CompletedProcess(command, 0, stdout="convert ok", stderr="")
 
     monkeypatch.setattr("career_engine.renderer.subprocess.run", fake_run)

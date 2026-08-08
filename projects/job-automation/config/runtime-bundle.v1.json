@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-07T17:15:05+00:00",
-  "source_hash": "d7479deaea2d5b09e9aa0ef5a4f8e05cae67787a8bae4eda1fd013f74d1a79ca",
+  "built_at": "2026-08-08T14:28:22+00:00",
+  "source_hash": "26a46af45fdf49f0fd7cbd79f85de924d7fdf171af7098a2cffbb55b54db3831",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -30,21 +30,21 @@
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
-      "sha256": "3908a207de4cd9d39d805d529522467606903ca15b836d56eb54badd5f4750d4",
-      "size": 25805,
-      "modified_ns": 1786122865866870129
+      "sha256": "bfef1de13a6b9de9aeedd10321b4bd692dd0e5f0e740e0b107387996c3a31d1c",
+      "size": 25499,
+      "modified_ns": 1786178999977372770
     },
     {
       "path": "projects/job-automation/playbooks/career-engine-application-playbook.md",
-      "sha256": "4eaa2f914bbec1d4949bab9d6434dd4f7c0a90de6d6f863cd1622889ceba3168",
-      "size": 28147,
-      "modified_ns": 1786122865870870125
+      "sha256": "6f1f89251c52515567e1379ae6ebc110f91951840149d1d0546f2bb152860ddf",
+      "size": 27869,
+      "modified_ns": 1786178999981372766
     },
     {
       "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
-      "sha256": "3fb8f2882c1e68105457fe6f63dbcf9a946cf469c2d66148f2abcb5482c2f8b5",
-      "size": 26782,
-      "modified_ns": 1786122865870870125
+      "sha256": "f2cf808111b080f86ad81ac75b75f2144c260c6e32016b161d2c365b46c7417d",
+      "size": 26699,
+      "modified_ns": 1786178999989372758
     },
     {
       "path": "projects/job-automation/career-metrics-bank-2026-08-03.md",
@@ -1301,6 +1301,7 @@
     "Use a vacancy-aligned functional headline supported by evidence.",
     "Use ASCII hyphens only and never use em dashes or en dashes.",
     "Never mention availability or a joining date in external career material.",
+    "Use hameedfarah@gmail.com in outward career material.",
     "Outside Jordan show only the KSA phone. Inside Jordan show the Jordan phone first, then the KSA phone.",
     "Include the approved headshot in every CV unless explicitly overridden for one application.",
     "Keep the standard CV to exactly two pages.",
@@ -1323,16 +1324,10 @@
     "current_availability_internal_only": "2026-12-05",
     "default_cover_letter_required": false,
     "default_application_package": [
-      "selected_tailored_cv_pdf",
+      "tailored_cv_pdf",
       "cover_email_body"
-    ],
-    "email_default_cv": "modern-executive-sidebar",
-    "portal_default_cv": "ats-linear",
-    "preview_override_allowed": true,
-    "maximum_cv_attachments_per_application": 1,
-    "gmail_account": "hameedo@gmail.com",
-    "email_subject_fallback": "Abdelhamid Farah - {post_name}"
+    ]
   },
-  "bundle_hash": "fc0d037de034285f49d4224244a6188271c8e092b4e76512180d3013f3a42f54",
+  "bundle_hash": "c2622b643862ba217dec27c4b352b9884404edf4f0941975df1a41dc690d743c",
   "cache_reused": false
 }
