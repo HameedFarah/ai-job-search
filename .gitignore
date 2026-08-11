@@ -104,6 +104,12 @@ projects/job-automation/data/jobs.csv
 projects/job-automation/data/jobs/*.json
 !projects/job-automation/data/jobs/.gitkeep
 projects/job-automation/logs/events.jsonl
+# Runtime-only Career Engine state and local rendering profiles. These contain
+# generated scan/review/dashboard evidence and machine-local scratch data; they
+# must stay out of Git while remaining available on the live host.
+projects/job-automation/runtime/
+runtime/
+.career-engine-lo-profile/
 # Flat files under artifacts/ are scanner reports, mailbox-derived JSON,
 # generated packets/results, prompts and acceptance evidence - never commit.
 # All flat JSON/Markdown files and generated per-job subdirectories under
