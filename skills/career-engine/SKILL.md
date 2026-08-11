@@ -9,12 +9,13 @@ description: Centralized job evaluation and evidence-grounded application pipeli
 
 Before any scan, review, generation or correction, read:
 
-1. `projects/job-automation/config/central-rules.README.md`
-2. `projects/job-automation/config/career-engine.v1.json`
-3. `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/playbooks/career-engine-operations-contract.md`
-4. Current Vault `projects/job-automation/index.md` and `status.md`
+1. `/home/hameedo/obsidian/HermesOpsVault/projects/agent-ops/model-routing.md` for inference routing only.
+2. `projects/job-automation/config/central-rules.README.md`
+3. `projects/job-automation/config/career-engine.v1.json`
+4. `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/playbooks/career-engine-operations-contract.md`
+5. Current Vault `projects/job-automation/index.md` and `status.md`
 
-Then run `./career-engine doctor` and `./career-engine bundle status`. The central config and operating contract override stale chat summaries or review-diff narratives.
+Then run `./career-engine doctor` and `./career-engine bundle status`. The routing authority, central config and operating contract override stale chat summaries, installed skill copies or review-diff narratives.
 
 Always invoke the repository CLI and compiled runtime bundle. This skill contains no independent career facts or policy.
 
