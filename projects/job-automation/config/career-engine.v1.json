@@ -126,8 +126,6 @@
   "daily_scanner": {
     "minimum_score_for_generation": 70,
     "maximum_generation_packets_per_scan": 5,
-    "send_or_submit": false,
-    "provider": "opencode-go",
-    "model": "deepseek-v4-flash"
+    "send_or_submit": false
   }
 }

@@ -1,5 +1,5 @@
 ---
-framework_version: 1.2.5
+framework_version: 1.2.6
 ---
 
 # Agent Guidelines: AI Job Search
@@ -10,11 +10,12 @@ The Obsidian Vault is the canonical career truth. This repository is the executa
 
 Use these shared authorities in this order:
 
-1. **Central machine policy and settings** — `projects/job-automation/config/career-engine.v1.json`. This is the single editable source for thresholds, route defaults, mailbox identity, generation limits and no-send controls.
-2. **Canonical operating contract** — `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/playbooks/career-engine-operations-contract.md`. This is the single procedural rule set for Hermes, interactive ChatGPT sessions and the daily ChatGPT review.
-3. **Canonical Vault career truth and governance** — `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/` plus `governance/north-star.md`.
-4. **Repository code and schemas** — `career_engine/` and `projects/job-automation/config/`.
-5. **Compiled runtime bundle** — `projects/job-automation/config/runtime-bundle.v1.json`, built and validated through `./career-engine bundle ...`; every client consumes the same versioned bundle.
+1. **Canonical inference routing** — `HameedFarah/obsidian@master:projects/agent-ops/model-routing.md`. This is the sole provider/model/fallback authority for Hermes/VPS execution.
+2. **Central Career Engine machine policy and settings** — `projects/job-automation/config/career-engine.v1.json`. This is the single editable source for Career Engine thresholds, mailbox identity, generation limits and no-send controls; it must not define inference routing.
+3. **Canonical operating contract** — `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/playbooks/career-engine-operations-contract.md`. This is the single procedural rule set for Hermes, interactive ChatGPT sessions and the daily ChatGPT review.
+4. **Canonical Vault career truth and governance** — `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/` plus `governance/north-star.md`.
+5. **Repository code and schemas** — `career_engine/` and `projects/job-automation/config/`.
+6. **Compiled runtime bundle** — `projects/job-automation/config/runtime-bundle.v1.json`, built and validated through `./career-engine bundle ...`; every client consumes the same versioned bundle.
 
 Before material work, read the central machine policy, operating contract, current Vault `index.md` and `status.md`, then verify the compiled bundle is current. Never rely on an old chat summary or a review-diff narrative when it conflicts with these authorities.
 

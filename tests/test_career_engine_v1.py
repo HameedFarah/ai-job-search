@@ -256,6 +256,17 @@ def test_bundle_rebuilds_when_vault_source_changes(engine_root: Path) -> None:
     assert rebuilt["bundle_hash"] != first["bundle_hash"]
 
 
+def test_daily_scanner_policy_does_not_define_inference_routing(engine_root: Path) -> None:
+    config = json.loads(
+        (engine_root / "projects/job-automation/config/career-engine.v1.json").read_text(encoding="utf-8")
+    )
+    scanner = config["daily_scanner"]
+    assert scanner["minimum_score_for_generation"] == 70
+    assert scanner["send_or_submit"] is False
+    assert "provider" not in scanner
+    assert "model" not in scanner
+
+
 def test_alias_matching_and_scoring(job_payload: dict[str, str], engine_root: Path) -> None:
     bundle = build_bundle(engine_root)
     normalized = normalize_job(job_payload, bundle["taxonomy"])

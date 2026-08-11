@@ -1,10 +1,11 @@
 # Career Engine Central Rules
 
-All Career Engine clients—Hermes, interactive ChatGPT career sessions, repository agents, and the repeating 10:00 ChatGPT review—must read the same authorities before processing jobs. No client may maintain a separate threshold, route rule, mailbox rule or send policy:
+All Career Engine clients—Hermes, interactive ChatGPT career sessions, repository agents, and the repeating 10:00 ChatGPT review—must read the same authorities before processing jobs. No client may maintain a separate threshold, mailbox rule or send policy. Inference routing is governed only by the canonical Agent Delegation and Model Routing file on `HameedFarah/obsidian` `master`; Career Engine prompts, configs and scheduled jobs must not keep an independent provider/model chain.
 
-1. `projects/job-automation/config/career-engine.v1.json` — machine policy and editable settings.
-2. `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/playbooks/career-engine-operations-contract.md` — procedural operating contract.
-3. `projects/job-automation/config/runtime-bundle.v1.json` — compiled validated bundle consumed at runtime.
+1. `HameedFarah/obsidian@master:projects/agent-ops/model-routing.md` — sole inference-routing authority for Hermes/VPS execution.
+2. `projects/job-automation/config/career-engine.v1.json` — Career Engine machine policy and editable settings excluding inference routing.
+3. `/home/hameedo/obsidian/HermesOpsVault/projects/job-automation/playbooks/career-engine-operations-contract.md` — procedural operating contract.
+4. `projects/job-automation/config/runtime-bundle.v1.json` — compiled validated Career Engine bundle consumed at runtime.
 
 Startup must fail closed when `./career-engine doctor` or `./career-engine bundle status` reports a stale or invalid bundle; rebuild and validate before processing.
 

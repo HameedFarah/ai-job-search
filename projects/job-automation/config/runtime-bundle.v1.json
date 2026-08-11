@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-08T14:28:22+00:00",
-  "source_hash": "26a46af45fdf49f0fd7cbd79f85de924d7fdf171af7098a2cffbb55b54db3831",
+  "built_at": "2026-08-11T07:45:28+00:00",
+  "source_hash": "1ae884b7446f46b0ebc97f3ddb9db17f9e2ee031662b2875e8eb4d63358f372f",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "f7c68bd371654267e8cb0006d6eedf80137bc712121fc8beba7caa401447086e",
-      "size": 4310,
-      "modified_ns": 1786121885171949532
+      "sha256": "b60fa89a3dd8f40104a7c95f6d56304258d27a4fbee4d511c408efb9244591c4",
+      "size": 4245,
+      "modified_ns": 1786434305033779675
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
@@ -187,9 +187,7 @@
     "daily_scanner": {
       "minimum_score_for_generation": 70,
       "maximum_generation_packets_per_scan": 5,
-      "send_or_submit": false,
-      "provider": "opencode-go",
-      "model": "deepseek-v4-flash"
+      "send_or_submit": false
     }
   },
   "taxonomy": {
@@ -1328,6 +1326,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "c2622b643862ba217dec27c4b352b9884404edf4f0941975df1a41dc690d743c",
+  "bundle_hash": "6b19bdd98ef2455c1e1f500c8d931927238de8cfe20592af92752dfff33e708c",
   "cache_reused": false
 }
