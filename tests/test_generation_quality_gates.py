@@ -203,6 +203,27 @@ def test_rejects_current_role_claim_in_earlier_role_bullets() -> None:
     assert any(item["code"] == "role_attribution" for item in findings), findings
 
 
+def test_rejects_earlier_role_claim_in_current_role_bullets() -> None:
+    bundle = synthetic_bundle([
+        synthetic_claim(
+            "earlier.sigma.design_packages",
+            attribution="Sigma Consulting Engineers Architect role",
+            label="Banking, university, medical and residential design packages",
+        ),
+    ])
+    packet = synthetic_packet(bundle, selected=bundle["claims"])
+    application = minimal_application(packet, current=[
+        {
+            "text": "Developed coordinated design, tender and construction packages for banking and university developments.",
+            "claim_ids": ["earlier.sigma.design_packages"],
+        },
+    ], earlier=[])
+    findings = validate_generated_application(application, packet, bundle)
+    attribution = [item for item in findings if item["code"] == "role_attribution"]
+    assert attribution, findings
+    assert all(item["severity"] == "error" for item in attribution)
+
+
 def test_earlier_role_claims_are_allowed_in_earlier_role_bullets() -> None:
     bundle = synthetic_bundle([
         synthetic_claim("cube.projects.25", attribution="managed or contributed according to role", label="25 Cube Architects developments"),
@@ -307,4 +328,26 @@ def test_generation_guidance_is_exposed_in_packet_and_instruction() -> None:
     )
     assert packet["generation_guidance"] == GENERATION_GUIDANCE
     assert "Avoid repetition" in packet["system_instruction"]
+
+
+def test_generation_packet_includes_current_and_career_claims_for_current_role_section() -> None:
+    claims = [
+        synthetic_claim("leadership.ksa_team.26plus", attribution="led workforce"),
+        synthetic_claim("career.projects.112plus", attribution="career portfolio"),
+        synthetic_claim("earlier.sigma.design_packages", attribution="Sigma Consulting Engineers Architect role"),
+    ]
+    bundle = synthetic_bundle(claims)
+    bundle["config"]["policy"]["external_filename_pattern"] = "Abdelhamid_Farah_CV_{target_role}.pdf"
+    packet = create_generation_packet(
+        job_id="job-current-evidence",
+        normalized_job={"role": "Architecture Project Manager"},
+        matches=[],
+        score={"total": 78},
+        route={"route": "portal"},
+        bundle=bundle,
+    )
+    selected = {claim["id"] for claim in packet["selected_claims"]}
+    assert "leadership.ksa_team.26plus" in selected
+    assert "career.projects.112plus" in selected
+    assert "earlier.sigma.design_packages" in selected
     assert "Respect attribution" in packet["system_instruction"]

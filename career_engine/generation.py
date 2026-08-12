@@ -197,35 +197,59 @@ def claim_role_scope(claim: dict[str, Any]) -> str:
 
 
 def _check_role_attribution(application: dict[str, Any], bundle: dict[str, Any]) -> list[dict[str, Any]]:
-    """Reject role-attribution errors: career-wide or current-role claims must not
-    appear as an earlier-role bullet unless the evidence source and attribution
-    support that role (only cube.* / earlier.* claims do).
+    """Reject role-attribution errors in both chronology directions.
+
+    Earlier-role bullets may not cite career-wide/current/credential evidence as if
+    it belonged to an earlier employer. Current-role bullets may not cite claims
+    whose verified scope is explicitly an earlier employer/role. Role-neutral
+    capability claims remain allowed in either section.
     """
     claims_by_id = {claim["id"]: claim for claim in bundle.get("claims", [])}
-    bullets = application.get("earlier_role_bullets", [])
-    if not isinstance(bullets, list):
-        return []
     findings: list[dict[str, Any]] = []
-    for index, item in enumerate(bullets):
-        if not isinstance(item, dict):
-            continue
-        for claim_id in item.get("claim_ids", []):
-            claim = claims_by_id.get(claim_id)
-            if claim is None:
+
+    earlier_bullets = application.get("earlier_role_bullets", [])
+    if isinstance(earlier_bullets, list):
+        for index, item in enumerate(earlier_bullets):
+            if not isinstance(item, dict):
                 continue
-            scope = claim_role_scope(claim)
-            if scope in ("career", "current", "credential"):
-                findings.append({
-                    "code": "role_attribution",
-                    "severity": "error",
-                    "message": (
-                        f"earlier_role_bullets[{index}] cites claim '{claim_id}' "
-                        f"({str(claim.get('label', '')).strip() or 'no label'}) whose scope is "
-                        f"{scope} ({str(claim.get('attribution', '')).strip() or 'no attribution'}), "
-                        f"but earlier-role bullets may cite only Cube Architects or earlier-role evidence"
-                    ),
-                    "location": f"earlier_role_bullets[{index}]",
-                })
+            for claim_id in item.get("claim_ids", []):
+                claim = claims_by_id.get(claim_id)
+                if claim is None:
+                    continue
+                scope = claim_role_scope(claim)
+                if scope in ("career", "current", "credential"):
+                    findings.append({
+                        "code": "role_attribution",
+                        "severity": "error",
+                        "message": (
+                            f"earlier_role_bullets[{index}] cites claim '{claim_id}' "
+                            f"({str(claim.get('label', '')).strip() or 'no label'}) whose scope is "
+                            f"{scope} ({str(claim.get('attribution', '')).strip() or 'no attribution'}), "
+                            "but earlier-role bullets may cite only Cube Architects or earlier-role evidence"
+                        ),
+                        "location": f"earlier_role_bullets[{index}]",
+                    })
+
+    current_bullets = application.get("current_role_bullets", [])
+    if isinstance(current_bullets, list):
+        for index, item in enumerate(current_bullets):
+            if not isinstance(item, dict):
+                continue
+            for claim_id in item.get("claim_ids", []):
+                claim = claims_by_id.get(claim_id)
+                if claim is None:
+                    continue
+                if claim_role_scope(claim) == "earlier":
+                    findings.append({
+                        "code": "role_attribution",
+                        "severity": "error",
+                        "message": (
+                            f"current_role_bullets[{index}] cites claim '{claim_id}' "
+                            f"({str(claim.get('label', '')).strip() or 'no label'}) whose scope is earlier; "
+                            "current-role bullets may not attribute earlier-employer evidence to the current role"
+                        ),
+                        "location": f"current_role_bullets[{index}]",
+                    })
     return findings
 
 
@@ -244,6 +268,7 @@ GENERATION_GUIDANCE = [
     "Never restate the same evidence, figure, subject or outcome in more than one bullet; each bullet must add a distinct responsibility or result.",
     "Career-wide and current-role claims (112+ projects, portfolio values, KSA team or office figures, TTW programme and governance metrics) belong in the profile, metric boxes or current-role bullets only.",
     "Earlier-role bullets must cite only Cube Architects or earlier-role evidence (cube.*, earlier.* claims); never place career totals or current-role metrics under an earlier role.",
+    "Current-role bullets must never cite cube.* or earlier.* claims; use only verified career-wide, current-role or role-neutral evidence for the current employer.",
     "Produce exactly eleven earlier-role bullets: seven distinct Cube Design Manager/Senior Architect bullets, then one each for Cube Project Architect, Creative Urban Designs, Al-Mehanya and Sigma. Cite the role-scoped claim that determines placement.",
     "Use the exact deterministic cover-email subject supplied in email_draft_policy.expected_subject; do not rewrite or decorate it.",
 ]
@@ -294,6 +319,16 @@ def create_generation_packet(
     # inheriting uncited template wording.
     selected_claim_ids.extend(
         claim["id"] for claim in bundle.get("claims", []) if claim_role_scope(claim) == "earlier"
+    )
+    # The fixed current-role section also needs enough verified current/career
+    # evidence to fill all seven bullets without borrowing facts from earlier
+    # employers. Include those role-scoped claims even when the rule matcher did
+    # not select them for a specific JD requirement; the prose generator still
+    # decides which are relevant and every use remains claim-cited/validated.
+    selected_claim_ids.extend(
+        claim["id"]
+        for claim in bundle.get("claims", [])
+        if claim_role_scope(claim) in {"current", "career"}
     )
     selected_claim_ids = list(dict.fromkeys(selected_claim_ids))
     claims_by_id = {claim["id"]: claim for claim in bundle.get("claims", [])}

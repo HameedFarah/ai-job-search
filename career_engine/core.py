@@ -116,6 +116,10 @@ _CLAUSE_STARTERS = (
 
 def _heading_kind(line: str, headings: dict[str, list[str]]) -> str | None:
     cleaned = line.lower().strip(" :")
+    # Job boards commonly decorate headings with emoji or other symbols
+    # (for example "🌟 Requirements:"). Ignore only leading non-word
+    # decoration so the canonical heading taxonomy still controls meaning.
+    cleaned = re.sub(r"^[^\w]+", "", cleaned, flags=re.UNICODE).strip(" :")
     for kind, values in headings.items():
         if cleaned in values:
             return kind

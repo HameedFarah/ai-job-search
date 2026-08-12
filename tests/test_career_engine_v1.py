@@ -243,6 +243,27 @@ Desired Skills
     assert priorities["Professional registration such as RIBA."] == "preferred"
 
 
+def test_emoji_decorated_requirements_heading_is_recognized(engine_root: Path) -> None:
+    taxonomy = json.loads((engine_root / "projects/job-automation/config/requirements-taxonomy.v1.json").read_text())
+    payload = {
+        "company": "Example",
+        "role": "Architecture Project Manager",
+        "full_job_description": """
+Architecture Project Manager - Riyadh
+🌟 Requirements:
+🔹 Bachelor degree in Architectural Engineering.
+🔹 Minimum 15 years of relevant professional experience.
+🔹 Proven experience managing large-scale construction projects.
+""",
+    }
+    normalized = normalize_job(payload, taxonomy)
+    priorities = {item["text"]: item["priority"] for item in normalized["requirements"]}
+    assert priorities["🔹 Bachelor degree in Architectural Engineering."] == "mandatory"
+    assert priorities["🔹 Minimum 15 years of relevant professional experience."] == "mandatory"
+    assert priorities["🔹 Proven experience managing large-scale construction projects."] == "mandatory"
+    assert "🌟 Requirements:" not in normalized["ambiguous_clauses"]
+
+
 def test_bundle_rebuilds_when_vault_source_changes(engine_root: Path) -> None:
     first = build_bundle(engine_root)
     reused = build_bundle(engine_root)
