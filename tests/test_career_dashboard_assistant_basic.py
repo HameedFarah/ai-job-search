@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from career_engine.cli import build_parser
 from tools import career_dashboard_assistant as assistant
 
 
@@ -50,3 +51,38 @@ def test_load_api_key_falls_back_to_local_credentials(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
 
     assert assistant.load_api_key("HERENOW_API_KEY") == "test-local-key"
+
+
+def test_run_parser_supports_owner_batch_threshold():
+    args = build_parser().parse_args(["run", "--min-score", "75", "--all"])
+    assert args.min_score == 75
+    assert args.process_all is True
+
+
+def test_global_refresh_request_bypasses_job_key(monkeypatch, tmp_path):
+    monkeypatch.setattr(assistant, "run_refresh_jobs", lambda **kwargs: "refresh complete")
+    role_key, answer, metadata = assistant.answer_request(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        website_root=tmp_path,
+        record={"data": {"role_key": assistant.GLOBAL_ROLE_KEY, "request_type": "refresh_jobs", "prompt": ""}},
+    )
+    assert role_key == assistant.GLOBAL_ROLE_KEY
+    assert answer == "refresh complete"
+    assert metadata["validation_status"] == "success"
+
+
+def test_global_process_request_passes_score(monkeypatch, tmp_path):
+    captured = {}
+    def fake_process(**kwargs):
+        captured.update(kwargs)
+        return "batch complete"
+    monkeypatch.setattr(assistant, "run_process_jobs", fake_process)
+    _, answer, _ = assistant.answer_request(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        website_root=tmp_path,
+        record={"data": {"role_key": assistant.GLOBAL_ROLE_KEY, "request_type": "process_jobs", "min_score": 78}},
+    )
+    assert answer == "batch complete"
+    assert captured["min_score"] == 78

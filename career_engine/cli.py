@@ -120,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Deterministic batch orchestration: bundle, reconcile, prepare eligible jobs, sync dashboard data",
     )
     add_common(run)
+    run.add_argument("--min-score", type=int, default=None, help="Raise the canonical generation threshold for this run; it cannot lower it")
+    run.add_argument("--all", action="store_true", dest="process_all", help="Process all eligible jobs instead of the routine daily packet cap")
 
     reconcile = sub.add_parser(
         "reconcile",
@@ -423,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
             emit(result, human=args.human)
             return EXIT_READY
         if args.command == "run":
-            result = run()
+            result = run(min_score=args.min_score, process_all=args.process_all)
             emit(result, human=args.human)
             if not result.get("bundle", {}).get("valid", True):
                 return EXIT_SYSTEM

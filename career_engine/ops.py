@@ -1113,12 +1113,19 @@ def _payload_from_record(record: dict[str, Any], root: Path | None) -> dict[str,
     }
 
 
-def run(root: Path | None = None) -> dict[str, Any]:
+def run(
+    root: Path | None = None,
+    *,
+    min_score: int | None = None,
+    process_all: bool = False,
+) -> dict[str, Any]:
     """Deterministic batch orchestration. Rebuilds/validates the bundle as
     needed, reconciles tracker statuses, prepares only eligible records through
-    the configured no-send pipeline up to the configured generation-packet cap,
-    syncs the local dashboard data and emits a structured report. Never sends,
-    never submits, never creates Gmail drafts."""
+    the configured no-send pipeline, syncs the local dashboard data and emits a
+    structured report. ``min_score`` may raise (never lower) the canonical
+    generation threshold. ``process_all`` removes the routine daily packet cap
+    for an explicit owner-triggered batch. Never sends, never submits, never
+    creates Gmail drafts."""
     config, _ = load_config(root)
     bundle_state = bundle_status(root)
     if not bundle_state.get("valid") or not bundle_state.get("current"):
@@ -1128,8 +1135,16 @@ def run(root: Path | None = None) -> dict[str, Any]:
 
     reconciliation = reconcile(root)
 
-    threshold = int(config["scoring"]["thresholds"]["high_priority"])
-    cap = int(config["daily_scanner"]["maximum_generation_packets_per_scan"])
+    canonical_threshold = int(config["scoring"]["thresholds"]["high_priority"])
+    requested_threshold = canonical_threshold if min_score is None else int(min_score)
+    if requested_threshold < canonical_threshold:
+        raise ValueError(
+            f"min_score {requested_threshold} cannot lower canonical generation threshold {canonical_threshold}"
+        )
+    if requested_threshold > 100:
+        raise ValueError("min_score must be <= 100")
+    threshold = requested_threshold
+    cap = None if process_all else int(config["daily_scanner"]["maximum_generation_packets_per_scan"])
     tracker = _load_tracker_ops(root)
 
     eligible: list[tuple[int, str]] = []
@@ -1148,7 +1163,9 @@ def run(root: Path | None = None) -> dict[str, Any]:
     processed: list[dict[str, Any]] = []
     deferred: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
-    for score, job_id in eligible[:cap]:
+    selected = eligible if cap is None else eligible[:cap]
+    overflow = [] if cap is None else eligible[cap:]
+    for score, job_id in selected:
         try:
             record = tracker.get_job(job_id)
             payload = _payload_from_record(record, root)
@@ -1167,7 +1184,7 @@ def run(root: Path | None = None) -> dict[str, Any]:
             })
         except Exception as exc:  # noqa: BLE001 - per-job errors reported, run continues
             errors.append({"job_id": job_id, "error": f"{type(exc).__name__}: {exc}"})
-    for score, job_id in eligible[cap:]:
+    for score, job_id in overflow:
         deferred.append({"job_id": job_id, "score": score, "reason": f"over maximum_generation_packets_per_scan cap {cap}"})
 
     dashboard_state = dashboard(root, sync=True)
@@ -1182,7 +1199,9 @@ def run(root: Path | None = None) -> dict[str, Any]:
             "bundle_hash": bundle["bundle_hash"],
         },
         "threshold": threshold,
+        "canonical_threshold": canonical_threshold,
         "generation_packet_cap": cap,
+        "process_all": process_all,
         "reconciliation": reconciliation,
         "eligible": [{"job_id": item[1], "score": item[0]} for item in eligible],
         "processed": processed,
