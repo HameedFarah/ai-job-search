@@ -9,6 +9,7 @@ from typing import Any
 from .bundle import load_bundle
 from .config import load_config
 from .core import decide_route, match_evidence, normalize_job, score_fit, validate_live_status
+from .cover_letter import render_cover_letter_and_verify
 from .generation import create_generation_packet, export_packet, validate_generated_application
 from .renderer import render_and_verify, render_ats_and_verify
 from .safety import reject_fixture_payload
@@ -269,9 +270,19 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
         if result.get("valid")
         else {"valid": False, "blocker": "sidebar_render_failed"}
     )
+    cover_letter_result = (
+        render_cover_letter_and_verify(job_id, application, packet, root=root)
+        if result.get("valid") and ats_result.get("valid")
+        else {"valid": False, "blocker": "cv_render_failed"}
+    )
     result["sidebar_valid"] = bool(result.get("valid"))
     result["ats"] = ats_result
-    result["valid"] = bool(result.get("sidebar_valid") and ats_result.get("valid"))
+    result["cover_letter"] = cover_letter_result
+    result["valid"] = bool(
+        result.get("sidebar_valid")
+        and ats_result.get("valid")
+        and cover_letter_result.get("valid")
+    )
     tracker = _load_tracker(paths)
     record = tracker.get_job(job_id)
     existing_artifacts = list(record.get("generated_artifacts", []))
@@ -313,6 +324,22 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
                 "sha256": ats_verification.get("sha256", ""),
                 "bundle_hash": packet.get("bundle_hash", ""),
             })
+        cover_docx = cover_letter_result.get("docx", {})
+        cover_verification = cover_letter_result.get("verification", {})
+        if cover_docx.get("docx"):
+            final_artifacts.append({
+                "type": "cover_letter_docx",
+                "path": cover_docx["docx"],
+                "sha256": cover_docx.get("sha256", ""),
+                "bundle_hash": packet.get("bundle_hash", ""),
+            })
+        if cover_verification.get("pdf"):
+            final_artifacts.append({
+                "type": "cover_letter_pdf",
+                "path": cover_verification["pdf"],
+                "sha256": cover_verification.get("sha256", ""),
+                "bundle_hash": packet.get("bundle_hash", ""),
+            })
         processing_state = dict(record.get("processing_state") or {})
         route_name = str(packet.get("application_route", {}).get("route", "unresolved"))
         default_variant = str(
@@ -332,6 +359,8 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
         selected_docx_type = "final_docx" if selected_variant == "modern-executive-sidebar" else "ats_docx"
         selected_pdf = next((item for item in final_artifacts if item.get("type") == selected_pdf_type), {})
         selected_docx = next((item for item in final_artifacts if item.get("type") == selected_docx_type), {})
+        cover_pdf = next((item for item in final_artifacts if item.get("type") == "cover_letter_pdf"), {})
+        cover_docx_artifact = next((item for item in final_artifacts if item.get("type") == "cover_letter_docx"), {})
         submission_package = {
             "route": route_name,
             "default_resume_variant": default_variant,
@@ -342,6 +371,10 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             "selected_cv_pdf_sha256": selected_pdf.get("sha256", ""),
             "selected_cv_docx": selected_docx.get("path", ""),
             "selected_cv_docx_sha256": selected_docx.get("sha256", ""),
+            "cover_letter_pdf": cover_pdf.get("path", ""),
+            "cover_letter_pdf_sha256": cover_pdf.get("sha256", ""),
+            "cover_letter_docx": cover_docx_artifact.get("path", ""),
+            "cover_letter_docx_sha256": cover_docx_artifact.get("sha256", ""),
             "email_account": packet.get("email_draft_policy", {}).get("account", "hameedo@gmail.com"),
             "email_sender": packet.get("email_draft_policy", {}).get("sender", "hameedfarah@gmail.com"),
             "email_subject": packet.get("email_draft_policy", {}).get("expected_subject", ""),
@@ -360,12 +393,12 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             {
                 "owner": "owner",
                 "processing_status": "awaiting_owner_approval",
-                "next_action": "Owner reviews the selected single-CV submission package and explicitly approves any portal submission or email action",
+                "next_action": "Owner reviews the selected CV and generated cover letter, then explicitly approves any portal submission or email action",
                 "processing_state": processing_state,
                 "submission_package": submission_package,
                 "generated_artifacts": existing_artifacts + final_artifacts,
             },
-            comment="Rendered and verified both CV variants, selected exactly one route-specific CV for submission, and kept external action blocked pending explicit owner approval",
+            comment="Rendered and verified both CV variants plus the cover letter, selected exactly one route-specific CV for submission, and kept external action blocked pending explicit owner approval",
             actor=actor,
             action="drafted",
             source_refs=[item["path"] for item in final_artifacts],
@@ -378,10 +411,10 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             job_id,
             {
                 "processing_status": "render_rejected",
-                "next_action": "Correct rendering or PDF validation findings before owner review",
+                "next_action": "Correct CV or cover-letter rendering/validation findings before owner review",
                 "processing_state": processing_state,
             },
-            comment="Rejected rendered application package because deterministic PDF or layout validation failed",
+            comment="Rejected rendered application package because deterministic CV, cover-letter, PDF or layout validation failed",
             actor=actor,
             action="rejected",
             requires_owner_review=True,
