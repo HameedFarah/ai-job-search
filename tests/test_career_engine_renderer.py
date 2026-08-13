@@ -145,6 +145,14 @@ def test_finalize_render_moves_tracker_to_owner_approval(
             "verification": {"pdf": str(ats_pdf), "sha256": "ats-pdf-sha", "valid": True},
         },
     )
+    monkeypatch.setattr(
+        "career_engine.pipeline.render_cover_letter_and_verify",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "docx": {"docx": str(packet_path.parent / "cover.docx"), "sha256": "cover-docx-sha"},
+            "verification": {"pdf": str(packet_path.parent / "cover.pdf"), "sha256": "cover-pdf-sha", "valid": True},
+        },
+    )
 
     result = finalize_render(state["job_id"], root=engine_root, actor="chatgpt")
     assert result["valid"] is True
@@ -224,6 +232,14 @@ def test_finalize_render_persisted_preview_override_selects_single_cv(
             "valid": True,
             "docx": {"docx": str(ats_docx), "sha256": "ats-docx-sha"},
             "verification": {"pdf": str(ats_pdf), "sha256": "ats-pdf-sha", "valid": True},
+        },
+    )
+    monkeypatch.setattr(
+        "career_engine.pipeline.render_cover_letter_and_verify",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "docx": {"docx": str(packet_path.parent / "cover.docx"), "sha256": "cover-docx-sha"},
+            "verification": {"pdf": str(packet_path.parent / "cover.pdf"), "sha256": "cover-pdf-sha", "valid": True},
         },
     )
 

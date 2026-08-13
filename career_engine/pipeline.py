@@ -3,12 +3,15 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
 from .bundle import load_bundle
 from .config import load_config
 from .core import decide_route, match_evidence, normalize_job, score_fit, validate_live_status
+from .cover_letter import render_cover_letter_and_verify
 from .generation import create_generation_packet, export_packet, validate_generated_application
 from .renderer import render_and_verify, render_ats_and_verify
 from .safety import reject_fixture_payload
@@ -46,6 +49,61 @@ def read_stage(artifact_dir: Path, name: str) -> Any:
     if not path.is_file():
         raise FileNotFoundError(path)
     return json.loads(path.read_text(encoding="utf-8"))["data"]
+
+
+def _revision_root(artifact_dir: Path) -> Path:
+    return artifact_dir / "revisions"
+
+
+def _snapshot_current_package(artifact_dir: Path, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Copy the current validated package before accepting a new revision."""
+    application = artifact_dir / "generated_application.json"
+    if not application.is_file():
+        return None
+    revision_id = f"{stable_hash({'application': application.read_bytes().hex(), 'nonce': uuid.uuid4().hex})[:16]}"
+    destination = _revision_root(artifact_dir) / revision_id
+    destination.mkdir(parents=True, exist_ok=False)
+    files: list[dict[str, str]] = []
+    candidates = {"generated_application.json", "generation_packet.json", "pipeline_state.json"}
+    for item in record.get("generated_artifacts", []):
+        path = Path(str(item.get("path", "")))
+        if path.is_file() and path.is_relative_to(artifact_dir):
+            candidates.add(str(path.relative_to(artifact_dir)))
+    submission = record.get("submission_package") or {}
+    for value in submission.values():
+        if isinstance(value, str):
+            path = Path(value)
+            if path.is_file() and path.is_relative_to(artifact_dir):
+                candidates.add(str(path.relative_to(artifact_dir)))
+    for relative in sorted(candidates):
+        source = artifact_dir / relative
+        if not source.is_file():
+            continue
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        files.append({"path": relative, "sha256": hashlib.sha256(source.read_bytes()).hexdigest()})
+    manifest = {"revision_id": revision_id, "files": files}
+    (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {"revision_id": revision_id, "path": str(destination), "files": files}
+
+
+def _restore_revision(artifact_dir: Path, revision_id: str | None) -> dict[str, Any] | None:
+    if not revision_id:
+        return None
+    source = _revision_root(artifact_dir) / revision_id
+    if not source.is_dir():
+        return None
+    manifest_path = source / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {"files": []}
+    for item in manifest.get("files", []):
+        relative = str(item["path"])
+        origin = source / relative
+        target = artifact_dir / relative
+        if origin.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(origin, target)
+    return {"revision_id": source.name, "path": str(source), "files": manifest.get("files", [])}
 
 
 def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "chatgpt", force_weak: bool = False) -> dict[str, Any]:
@@ -229,14 +287,21 @@ def import_generated(job_id: str, application_path: Path, *, root: Path | None =
     findings = validate_generated_application(application, packet, bundle)
     errors = [item for item in findings if item.get("severity") == "error"]
     destination = artifact_dir / "generated_application.json"
-    if not errors:
-        destination.write_text(json.dumps(application, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tracker = _load_tracker(paths)
+    record = tracker.get_job(job_id)
+    revision = None
+    if not errors:
+        revision = _snapshot_current_package(artifact_dir, record)
+        destination.write_text(json.dumps(application, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    processing_state = dict(record.get("processing_state") or {})
+    if revision:
+        processing_state["pending_revision_id"] = revision["revision_id"]
     tracker.update_job(
         job_id,
         {
             "processing_status": "generated_content_valid" if not errors else "generated_content_rejected",
             "next_action": "Render approved template" if not errors else "Correct generated content against validation findings",
+            "processing_state": processing_state,
         },
         comment="Validated structured LLM application output against the central bundle",
         actor=actor,
@@ -269,9 +334,19 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
         if result.get("valid")
         else {"valid": False, "blocker": "sidebar_render_failed"}
     )
+    cover_letter_result = (
+        render_cover_letter_and_verify(job_id, application, packet, root=root)
+        if result.get("valid") and ats_result.get("valid")
+        else {"valid": False, "blocker": "cv_render_failed"}
+    )
     result["sidebar_valid"] = bool(result.get("valid"))
     result["ats"] = ats_result
-    result["valid"] = bool(result.get("sidebar_valid") and ats_result.get("valid"))
+    result["cover_letter"] = cover_letter_result
+    result["valid"] = bool(
+        result.get("sidebar_valid")
+        and ats_result.get("valid")
+        and cover_letter_result.get("valid")
+    )
     tracker = _load_tracker(paths)
     record = tracker.get_job(job_id)
     existing_artifacts = list(record.get("generated_artifacts", []))
@@ -313,6 +388,22 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
                 "sha256": ats_verification.get("sha256", ""),
                 "bundle_hash": packet.get("bundle_hash", ""),
             })
+        cover_docx = cover_letter_result.get("docx", {})
+        cover_verification = cover_letter_result.get("verification", {})
+        if cover_docx.get("docx"):
+            final_artifacts.append({
+                "type": "cover_letter_docx",
+                "path": cover_docx["docx"],
+                "sha256": cover_docx.get("sha256", ""),
+                "bundle_hash": packet.get("bundle_hash", ""),
+            })
+        if cover_verification.get("pdf"):
+            final_artifacts.append({
+                "type": "cover_letter_pdf",
+                "path": cover_verification["pdf"],
+                "sha256": cover_verification.get("sha256", ""),
+                "bundle_hash": packet.get("bundle_hash", ""),
+            })
         processing_state = dict(record.get("processing_state") or {})
         route_name = str(packet.get("application_route", {}).get("route", "unresolved"))
         default_variant = str(
@@ -332,6 +423,8 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
         selected_docx_type = "final_docx" if selected_variant == "modern-executive-sidebar" else "ats_docx"
         selected_pdf = next((item for item in final_artifacts if item.get("type") == selected_pdf_type), {})
         selected_docx = next((item for item in final_artifacts if item.get("type") == selected_docx_type), {})
+        cover_pdf = next((item for item in final_artifacts if item.get("type") == "cover_letter_pdf"), {})
+        cover_docx_artifact = next((item for item in final_artifacts if item.get("type") == "cover_letter_docx"), {})
         submission_package = {
             "route": route_name,
             "default_resume_variant": default_variant,
@@ -342,6 +435,10 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             "selected_cv_pdf_sha256": selected_pdf.get("sha256", ""),
             "selected_cv_docx": selected_docx.get("path", ""),
             "selected_cv_docx_sha256": selected_docx.get("sha256", ""),
+            "cover_letter_pdf": cover_pdf.get("path", ""),
+            "cover_letter_pdf_sha256": cover_pdf.get("sha256", ""),
+            "cover_letter_docx": cover_docx_artifact.get("path", ""),
+            "cover_letter_docx_sha256": cover_docx_artifact.get("sha256", ""),
             "email_account": packet.get("email_draft_policy", {}).get("account", "hameedo@gmail.com"),
             "email_sender": packet.get("email_draft_policy", {}).get("sender", "hameedfarah@gmail.com"),
             "email_subject": packet.get("email_draft_policy", {}).get("expected_subject", ""),
@@ -360,30 +457,42 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             {
                 "owner": "owner",
                 "processing_status": "awaiting_owner_approval",
-                "next_action": "Owner reviews the selected single-CV submission package and explicitly approves any portal submission or email action",
+                "next_action": "Owner reviews the selected CV and generated cover letter, then explicitly approves any portal submission or email action",
                 "processing_state": processing_state,
                 "submission_package": submission_package,
                 "generated_artifacts": existing_artifacts + final_artifacts,
             },
-            comment="Rendered and verified both CV variants, selected exactly one route-specific CV for submission, and kept external action blocked pending explicit owner approval",
+            comment="Rendered and verified both CV variants plus the cover letter, selected exactly one route-specific CV for submission, and kept external action blocked pending explicit owner approval",
             actor=actor,
             action="drafted",
             source_refs=[item["path"] for item in final_artifacts],
             requires_owner_review=True,
         )
+        pending_revision_id = str((record.get("processing_state") or {}).get("pending_revision_id", ""))
+        if pending_revision_id:
+            tracker.record_event(actor=actor, entity_type="application", entity_id=job_id,
+                action="generated", before={"revision_id": pending_revision_id},
+                after={"status": "validated_and_rendered"},
+                comment="Accepted validated application revision and preserved prior package",
+                confidence="high", requires_owner_review=True)
+            processing_state["pending_revision_id"] = ""
+            tracker.update_job(job_id, {"processing_state": processing_state}, comment="Cleared accepted revision association", actor=actor)
     else:
+        pending_revision_id = str((record.get("processing_state") or {}).get("pending_revision_id", ""))
+        restored = _restore_revision(artifact_dir, pending_revision_id)
         processing_state = dict(record.get("processing_state") or {})
-        processing_state.update({"status": "render_rejected", "external_action_allowed": False})
+        processing_state.update({"status": "render_rejected", "external_action_allowed": False, "pending_revision_id": ""})
         tracker.update_job(
             job_id,
             {
                 "processing_status": "render_rejected",
-                "next_action": "Correct rendering or PDF validation findings before owner review",
+                "next_action": "Correct CV or cover-letter rendering/validation findings before owner review",
                 "processing_state": processing_state,
             },
-            comment="Rejected rendered application package because deterministic PDF or layout validation failed",
+            comment="Rejected rendered application package because deterministic CV, cover-letter, PDF or layout validation failed",
             actor=actor,
             action="rejected",
             requires_owner_review=True,
         )
+        result["restored_revision"] = restored
     return result
