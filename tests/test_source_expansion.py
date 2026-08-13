@@ -204,8 +204,8 @@ class SourceExpansionTests(unittest.TestCase):
             root / "projects/job-automation/config/gcc-employers.v1.json"
         ).read_text(encoding="utf-8"))
         employers = payload["employers"]
-        self.assertEqual(len(employers), 40)
-        self.assertEqual(len({item["id"] for item in employers}), 40)
+        self.assertEqual(len(employers), 50)
+        self.assertEqual(len({item["id"] for item in employers}), 50)
         self.assertEqual(payload["policy"]["residential_allowlist_enabled_domains"], [])
         for item in employers:
             self.assertTrue(item["name"])

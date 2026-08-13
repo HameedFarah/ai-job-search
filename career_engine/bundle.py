@@ -35,7 +35,21 @@ def bundle_inputs(config: dict[str, Any], paths: Paths) -> tuple[list[dict[str, 
     missing = validate_required_files(config, paths, require_vault=True)
     if missing:
         raise FileNotFoundError("Missing Career Engine sources:\n" + "\n".join(missing))
-    source_paths = [paths.config_path, paths.taxonomy_path, paths.generated_schema_path, paths.runtime_schema_path]
+    source_paths = [
+        paths.config_path,
+        paths.taxonomy_path,
+        paths.generated_schema_path,
+        paths.runtime_schema_path,
+    ]
+    # These registries are part of the production bundle when present, while
+    # keeping isolated legacy test roots and older consumers compatible.
+    for relative in (
+        "projects/job-automation/config/gcc-employers.v1.json",
+        "projects/job-automation/config/consultants-bookmarks.v1.json",
+    ):
+        optional = paths.repo_root / relative
+        if optional.is_file():
+            source_paths.append(optional)
     source_paths.extend(paths.vault_root / relative for relative in config["vault"]["sources"])
     sources = [source_record(path, paths.repo_root if path.is_relative_to(paths.repo_root) else paths.vault_root) for path in source_paths]
     taxonomy = load_json(paths.taxonomy_path)
