@@ -34,6 +34,7 @@ DEFAULT_DISPATCHER = Path("/home/hameedo/vps-infra-dev/scripts/operations/model-
 DEFAULT_SITE_SLUG = "gilded-timber-xfj7"
 DEFAULT_WEBSITE_ROOT = Path("/home/hameedo/websites/career-review")
 HERMES_CAREER_CRON_JOB = "edc36e531637"
+HERMES_EXECUTABLE = Path("/home/hameedo/.hermes/hermes-agent/venv/bin/hermes")
 GLOBAL_ROLE_KEY = "__career_engine__"
 RESPONSE_COMMENT_TYPE = "assistant_response"
 REQUEST_COLLECTION = "ai_requests"
@@ -353,7 +354,7 @@ def _run_command(command: list[str], *, cwd: Path, timeout: int = 240) -> str:
 
 def _latest_hermes_run(repo: Path) -> tuple[str, str]:
     output = _run_command(
-        ["hermes", "cron", "runs", HERMES_CAREER_CRON_JOB, "--limit", "1"],
+        [str(HERMES_EXECUTABLE), "cron", "runs", HERMES_CAREER_CRON_JOB, "--limit", "1"],
         cwd=repo,
         timeout=30,
     )
@@ -370,7 +371,9 @@ def _refresh_dashboard_site(repo: Path, website_root: Path) -> None:
 
 def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
     baseline_id, _ = _latest_hermes_run(repo)
-    _run_command(["hermes", "cron", "run", HERMES_CAREER_CRON_JOB], cwd=repo, timeout=30)
+    if not HERMES_EXECUTABLE.is_file():
+        raise AssistantError(f"Hermes executable missing: {HERMES_EXECUTABLE}")
+    _run_command([str(HERMES_EXECUTABLE), "cron", "run", HERMES_CAREER_CRON_JOB], cwd=repo, timeout=30)
     deadline = time.monotonic() + 35 * 60
     seen_id = ""
     last_status = ""
