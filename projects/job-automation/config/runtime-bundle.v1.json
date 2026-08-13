@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-11T07:45:28+00:00",
-  "source_hash": "1ae884b7446f46b0ebc97f3ddb9db17f9e2ee031662b2875e8eb4d63358f372f",
+  "built_at": "2026-08-13T07:12:39+00:00",
+  "source_hash": "81d067955241cd64a814266d6ed145b77aa6812db38ff53c7cca4ab204f90197",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -12,9 +12,9 @@
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "1c8dab244f84936864c9ad15458dd64ab545352207366347661d01088f7a996e",
-      "size": 5906,
-      "modified_ns": 1785955639499629862
+      "sha256": "bb3c8fc3c9e84be944ab348c94d46c335c3046aeb9809ad9c1ff6f1fed965245",
+      "size": 6353,
+      "modified_ns": 1786605074108089823
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -56,7 +56,7 @@
       "path": "governance/north-star.md",
       "sha256": "2fd3c77230b155ff4ccfbd26e7c9f8ffd6af57393f0c1db45f1532c8b7961c4a",
       "size": 8920,
-      "modified_ns": 1785517591212748415
+      "modified_ns": 1786492090379729396
     }
   ],
   "config": {
@@ -438,6 +438,22 @@
         "clinics",
         "medical facility",
         "medical facilities"
+      ],
+      "rams_reliability_systems_assurance": [
+        "rams",
+        "reliability engineering",
+        "systems assurance",
+        "system assurance",
+        "fmea",
+        "fta",
+        "fault tree analysis",
+        "reliability block diagram",
+        "rbd",
+        "en 50126",
+        "en 50129",
+        "rail signalling",
+        "rail signaling",
+        "rolling stock"
       ]
     },
     "mandatory_signals": [
@@ -514,7 +530,15 @@
         "finance",
         "marketing",
         "sales",
-        "legal counsel"
+        "legal counsel",
+        "rams",
+        "reliability engineer",
+        "reliability engineering",
+        "systems assurance",
+        "system assurance",
+        "ram analysis",
+        "safety assurance",
+        "functional safety"
       ],
       "production_terms": [
         "architect",
@@ -1326,6 +1350,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "6b19bdd98ef2455c1e1f500c8d931927238de8cfe20592af92752dfff33e708c",
+  "bundle_hash": "cf1bfb8d1cdb3b4e746fdefd9d2b6950b9411b971302567fe446d5068666c333",
   "cache_reused": false
 }

@@ -152,6 +152,27 @@ def test_domain_requirement_gate_requires_both_domain_and_mandatory_signal(engin
     assert domain_requirement_gate("Led stadium design coordination across the programme.", taxonomy) is None
     # Mandatory wording without a domain term is not gated.
     assert domain_requirement_gate("At least 15 years of progressive design management experience is essential.", taxonomy) is None
+    assert domain_requirement_gate("10+ years of RAMS or reliability engineering experience in rail transportation is required.", taxonomy) == "rams_reliability_systems_assurance"
+    assert domain_requirement_gate("Lead design management for rail projects.", taxonomy) is None
+
+
+def test_rams_role_is_out_of_lane_and_unsupported_requirements_are_gaps(engine_root: Path) -> None:
+    payload = {
+        "company": "EgisGroup", "role": "RAMS Lead", "location": "Riyadh",
+        "full_job_description": (
+            "RAMS Lead.\nLead RAMS activities for rail transportation projects.\n"
+            "10+ years of RAMS or reliability engineering experience in rail transportation is required.\n"
+            "Experience with FMEA, FTA, RBD, EN 50126 and EN 50129 is essential.\n"
+            "Experience with rail systems, signalling and rolling stock is mandatory.\n"
+            "Knowledge of RAMS tools is required."
+        ),
+    }
+    bundle, normalized, matches, score = evaluate(payload, engine_root)
+    assert any(item["priority"] == "mandatory" for item in normalized["requirements"])
+    assert any(match["status"] == "gap" for match in matches)
+    assert score["calibration"]["out_of_lane"] is True
+    assert score["recommendation"] != "high_priority"
+    assert score["total"] < HIGH_PRIORITY
 
 
 def test_claim_supports_domain_only_from_direct_domain_evidence(engine_root: Path) -> None:

@@ -92,3 +92,47 @@ def test_buro_like_flattened_jd_is_not_one_giant_requirement() -> None:
     assert max(len(item["text"]) for item in requirements) < 280
     assert sum(item["category"] == "mandatory" for item in requirements) >= 3
     assert sum(item["category"] == "responsibilities" for item in requirements) >= 4
+
+
+def test_headingless_rams_qualifications_are_mandatory_and_not_context() -> None:
+    text = (
+        "RAMS Lead EgisGroup.\nLead RAMS activities for rail transportation projects.\n"
+        "10+ years of RAMS or reliability engineering experience in rail transportation is required.\n"
+        "Experience with FMEA, FTA, RBD, EN 50126 and EN 50129 is essential.\n"
+        "Experience with rail systems, signalling and rolling stock is mandatory.\n"
+        "Knowledge of RAMS tools is required."
+    )
+    normalized = _normalize(text)
+    mandatory = [item for item in normalized["requirements"] if item["priority"] == "mandatory"]
+    assert len(mandatory) >= 4
+    assert any("FMEA" in item["text"] for item in mandatory)
+    assert not any(
+        item["priority"] == "context" and any(term in item["text"] for term in ("10+ years", "FMEA", "RAMS tools"))
+        for item in normalized["requirements"]
+    )
+
+
+def test_explicit_responsibilities_heading_keeps_requirement_like_line_as_context() -> None:
+    normalized = _normalize(
+        "RAMS Lead Example Consultancy.\n"
+        "Responsibilities\n"
+        "- Experience with clients and contractors is required.\n"
+        "- Lead RAMS activities for rail transportation projects.\n"
+        "Requirements\n"
+        "- 10+ years of RAMS experience in rail transportation is required.\n"
+    )
+
+    client_line = next(
+        item for item in normalized["requirements"]
+        if "clients and contractors" in item["text"]
+    )
+    assert client_line["priority"] == "context"
+    assert client_line["category"] == "responsibilities"
+
+
+def test_normalization_preserves_exact_tracker_posting_date() -> None:
+    normalized = normalize_job(
+        {"company": "Example", "role": "Design Manager", "posting_date": "2026-08-12 (exact, from SmartRecruiters releasedDate)", "full_job_description": "A sufficiently long description " * 8},
+        TAXONOMY,
+    )
+    assert normalized["posting_date"] == "2026-08-12 (exact, from SmartRecruiters releasedDate)"

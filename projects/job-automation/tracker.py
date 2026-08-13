@@ -294,10 +294,43 @@ class CareerTracker:
         duplicate = self._find_duplicate(source, external_job_id, source_url, jd_hash)
         if duplicate:
             record = self.get_job(duplicate["job_id"])
-            before = {"last_seen": record["job"]["last_seen"]}
+            before = {
+                "last_seen": record["job"]["last_seen"],
+                "enrichment": {},
+            }
+            enrichment_before: dict[str, Any] = {}
+            enrichment_after: dict[str, Any] = {}
+
+            incoming_provenance = payload.get("provenance")
+            if not isinstance(incoming_provenance, dict):
+                incoming_provenance = {}
+            provenance = record.get("provenance")
+            if not isinstance(provenance, dict):
+                provenance = {}
+                record["provenance"] = provenance
+
+            metadata = {
+                "posting_date": normalize_text(str(payload.get("posting_date", ""))),
+                "posting_date_precision": normalize_text(str(payload.get("posting_date_precision", ""))),
+                "posting_date_source": normalize_text(str(payload.get("posting_date_source", ""))),
+            }
+            for key in ("posting_date_precision", "posting_date_source"):
+                if not metadata[key]:
+                    metadata[key] = normalize_text(str(incoming_provenance.get(key, "")))
+
+            if not record["job"].get("posting_date") and metadata["posting_date"]:
+                enrichment_before["posting_date"] = ""
+                record["job"]["posting_date"] = metadata["posting_date"]
+                enrichment_after["posting_date"] = metadata["posting_date"]
+            for key in ("posting_date_precision", "posting_date_source"):
+                if not provenance.get(key) and metadata[key]:
+                    enrichment_before[f"provenance.{key}"] = provenance.get(key, "")
+                    provenance[key] = metadata[key]
+                    enrichment_after[f"provenance.{key}"] = metadata[key]
+            before["enrichment"] = enrichment_before
             record["job"]["last_seen"] = now
             record["job"]["last_updated"] = now
-            after = {"last_seen": now}
+            after = {"last_seen": now, "enrichment": enrichment_after}
             event = self._make_event(
                 actor=actor, entity_type="job", entity_id=duplicate["job_id"], action="reviewed",
                 before=before, after=after, comment=comment, source_refs=source_refs,
@@ -345,7 +378,17 @@ class CareerTracker:
             "job": job,
             "full_job_description": full_jd,
             "normalized_requirements": payload.get("normalized_requirements", []),
-            "provenance": payload.get("provenance", {"source": source, "source_url": source_url, "source_refs": source_refs or []}),
+            "provenance": {
+                "source": source,
+                "source_url": source_url,
+                "source_refs": source_refs or [],
+                **(payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}),
+                **{
+                    key: normalize_text(str(payload[key]))
+                    for key in ("posting_date_precision", "posting_date_source")
+                    if normalize_text(str(payload.get(key, "")))
+                },
+            },
             "scoring": payload.get("scoring", {"fit_score": job["fit_score"], "rationale": [], "gaps": []}),
             "evidence_matches": payload.get("evidence_matches", []),
             "processing_state": payload.get("processing_state", {"owner": owner, "status": job["processing_status"]}),

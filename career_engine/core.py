@@ -226,6 +226,20 @@ def domain_requirement_gate(text: str, taxonomy: dict[str, Any]) -> str | None:
     return None
 
 
+def _infer_headingless_kind(text: str, taxonomy: dict[str, Any]) -> str | None:
+    """Infer qualification buckets only for unmistakable heading-less clauses."""
+    low = text.lower()
+    mandatory = taxonomy.get("mandatory_signals", [])
+    if any(signal in low for signal in mandatory):
+        if domain_requirement_gate(text, taxonomy) is not None:
+            return "mandatory"
+        if any(term in low for term in ("degree", "qualification", "certification", "years of experience", "must ", "required")):
+            return "mandatory"
+    if any(signal in low for signal in ("preferred", "desirable", "nice to have", "advantageous")):
+        return "preferred"
+    return None
+
+
 def claim_supports_domain(
     claim: dict[str, Any],
     domain: str,
@@ -273,12 +287,14 @@ def normalize_job(payload: dict[str, Any], taxonomy: dict[str, Any]) -> dict[str
     headings = taxonomy.get("headings", {})
     aliases = taxonomy.get("aliases", {})
     section = "responsibilities"
+    has_recognized_heading = False
     buckets: dict[str, list[str]] = {"responsibilities": [], "mandatory": [], "preferred": []}
     ambiguous: list[str] = []
     for raw in _requirement_lines(text, headings):
         kind = _heading_kind(raw, headings)
         if kind:
             section = kind
+            has_recognized_heading = True
             continue
         line = BULLET_RE.sub("", raw).strip()
         if not line or len(line) < 8:
@@ -286,7 +302,12 @@ def normalize_job(payload: dict[str, Any], taxonomy: dict[str, Any]) -> dict[str
         if raw.endswith(":") and len(raw.split()) <= 8:
             ambiguous.append(raw)
             continue
-        buckets.setdefault(section, []).append(line)
+        inferred = (
+            _infer_headingless_kind(line, taxonomy)
+            if section == "responsibilities" and not has_recognized_heading
+            else None
+        )
+        buckets.setdefault(inferred or section, []).append(line)
     requirements: list[Requirement] = []
     index = 1
     for kind in ("mandatory", "preferred", "responsibilities"):
@@ -320,6 +341,9 @@ def normalize_job(payload: dict[str, Any], taxonomy: dict[str, Any]) -> dict[str
         "company": company,
         "role": role,
         "location": str(payload.get("location", "")).strip(),
+        "posting_date": str(payload.get("posting_date", "")).strip(),
+        "posting_date_precision": str(payload.get("posting_date_precision", "")).strip(),
+        "posting_date_source": str(payload.get("posting_date_source", "")).strip(),
         "reference": str(payload.get("reference", payload.get("external_job_id", ""))).strip(),
         "source": str(payload.get("source", "manual")),
         "source_url": str(payload.get("source_url", "")),

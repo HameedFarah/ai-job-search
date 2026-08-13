@@ -88,6 +88,64 @@ class CareerTrackerTests(unittest.TestCase):
         self.assertEqual([e["action"] for e in self.tracker.read_events()], ["created", "reviewed"])
         self.assertEqual(len(self.tracker.get_job(first["job_id"])["history"]), 2)
 
+    def test_duplicate_reingest_backfills_posting_date_provenance_without_owner_decision_changes(self):
+        initial = dict(self.payload)
+        initial["posting_date"] = ""
+        first = self.tracker.ingest(initial, comment="Initial undated posting", actor="chatgpt")
+        job_id = first["job_id"]
+        self.tracker.update_job(
+            job_id,
+            {"owner": "hermes", "processing_status": "queued_for_hermes"},
+            comment="Owner-approved queue transition for duplicate enrichment test",
+            actor="owner", action="queued",
+        )
+        incoming = dict(self.payload)
+        incoming.update({
+            "posting_date": "2026-08-12 (exact, from SmartRecruiters releasedDate)",
+            "posting_date_precision": "exact",
+            "posting_date_source": "SmartRecruiters releasedDate",
+        })
+        result = self.tracker.ingest(incoming, comment="Re-scan supplied verified posting metadata", actor="hermes")
+        record = result["record"]
+        self.assertEqual(record["job"]["posting_date"], incoming["posting_date"])
+        self.assertEqual(record["provenance"]["posting_date_precision"], "exact")
+        self.assertEqual(record["provenance"]["posting_date_source"], "SmartRecruiters releasedDate")
+        self.assertEqual(record["job"]["owner"], "hermes")
+        self.assertEqual(record["job"]["processing_status"], "queued_for_hermes")
+        event = result["record"]["history"][-1]
+        self.assertEqual(event["action"], "reviewed")
+        self.assertEqual(event["before"]["enrichment"]["posting_date"], "")
+        self.assertEqual(event["after"]["enrichment"]["provenance.posting_date_source"], "SmartRecruiters releasedDate")
+
+    def test_duplicate_reingest_does_not_overwrite_existing_posting_metadata(self):
+        payload = dict(self.payload)
+        payload.update({
+            "posting_date": "2026-07-09",
+            "posting_date_precision": "day",
+            "posting_date_source": "initial source",
+        })
+        first = self.tracker.ingest(payload, comment="Initial dated posting", actor="chatgpt")
+        incoming = dict(payload)
+        incoming.update({
+            "posting_date": "2026-08-12",
+            "posting_date_precision": "exact",
+            "posting_date_source": "new source",
+        })
+        result = self.tracker.ingest(incoming, comment="Re-scan with conflicting metadata", actor="hermes")
+        record = result["record"]
+        self.assertEqual(record["job"]["posting_date"], "2026-07-09")
+        self.assertEqual(record["provenance"]["posting_date_precision"], "day")
+        self.assertEqual(record["provenance"]["posting_date_source"], "initial source")
+        self.assertEqual(result["record"]["history"][-1]["after"]["enrichment"], {})
+
+    def test_new_record_preserves_posting_date_provenance(self):
+        payload = dict(self.payload)
+        payload.update({"posting_date_precision": "exact", "posting_date_source": "SmartRecruiters releasedDate"})
+        result = self.tracker.ingest(payload, comment="Initial posting with provenance", actor="chatgpt")
+        provenance = result["record"]["provenance"]
+        self.assertEqual(provenance["posting_date_precision"], "exact")
+        self.assertEqual(provenance["posting_date_source"], "SmartRecruiters releasedDate")
+
     def test_material_edits_require_comment(self):
         with self.assertRaises(ValueError):
             self.tracker.ingest(self.payload, comment="", actor="chatgpt")
