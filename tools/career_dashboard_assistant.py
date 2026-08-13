@@ -35,6 +35,18 @@ RESPONSE_COMMENT_TYPE = "assistant_response"
 REQUEST_COLLECTION = "ai_requests"
 COMMENT_COLLECTION = "comments"
 
+
+def load_api_key(api_key_env: str) -> str:
+    """Load the owner-client key from the environment or existing local credentials."""
+    api_key = os.environ.get(api_key_env, "").strip()
+    if not api_key:
+        credential_path = Path(os.environ.get("HOME", "")) / ".herenow" / "credentials"
+        if credential_path.is_file():
+            api_key = credential_path.read_text(encoding="utf-8").strip()
+    if not api_key:
+        raise AssistantError(f"missing environment variable: {api_key_env}")
+    return api_key
+
 QUICK_FIELD_PROMPTS = {
     "headline": "Provide the best application Headline for this role.",
     "summary": "Provide the application Summary / Professional Summary for this role.",
@@ -44,6 +56,28 @@ QUICK_FIELD_PROMPTS = {
     "cover_letter": "Provide the tailored cover letter for this application.",
     "screening_question": "Answer the application screening question in the user message.",
 }
+
+REQUEST_TYPE_FIELDS = {
+    "headline": "headline",
+    "summary": "summary",
+    "skills": "skills",
+    "current_role": "current_role",
+    "experience": "experience",
+    "cover_letter": "cover_letter",
+    "application_question": "screening_question",
+    "screening_question": "screening_question",
+}
+
+# Only flag explicit asks for facts or decisions from the owner. Generic hedging
+# (for example, "I cannot verify") is not enough to block the request.
+OWNER_INPUT_PATTERNS = (
+    r"\bowner input (?:is )?required\b",
+    r"\b(?:need|requires?) your input\b",
+    r"\bplease provide\b",
+    r"\bplease confirm\b",
+    r"\bprovide (?:the|your)\b",
+    r"\bconfirm (?:the|your)\b",
+)
 
 
 class AssistantError(RuntimeError):
@@ -190,6 +224,11 @@ def field_prompt(field_name: str, user_prompt: str) -> str:
     return base or user_prompt.strip()
 
 
+def owner_input_needed(answer: str) -> bool:
+    text = str(answer or "")
+    return any(re.search(pattern, text, flags=re.I) for pattern in OWNER_INPUT_PATTERNS)
+
+
 def build_answer_prompt(context: dict[str, Any], *, field_name: str, user_prompt: str) -> str:
     requested = field_prompt(field_name, user_prompt)
     if not requested:
@@ -300,18 +339,12 @@ def apply_cv_edit(
     job_id: str,
     context: dict[str, Any],
     user_prompt: str,
-) -> str:
+) -> tuple[str, str]:
     artifact_dir: Path = context["artifact_dir"]
     request_token = uuid.uuid4().hex[:12]
     candidate = artifact_dir / f"assistant-edit-{request_token}.json"
     evidence = artifact_dir / "assistant" / f"{request_token}-routing.json"
     prompt = build_cv_edit_prompt(context, user_prompt, candidate)
-    existing_application_path = artifact_dir / "generated_application.json"
-    previous_application = (
-        existing_application_path.read_text(encoding="utf-8")
-        if existing_application_path.is_file()
-        else ""
-    )
     try:
         run_dispatcher(
             dispatcher=dispatcher,
@@ -329,31 +362,29 @@ def apply_cv_edit(
         if not import_result.get("valid"):
             findings = import_result.get("findings") or []
             return (
-                "I prepared the requested CV revision, but Career Engine rejected it, so the current CV was "
+                "I prepared the requested CV revision, but Career Engine rejected it, so the current package was "
                 "left unchanged. Validation findings:\n"
-                + "\n".join(f"- {item.get('message', item)}" for item in findings[:8])
+                + "\n".join(f"- {item.get('message', item)}" for item in findings[:8]),
+                "failure",
             )
         render_result = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
         if not render_result.get("valid"):
-            if previous_application:
-                restore_path = artifact_dir / f"assistant-restore-{request_token}.json"
-                try:
-                    restore_path.write_text(previous_application, encoding="utf-8")
-                    _run_engine(
-                        repo,
-                        ["generate", "import", "--job-id", job_id, "--file", str(restore_path)],
-                        timeout=180,
-                    )
-                    _run_engine(repo, ["render", "--job-id", job_id], timeout=360)
-                finally:
-                    restore_path.unlink(missing_ok=True)
+            restored = render_result.get("restored_revision") or {}
+            restoration_note = (
+                f" Prior package revision {restored.get('revision_id')} was restored."
+                if restored.get("revision_id")
+                else " The prior validated package restoration path was invoked."
+            )
             return (
-                "The requested CV revision passed content validation but failed rendering/QA, "
-                "so the prior validated application was restored. No external action was taken."
+                "The requested CV revision passed content validation but failed rendering/QA."
+                + restoration_note
+                + " External action remains blocked.",
+                "failure",
             )
         return (
-            "CV revision applied and validated. The latest Career Engine application content and both "
-            "route-specific resume variants were regenerated. No email was sent and no portal submission occurred."
+            "CV revision applied and validated. The latest Career Engine application content, both route-specific "
+            "resume variants, and the cover letter were regenerated. External action remains blocked pending owner approval.",
+            "success",
         )
     finally:
         candidate.unlink(missing_ok=True)
@@ -364,25 +395,29 @@ def answer_request(
     repo: Path,
     dispatcher: Path,
     record: dict[str, Any],
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, Any]]:
     data = _data_of(record)
     role_key = str(data.get("role_key", ""))
     job_id = job_id_from_role_key(role_key)
     context = load_job_context(repo, job_id)
-    request_type = str(data.get("request_type", "questions")).strip().lower()
+    request_type = str(data.get("request_type", "questions")).strip().lower().replace("-", "_").replace(" ", "_")
     prompt = str(data.get("prompt", "")).strip()
     if request_type in {"edit_cv", "revise_cv", "resume_edit"}:
         if not prompt:
             raise AssistantError("empty CV edit request")
-        return role_key, apply_cv_edit(
+        answer, validation_status = apply_cv_edit(
             repo=repo,
             dispatcher=dispatcher,
             job_id=job_id,
             context=context,
             user_prompt=prompt,
         )
+        return role_key, answer, {
+            "validation_status": validation_status,
+            "owner_input_needed": owner_input_needed(answer),
+        }
 
-    field_name = ""
+    field_name = REQUEST_TYPE_FIELDS.get(request_type, "")
     field_match = re.match(r"^\s*FIELD\s*:\s*([a-z_ -]+)\s*(?:\n|$)", prompt, flags=re.I)
     if field_match:
         field_name = field_match.group(1).strip().lower().replace(" ", "_").replace("-", "_")
@@ -398,7 +433,10 @@ def answer_request(
         evidence_path=evidence_path,
         timeout_seconds=240,
     )
-    return role_key, answer
+    return role_key, answer, {
+        "validation_status": "success",
+        "owner_input_needed": owner_input_needed(answer),
+    }
 
 
 def process_once(
@@ -432,7 +470,7 @@ def process_once(
                     record_id=record_id,
                     fields={"state": "processing"},
                 )
-                response_role_key, response = answer_request(
+                response_role_key, response, metadata = answer_request(
                     repo=repo,
                     dispatcher=dispatcher,
                     record=record,
@@ -448,7 +486,12 @@ def process_once(
                     slug=slug,
                     api_key=api_key,
                     record_id=record_id,
-                    fields={"state": "done"},
+                    fields={
+                        "state": "done",
+                        "answer": response,
+                        "validation_status": metadata["validation_status"],
+                        "owner_input_needed": metadata["owner_input_needed"],
+                    },
                 )
                 processed += 1
             except Exception as exc:  # noqa: BLE001 - bounded per-request failure
@@ -466,7 +509,12 @@ def process_once(
                         slug=slug,
                         api_key=api_key,
                         record_id=record_id,
-                        fields={"state": "failed"},
+                        fields={
+                            "state": "failed",
+                            "answer": message,
+                            "validation_status": "failure",
+                            "owner_input_needed": owner_input_needed(message),
+                        },
                     )
                 except Exception:
                     pass
@@ -482,9 +530,10 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=20)
     args = parser.parse_args()
 
-    api_key = os.environ.get(args.api_key_env, "").strip()
-    if not api_key:
-        raise SystemExit(f"missing environment variable: {args.api_key_env}")
+    try:
+        api_key = load_api_key(args.api_key_env)
+    except AssistantError as exc:
+        raise SystemExit(str(exc)) from exc
     result = process_once(
         repo=Path(args.repo).resolve(),
         dispatcher=Path(args.dispatcher).resolve(),

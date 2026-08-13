@@ -88,11 +88,12 @@ def _snapshot_current_package(artifact_dir: Path, record: dict[str, Any]) -> dic
     return {"revision_id": revision_id, "path": str(destination), "files": files}
 
 
-def _restore_latest_revision(artifact_dir: Path) -> dict[str, Any] | None:
-    roots = sorted((item for item in _revision_root(artifact_dir).glob("*") if item.is_dir()), reverse=True)
-    if not roots:
+def _restore_revision(artifact_dir: Path, revision_id: str | None) -> dict[str, Any] | None:
+    if not revision_id:
         return None
-    source = roots[0]
+    source = _revision_root(artifact_dir) / revision_id
+    if not source.is_dir():
+        return None
     manifest_path = source / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {"files": []}
     for item in manifest.get("files", []):
@@ -292,11 +293,15 @@ def import_generated(job_id: str, application_path: Path, *, root: Path | None =
     if not errors:
         revision = _snapshot_current_package(artifact_dir, record)
         destination.write_text(json.dumps(application, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    processing_state = dict(record.get("processing_state") or {})
+    if revision:
+        processing_state["pending_revision_id"] = revision["revision_id"]
     tracker.update_job(
         job_id,
         {
             "processing_status": "generated_content_valid" if not errors else "generated_content_rejected",
             "next_action": "Render approved template" if not errors else "Correct generated content against validation findings",
+            "processing_state": processing_state,
         },
         comment="Validated structured LLM application output against the central bundle",
         actor=actor,
@@ -463,18 +468,20 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             source_refs=[item["path"] for item in final_artifacts],
             requires_owner_review=True,
         )
-        revision_root = _revision_root(artifact_dir)
-        revisions = sorted((item for item in revision_root.glob("*") if item.is_dir()), reverse=True) if revision_root.is_dir() else []
-        if revisions:
+        pending_revision_id = str((record.get("processing_state") or {}).get("pending_revision_id", ""))
+        if pending_revision_id:
             tracker.record_event(actor=actor, entity_type="application", entity_id=job_id,
-                action="generated", before={"revision_id": revisions[0].name},
+                action="generated", before={"revision_id": pending_revision_id},
                 after={"status": "validated_and_rendered"},
                 comment="Accepted validated application revision and preserved prior package",
                 confidence="high", requires_owner_review=True)
+            processing_state["pending_revision_id"] = ""
+            tracker.update_job(job_id, {"processing_state": processing_state}, comment="Cleared accepted revision association", actor=actor)
     else:
-        restored = _restore_latest_revision(artifact_dir)
+        pending_revision_id = str((record.get("processing_state") or {}).get("pending_revision_id", ""))
+        restored = _restore_revision(artifact_dir, pending_revision_id)
         processing_state = dict(record.get("processing_state") or {})
-        processing_state.update({"status": "render_rejected", "external_action_allowed": False})
+        processing_state.update({"status": "render_rejected", "external_action_allowed": False, "pending_revision_id": ""})
         tracker.update_job(
             job_id,
             {

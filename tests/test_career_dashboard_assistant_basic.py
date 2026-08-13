@@ -28,3 +28,25 @@ def test_answer_prompt_uses_current_job_and_resume():
     assert "ONLY the supplied current validated resume/application content" in prompt
     assert "Lead design governance" in prompt
     assert "Senior Design Management Leader" in prompt
+
+
+def test_request_type_field_mapping_and_owner_input_detection():
+    assert assistant.REQUEST_TYPE_FIELDS["application_question"] == "screening_question"
+    assert assistant.field_prompt("screening_question", "")
+    assert assistant.owner_input_needed("Owner input is required for the notice period.") is True
+    assert assistant.owner_input_needed("I cannot verify that claim from the resume.") is False
+
+
+def test_field_prefix_remains_compatible():
+    prompt = assistant.field_prompt("cover_letter", "Keep it concise.")
+    assert "cover letter" in prompt.lower()
+
+
+def test_load_api_key_falls_back_to_local_credentials(tmp_path, monkeypatch):
+    credentials = tmp_path / ".herenow" / "credentials"
+    credentials.parent.mkdir()
+    credentials.write_text("test-local-key\n", encoding="utf-8")
+    monkeypatch.delenv("HERENOW_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert assistant.load_api_key("HERENOW_API_KEY") == "test-local-key"
