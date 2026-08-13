@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +49,60 @@ def read_stage(artifact_dir: Path, name: str) -> Any:
     if not path.is_file():
         raise FileNotFoundError(path)
     return json.loads(path.read_text(encoding="utf-8"))["data"]
+
+
+def _revision_root(artifact_dir: Path) -> Path:
+    return artifact_dir / "revisions"
+
+
+def _snapshot_current_package(artifact_dir: Path, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Copy the current validated package before accepting a new revision."""
+    application = artifact_dir / "generated_application.json"
+    if not application.is_file():
+        return None
+    revision_id = f"{stable_hash({'application': application.read_bytes().hex(), 'nonce': uuid.uuid4().hex})[:16]}"
+    destination = _revision_root(artifact_dir) / revision_id
+    destination.mkdir(parents=True, exist_ok=False)
+    files: list[dict[str, str]] = []
+    candidates = {"generated_application.json", "generation_packet.json", "pipeline_state.json"}
+    for item in record.get("generated_artifacts", []):
+        path = Path(str(item.get("path", "")))
+        if path.is_file() and path.is_relative_to(artifact_dir):
+            candidates.add(str(path.relative_to(artifact_dir)))
+    submission = record.get("submission_package") or {}
+    for value in submission.values():
+        if isinstance(value, str):
+            path = Path(value)
+            if path.is_file() and path.is_relative_to(artifact_dir):
+                candidates.add(str(path.relative_to(artifact_dir)))
+    for relative in sorted(candidates):
+        source = artifact_dir / relative
+        if not source.is_file():
+            continue
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        files.append({"path": relative, "sha256": hashlib.sha256(source.read_bytes()).hexdigest()})
+    manifest = {"revision_id": revision_id, "files": files}
+    (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {"revision_id": revision_id, "path": str(destination), "files": files}
+
+
+def _restore_latest_revision(artifact_dir: Path) -> dict[str, Any] | None:
+    roots = sorted((item for item in _revision_root(artifact_dir).glob("*") if item.is_dir()), reverse=True)
+    if not roots:
+        return None
+    source = roots[0]
+    manifest_path = source / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {"files": []}
+    for item in manifest.get("files", []):
+        relative = str(item["path"])
+        origin = source / relative
+        target = artifact_dir / relative
+        if origin.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(origin, target)
+    return {"revision_id": source.name, "path": str(source), "files": manifest.get("files", [])}
 
 
 def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "chatgpt", force_weak: bool = False) -> dict[str, Any]:
@@ -230,9 +286,12 @@ def import_generated(job_id: str, application_path: Path, *, root: Path | None =
     findings = validate_generated_application(application, packet, bundle)
     errors = [item for item in findings if item.get("severity") == "error"]
     destination = artifact_dir / "generated_application.json"
-    if not errors:
-        destination.write_text(json.dumps(application, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tracker = _load_tracker(paths)
+    record = tracker.get_job(job_id)
+    revision = None
+    if not errors:
+        revision = _snapshot_current_package(artifact_dir, record)
+        destination.write_text(json.dumps(application, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tracker.update_job(
         job_id,
         {
@@ -404,7 +463,16 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             source_refs=[item["path"] for item in final_artifacts],
             requires_owner_review=True,
         )
+        revision_root = _revision_root(artifact_dir)
+        revisions = sorted((item for item in revision_root.glob("*") if item.is_dir()), reverse=True) if revision_root.is_dir() else []
+        if revisions:
+            tracker.record_event(actor=actor, entity_type="application", entity_id=job_id,
+                action="generated", before={"revision_id": revisions[0].name},
+                after={"status": "validated_and_rendered"},
+                comment="Accepted validated application revision and preserved prior package",
+                confidence="high", requires_owner_review=True)
     else:
+        restored = _restore_latest_revision(artifact_dir)
         processing_state = dict(record.get("processing_state") or {})
         processing_state.update({"status": "render_rejected", "external_action_allowed": False})
         tracker.update_job(
@@ -419,4 +487,5 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             action="rejected",
             requires_owner_review=True,
         )
+        result["restored_revision"] = restored
     return result
