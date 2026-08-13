@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-13T07:12:39+00:00",
-  "source_hash": "81d067955241cd64a814266d6ed145b77aa6812db38ff53c7cca4ab204f90197",
+  "built_at": "2026-08-13T15:52:11+00:00",
+  "source_hash": "6a54a1bc3b2b0b0d3f50fa155a2dc3533e6ca875e2f833724a4c9d44944b60f1",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -54,9 +54,9 @@
     },
     {
       "path": "governance/north-star.md",
-      "sha256": "2fd3c77230b155ff4ccfbd26e7c9f8ffd6af57393f0c1db45f1532c8b7961c4a",
-      "size": 8920,
-      "modified_ns": 1786492090379729396
+      "sha256": "a78e6ec5794257cab27fb9f5abf1f7800c9f9f3af6ce7f22931c993d7409265f",
+      "size": 11568,
+      "modified_ns": 1786634722410900199
     }
   ],
   "config": {
@@ -1350,6 +1350,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "cf1bfb8d1cdb3b4e746fdefd9d2b6950b9411b971302567fe446d5068666c333",
+  "bundle_hash": "cc11e02bf54305c545ff1662fd72ed230255ec17d7d6547cea14d8d8194d3a9d",
   "cache_reused": false
 }

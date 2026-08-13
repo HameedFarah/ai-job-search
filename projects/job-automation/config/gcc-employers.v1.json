@@ -569,6 +569,117 @@
         "official_ats"
       ],
       "residential_fallback_allowed": false
+    },
+    {
+      "id": "saudconsult",
+      "name": "SaudConsult",
+      "market": "SA",
+      "official_domains": ["saudconsult.com"],
+      "official_careers_url": "https://www.saudconsult.com/en/all_jobs",
+      "discovery_query": "site:saudconsult.com careers jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "al-othaim-investment",
+      "name": "Al Othaim Investment",
+      "market": "SA",
+      "official_domains": ["othaim.com.sa"],
+      "official_careers_url": "https://othaim.com.sa/career/",
+      "discovery_query": "site:othaim.com.sa career jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "developer_client_employer",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "omrania",
+      "name": "Omrania",
+      "market": "SA",
+      "official_domains": ["omrania.com"],
+      "official_careers_url": "https://omrania.com/working-omrania/vacancies/",
+      "official_ats_url": "https://jobs.egis-group.com/omrania-part-of-egis-group",
+      "discovery_query": "site:omrania.com working omrania vacancies",
+      "preferred_sources": ["official_employer_page", "official_ats"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "dar-al-riyadh",
+      "name": "Dar Al Riyadh",
+      "market": "SA",
+      "official_domains": ["daralriyadh.com", "careers.daralriyadh.com"],
+      "official_careers_url": "https://careers.daralriyadh.com/",
+      "discovery_query": "site:daralriyadh.com careers jobs",
+      "preferred_sources": ["official_ats", "official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "dar-al-omran",
+      "name": "Dar Al Omran",
+      "market": "SA",
+      "official_domains": ["dar-alomran.com"],
+      "official_careers_url": "https://www.dar-alomran.com/careers",
+      "discovery_query": "site:dar-alomran.com careers jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "keo-international-consultants",
+      "name": "KEO International Consultants",
+      "market": "GCC",
+      "official_domains": ["keoic.com"],
+      "official_careers_url": "https://www.keoic.com/careers/",
+      "discovery_query": "site:keoic.com careers jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "kbr",
+      "name": "KBR",
+      "market": "GCC",
+      "official_domains": ["kbr.com"],
+      "official_careers_url": "https://careers.kbr.com/",
+      "discovery_query": "site:kbr.com careers jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "worley",
+      "name": "Worley",
+      "market": "GCC",
+      "official_domains": ["worley.com"],
+      "official_careers_url": "https://www.worley.com/careers",
+      "discovery_query": "site:worley.com careers jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "buro-happold",
+      "name": "Buro Happold",
+      "market": "GCC",
+      "official_domains": ["burohappold.com", "vacancies.burohappold.com"],
+      "official_careers_url": "https://vacancies.burohappold.com/jobs/search/-1/",
+      "discovery_query": "site:burohappold.com careers jobs",
+      "preferred_sources": ["official_ats"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "meinhardt",
+      "name": "Meinhardt",
+      "market": "GCC",
+      "official_domains": ["meinhardt.com"],
+      "official_careers_url": "https://www.meinhardt.com/careers/",
+      "discovery_query": "site:meinhardt.com careers jobs",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false
     }
   ]
 }
