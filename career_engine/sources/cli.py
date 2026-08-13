@@ -320,6 +320,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="hermes_scanner",
     )
     ingest.add_argument("--output", default="")
+    consultants = sub.add_parser("consultants-scan", help="Probe active consultant bookmarks via official JSON-LD")
+    consultants.add_argument("--root", default="")
+    consultants.add_argument("--limit", type=int, default=25)
+    consultants.add_argument("--offline", action="store_true")
+    consultants.add_argument("--output", default="")
     return parser
 
 
@@ -368,6 +373,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "ingest":
             emit(run_ingest(args.file, scanner_id=args.scanner_id, output=args.output))
+            return 0
+        if args.command == "consultants-scan":
+            from .consultants import scan_consultants
+            from ..config import repo_root
+            result = scan_consultants(root=Path(args.root) if args.root else repo_root(), limit=args.limit, offline=args.offline)
+            if args.output:
+                out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            emit(result)
             return 0
         raise AssertionError(args.command)
     except KeyError as exc:

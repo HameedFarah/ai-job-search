@@ -20,11 +20,22 @@ from career_engine.sources.alerts import (
 )
 from career_engine.sources.base import SourceError, SourceUnavailable
 from career_engine.sources.cli import run_probe
+from career_engine.sources.consultants import scan_consultants
 from career_engine.sources.registry import get_source, runtime_source_status
 from career_engine.sources.routing import decide_route
 
 
 class SourceExpansionTests(unittest.TestCase):
+    def test_consultant_scan_preserves_policy_and_outcomes(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        report = scan_consultants(root=root, offline=True, limit=3)
+        self.assertEqual(report["summary"]["active_records"], 22)
+        self.assertEqual(report["summary"]["sources_skipped"], 4)
+        self.assertEqual(report["summary"]["sources_attempted"], 18)
+        self.assertFalse(report["send_or_submit"])
+        self.assertEqual(len(report["jobs"]), 0)
+        self.assertTrue(all({"source_id", "source_name", "attempted", "status", "adapter", "jobs_fetched", "verified_authoritative", "error"} <= set(row) for row in report["sources"]))
+
     def test_missing_provider_keys_make_sources_unavailable(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(SourceUnavailable):
