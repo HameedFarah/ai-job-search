@@ -1,0 +1,8 @@
+# Upstream commits this downstream repository has consciously decided never to port.
+# tools/upstream_triage.py skips anything listed here so it stops re-surfacing
+# in the weekly Upstream watch report. One SHA per line (short or full); text
+# after # is a note.
+#
+# Only for commits reviewed and rejected on purpose. Commits we DO port drop off
+# automatically once cherry-picked (patch-id match), so they never need an entry.
+# Likewise commits that only touch files this repo removed are auto-skipped.
