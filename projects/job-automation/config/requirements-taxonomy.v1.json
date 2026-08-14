@@ -58,6 +58,17 @@
     "rams_reliability_systems_assurance": [
       "rams", "reliability engineering", "systems assurance", "system assurance", "fmea", "fta", "fault tree analysis",
       "reliability block diagram", "rbd", "en 50126", "en 50129", "rail signalling", "rail signaling", "rolling stock"
+    ],
+    "roads_transport_utilities": [
+      "road infrastructure", "roads", "highways", "transportation networks", "transport infrastructure",
+      "utility projects", "utility corridors", "bridge maintenance", "bridge construction"
+    ],
+    "landscape_public_realm": [
+      "landscape architecture", "landscape design", "public realm", "public space design", "planting design"
+    ],
+    "technology_infrastructure": [
+      "it infrastructure", "information technology", "computer science", "information systems", "network engineering",
+      "enterprise architecture", "technology assets"
     ]
   },
   "mandatory_signals": [
@@ -91,7 +102,7 @@
   ],
   "specialization": {
     "design_lane_terms": ["design", "architect", "architecture", "architectural", "technical", "station", "landscape", "public realm", "urban", "interior", "masterplan", "compliance", "governance"],
-    "out_of_lane_terms": ["planner", "planning", "planning engineer", "scheduling", "schedule manager", "project engineer", "engineering manager", "site engineer", "process engineer", "civil engineer", "structural engineer", "mechanical engineer", "electrical engineer", "estimator", "quantity surveyor", "cost engineer", "theming", "smart city", "software", "developer", "analyst", "strategy", "strategic", "data scientist", "accountant", "finance", "marketing", "sales", "legal counsel", "rams", "reliability engineer", "reliability engineering", "systems assurance", "system assurance", "ram analysis", "safety assurance", "functional safety"],
+    "out_of_lane_terms": ["planner", "planning", "planning engineer", "scheduling", "schedule manager", "project engineer", "engineering manager", "site engineer", "process engineer", "civil engineer", "structural engineer", "mechanical engineer", "electrical engineer", "estimator", "quantity surveyor", "cost engineer", "theming", "smart city", "software", "developer", "analyst", "strategy", "strategic", "data scientist", "accountant", "finance", "marketing", "sales", "legal counsel", "rams", "reliability engineer", "reliability engineering", "systems assurance", "system assurance", "ram analysis", "safety assurance", "functional safety", "product design", "design operations", "partner onboarding"],
     "production_terms": ["architect", "designer", "planner", "engineer", "coordinator", "technician", "drafter", "consultant", "specialist", "associate", "analyst", "architectural designer"],
     "junior_terms": ["junior", "graduate", "intern", "entry-level", "entry level", "assistant"]
   }

@@ -4,6 +4,7 @@ import hashlib
 import re
 from collections import Counter
 from typing import Any
+from urllib.parse import urlparse
 
 from .models import EvidenceMatch, FitScore, Requirement, RouteDecision, ValidationFinding, to_data
 
@@ -14,6 +15,15 @@ EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 NUMBER_RE = re.compile(r"(?<![A-Za-z])(?:SAR\s*)?\d[\d,.]*(?:\s*(?:%|M|B|K|\+|million|billion))?", re.IGNORECASE)
 
 LIVE_STATUS_VALUES = ("live", "closed", "unverified")
+THIRD_PARTY_APPLICATION_HOSTS = (
+    "4dayweek.io",
+    "adzuna.com",
+    "echojobs.io",
+    "freehire.me",
+    "whatjobs.com",
+    "djinni.co",
+    "t.me",
+)
 
 
 def normalize_text(text: str) -> str:
@@ -91,8 +101,13 @@ _INLINE_HEADING_ALIASES: dict[str, tuple[str, ...]] = {
         "skills and experience",
         "experience and qualifications",
         "about you",
+        "what required skills you'll bring",
     ),
-    "preferred": ("preferred qualifications", "nice-to-have"),
+    "preferred": (
+        "preferred qualifications",
+        "nice-to-have",
+        "what desired skills you'll bring",
+    ),
 }
 _MARKETING_HEADINGS = (
     "what we offer",
@@ -115,11 +130,15 @@ _CLAUSE_STARTERS = (
 
 
 def _heading_kind(line: str, headings: dict[str, list[str]]) -> str | None:
-    cleaned = line.lower().strip(" :")
-    # Job boards commonly decorate headings with emoji or other symbols
-    # (for example "🌟 Requirements:"). Ignore only leading non-word
-    # decoration so the canonical heading taxonomy still controls meaning.
-    cleaned = re.sub(r"^[^\w]+", "", cleaned, flags=re.UNICODE).strip(" :")
+    cleaned = line.lower().strip()
+    # Job boards commonly decorate headings with Markdown markers, HTML-ish
+    # heading prefixes, emoji or other symbols (for example
+    # "**Requirements**", "### Desired Skills" or "🌟 Requirements:").
+    # Remove decoration only at the heading boundary; do not alter JD prose.
+    cleaned = re.sub(r"^#{1,6}\s*", "", cleaned)
+    cleaned = re.sub(r"^(?:\*\*|__)+", "", cleaned)
+    cleaned = re.sub(r"(?:\*\*|__)+$", "", cleaned)
+    cleaned = re.sub(r"^[^\w]+", "", cleaned, flags=re.UNICODE).strip(" :*#_")
     for kind, values in headings.items():
         if cleaned in values:
             return kind
@@ -543,6 +562,22 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
     text = normalized_job["full_job_description"].lower()
     taxonomy = bundle.get("taxonomy", {})
     signals = _role_title_signals(normalized_job["role"], taxonomy)
+    # Some generic built-environment-sounding titles are actually technology
+    # roles (for example "Asset Infrastructure Design"). When the JD carries
+    # multiple unmistakable IT-domain signals, apply the same specialization
+    # suppression used for an explicitly out-of-lane title.
+    technology_signals = (
+        "it infrastructure", "information technology", "computer science",
+        "information systems", "network engineering", "network architecture",
+        "enterprise architecture", "technology assets", "cybersecurity",
+    )
+    technology_hits = sum(1 for term in technology_signals if term in text)
+    if technology_hits >= 2:
+        signals = dict(signals)
+        signals["out_of_lane"] = True
+        signals["jd_out_of_lane"] = "technology_infrastructure"
+        signals["mismatch_multiplier"] = min(float(signals["mismatch_multiplier"]), 0.35)
+        signals["specialization_factor"] = min(float(signals["specialization_factor"]), 0.3)
     leadership = 1.0 if any(term in text for term in taxonomy.get("leadership_terms", [])) else 0.55
     seniority = signals["seniority_factor"]
     geography = 1.0 if any(term in (normalized_job.get("location", "") + " " + text).lower() for term in taxonomy.get("gcc_locations", [])) else 0.45
@@ -628,6 +663,13 @@ def decide_route(normalized_job: dict[str, Any], bundle: dict[str, Any]) -> dict
             return to_data(RouteDecision(route="unresolved", blocker="Recipient requires a verification source"))
         return to_data(RouteDecision(route="email", recipient=recipient, recipient_source=recipient_source))
     if application_url.startswith("https://"):
+        if bundle["config"]["policy"].get("portal_requires_official_url", False):
+            host = (urlparse(application_url).hostname or "").lower().strip(".")
+            if any(host == item or host.endswith("." + item) for item in THIRD_PARTY_APPLICATION_HOSTS):
+                return to_data(RouteDecision(
+                    route="unresolved",
+                    blocker="Third-party aggregator URL is not an official application portal",
+                ))
         return to_data(RouteDecision(route="portal", application_url=application_url))
     return to_data(RouteDecision(route="unresolved", blocker="No verified recipient or official application URL"))
 

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-13T16:02:40+00:00",
-  "source_hash": "2edee96307da708d2146291d1cd7fee9965b3c6a84801258eb25129a93b6b53f",
+  "built_at": "2026-08-14T07:08:46+00:00",
+  "source_hash": "604210301c3f7fea9c04a07d123e74c06fec8976c1b2f5b9dfaf598c56e2a5bb",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -12,9 +12,9 @@
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "bb3c8fc3c9e84be944ab348c94d46c335c3046aeb9809ad9c1ff6f1fed965245",
-      "size": 6353,
-      "modified_ns": 1786605074108089823
+      "sha256": "de51cfe3f49fad9cd15f552ae4516f707f5fbfa478ca21bb686e8c973708619d",
+      "size": 7014,
+      "modified_ns": 1786691283863190932
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -32,13 +32,13 @@
       "path": "projects/job-automation/config/gcc-employers.v1.json",
       "sha256": "698deb347b5e439584078c35ab40d06588c511e76686536843513cbd0f1136db",
       "size": 18955,
-      "modified_ns": 1786636309880746319
+      "modified_ns": 1786664723912679730
     },
     {
       "path": "projects/job-automation/config/consultants-bookmarks.v1.json",
       "sha256": "e5baf26b935364eae5c41e1f6656c5ef8854caaade2ae0ef1d21b29e5619b0b0",
       "size": 7758,
-      "modified_ns": 1786636826416071423
+      "modified_ns": 1786664723916679729
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
@@ -466,6 +466,33 @@
         "rail signalling",
         "rail signaling",
         "rolling stock"
+      ],
+      "roads_transport_utilities": [
+        "road infrastructure",
+        "roads",
+        "highways",
+        "transportation networks",
+        "transport infrastructure",
+        "utility projects",
+        "utility corridors",
+        "bridge maintenance",
+        "bridge construction"
+      ],
+      "landscape_public_realm": [
+        "landscape architecture",
+        "landscape design",
+        "public realm",
+        "public space design",
+        "planting design"
+      ],
+      "technology_infrastructure": [
+        "it infrastructure",
+        "information technology",
+        "computer science",
+        "information systems",
+        "network engineering",
+        "enterprise architecture",
+        "technology assets"
       ]
     },
     "mandatory_signals": [
@@ -550,7 +577,10 @@
         "system assurance",
         "ram analysis",
         "safety assurance",
-        "functional safety"
+        "functional safety",
+        "product design",
+        "design operations",
+        "partner onboarding"
       ],
       "production_terms": [
         "architect",
@@ -1362,6 +1392,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "1ee929f97313dc3cb344262a1e59e42a515b51ac6d848d8696479c89813d0891",
+  "bundle_hash": "fca513e4d31263b8da4d81a1758f7f37fabfb61cdb4eb46f763f59de7309d571",
   "cache_reused": false
 }

@@ -243,6 +243,30 @@ Desired Skills
     assert priorities["Professional registration such as RIBA."] == "preferred"
 
 
+def test_markdown_decorated_requirement_and_desired_headings_are_recognized(engine_root: Path) -> None:
+    taxonomy = json.loads((engine_root / "projects/job-automation/config/requirements-taxonomy.v1.json").read_text())
+    payload = {
+        "company": "Example",
+        "role": "Senior Design Manager",
+        "full_job_description": """
+### Responsibilities
+- Lead multidisciplinary architectural delivery.
+
+**Requirements**
+- 15+ years of architectural design management experience.
+- Bachelor's degree in Architecture.
+
+### What Desired Skills You'll Bring
+- LEED accreditation.
+""",
+    }
+    normalized = normalize_job(payload, taxonomy)
+    priorities = {item["text"]: item["priority"] for item in normalized["requirements"]}
+    assert priorities["15+ years of architectural design management experience."] == "mandatory"
+    assert priorities["Bachelor's degree in Architecture."] == "mandatory"
+    assert priorities["LEED accreditation."] == "preferred"
+
+
 def test_emoji_decorated_requirements_heading_is_recognized(engine_root: Path) -> None:
     taxonomy = json.loads((engine_root / "projects/job-automation/config/requirements-taxonomy.v1.json").read_text())
     payload = {
@@ -288,6 +312,28 @@ def test_daily_scanner_policy_does_not_define_inference_routing(engine_root: Pat
     assert "model" not in scanner
 
 
+def test_it_infrastructure_jd_is_suppressed_as_out_of_lane(engine_root: Path) -> None:
+    bundle = build_bundle(engine_root)
+    payload = {
+        "company": "Example",
+        "role": "Manager - Asset Infrastructure Design",
+        "location": "Riyadh, Saudi Arabia",
+        "application_url": "https://example.com/apply",
+        "full_job_description": """
+Responsibilities
+- Lead enterprise architecture and technology assets across the organization.
+Requirements
+- Bachelor's degree in Information Technology, Computer Science, Information Systems, or Network Engineering.
+- Strong experience with IT infrastructure, cybersecurity, and network architecture.
+""",
+    }
+    normalized = normalize_job(payload, bundle["taxonomy"])
+    matches = match_evidence(normalized, bundle)
+    score = score_fit(normalized, matches, bundle)
+    assert score["total"] < 70
+    assert score["calibration"]["jd_out_of_lane"] == "technology_infrastructure"
+
+
 def test_alias_matching_and_scoring(job_payload: dict[str, str], engine_root: Path) -> None:
     bundle = build_bundle(engine_root)
     normalized = normalize_job(job_payload, bundle["taxonomy"])
@@ -307,6 +353,8 @@ def test_route_requires_verified_real_recipient_or_portal(engine_root: Path) -> 
     }
     base = {"recipient": "", "recipient_source": "", "application_url": "https://example.com/apply", **live_fields}
     assert decide_route(base, bundle)["route"] == "portal"
+    aggregator = {"recipient": "", "recipient_source": "", "application_url": "https://4dayweek.io/job/example", **live_fields}
+    assert decide_route(aggregator, bundle)["route"] == "unresolved"
     unverified = {"recipient": "", "recipient_source": "", "application_url": "https://example.com/apply", "live_status": "unverified"}
     assert decide_route(unverified, bundle)["route"] == "portal"
     self_address = {"recipient": "hameedo@gmail.com", "recipient_source": "vacancy", "application_url": "", **live_fields}
