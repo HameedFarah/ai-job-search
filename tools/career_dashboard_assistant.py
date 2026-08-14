@@ -509,8 +509,8 @@ def _generate_application_package(*, repo: Path, dispatcher: Path, job_id: str) 
 
 def run_process_jobs(*, repo: Path, dispatcher: Path, website_root: Path, min_score: int) -> str:
     threshold = int(min_score)
-    if threshold < 70 or threshold > 100:
-        raise AssistantError("Score limit must be between 70 and 100; the canonical 70 threshold cannot be lowered")
+    if threshold < 0 or threshold > 100:
+        raise AssistantError("Score limit must be between 0 and 100")
     prepared = json.loads(_run_engine(repo, ["run", "--min-score", str(threshold), "--all"], timeout=600))
     processed = []
     failures = []

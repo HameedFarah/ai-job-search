@@ -1137,12 +1137,8 @@ def run(
 
     canonical_threshold = int(config["scoring"]["thresholds"]["high_priority"])
     requested_threshold = canonical_threshold if min_score is None else int(min_score)
-    if requested_threshold < canonical_threshold:
-        raise ValueError(
-            f"min_score {requested_threshold} cannot lower canonical generation threshold {canonical_threshold}"
-        )
-    if requested_threshold > 100:
-        raise ValueError("min_score must be <= 100")
+    if requested_threshold < 0 or requested_threshold > 100:
+        raise ValueError("min_score must be between 0 and 100")
     threshold = requested_threshold
     cap = None if process_all else int(config["daily_scanner"]["maximum_generation_packets_per_scan"])
     tracker = _load_tracker_ops(root)
@@ -1200,6 +1196,7 @@ def run(
         },
         "threshold": threshold,
         "canonical_threshold": canonical_threshold,
+        "owner_threshold_override": threshold != canonical_threshold,
         "generation_packet_cap": cap,
         "process_all": process_all,
         "reconciliation": reconciliation,

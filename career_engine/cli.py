@@ -120,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Deterministic batch orchestration: bundle, reconcile, prepare eligible jobs, sync dashboard data",
     )
     add_common(run)
-    run.add_argument("--min-score", type=int, default=None, help="Raise the canonical generation threshold for this run; it cannot lower it")
+    run.add_argument("--min-score", type=int, default=None, help="Owner-selected minimum score for this run (0-100; default is the canonical threshold)")
     run.add_argument("--all", action="store_true", dest="process_all", help="Process all eligible jobs instead of the routine daily packet cap")
 
     reconcile = sub.add_parser(
