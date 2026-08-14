@@ -516,6 +516,7 @@ def _generate_application_package(
         + json.dumps(context["packet"], ensure_ascii=False, indent=2)
     )
     repair_candidate: Path | None = None
+    repair_used = False
     try:
         dispatch_error: AssistantError | None = None
         try:
@@ -577,9 +578,65 @@ def _generate_application_package(
                     "generation rejected after one repair: "
                     + "; ".join(str(item.get("message", item)) for item in repaired_findings[:5])
                 )
-        rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
-        if not rendered.get("valid"):
-            raise AssistantError(f"render/QA failed for {job_id}")
+            repair_used = True
+
+        render_error = ""
+        try:
+            rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
+            if not rendered.get("valid"):
+                render_error = json.dumps(rendered.get("findings") or rendered, ensure_ascii=False)
+        except AssistantError as exc:
+            render_error = str(exc)
+
+        if render_error:
+            if repair_used:
+                raise AssistantError(f"render/QA failed after the single repair for {job_id}: {render_error}")
+            repair_candidate = artifact_dir / f"dashboard-batch-{token}-repair.json"
+            repair_evidence = artifact_dir / "assistant" / f"batch-{token}-repair-routing.json"
+            repair_prompt = (
+                "The generated application passed content validation but failed deterministic Career Engine render/QA. "
+                "Correct ONLY the render/QA defect described below using the same generation packet and verified claims. "
+                "Preserve supported facts and chronology, do not add claims, and return a complete JSON application object. "
+                "Write ONLY valid JSON to the exact output path; modify no other file. After the file is written successfully, "
+                "reply exactly DONE.\n\n"
+                f"OUTPUT PATH:\n{repair_candidate}\n\nRENDER/QA FAILURE:\n{render_error}\n\nFIRST CANDIDATE:\n"
+                + candidate.read_text(encoding="utf-8")
+                + "\n\nGENERATION PACKET:\n"
+                + json.dumps(context["packet"], ensure_ascii=False, indent=2)
+            )
+            repair_error: AssistantError | None = None
+            try:
+                run_dispatcher(
+                    dispatcher=dispatcher,
+                    repo=repo,
+                    prompt=repair_prompt,
+                    mode="workspace-write",
+                    evidence_path=repair_evidence,
+                    timeout_seconds=600,
+                )
+            except AssistantError as exc:
+                repair_error = exc
+            if not repair_candidate.is_file():
+                if repair_error is not None:
+                    raise repair_error
+                raise AssistantError(f"render/QA repair produced no candidate for {job_id}")
+            _stamp_generated_application_contract(repair_candidate, context["packet"])
+            imported = json.loads(
+                _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(repair_candidate)], timeout=180)
+            )
+            if not imported.get("valid"):
+                repaired_findings = imported.get("findings") or []
+                raise AssistantError(
+                    "render/QA repair failed content validation: "
+                    + "; ".join(str(item.get("message", item)) for item in repaired_findings[:5])
+                )
+            repair_used = True
+            try:
+                rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
+            except AssistantError as exc:
+                raise AssistantError(f"render/QA failed after one bounded repair for {job_id}: {exc}") from exc
+            if not rendered.get("valid"):
+                raise AssistantError(f"render/QA failed after one bounded repair for {job_id}")
         return "generated_and_rendered"
     finally:
         candidate.unlink(missing_ok=True)

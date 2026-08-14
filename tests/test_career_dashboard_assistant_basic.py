@@ -262,6 +262,64 @@ def test_generation_gets_one_bounded_repair_after_deterministic_rejection(monkey
     assert not list(artifact_dir.glob("dashboard-batch-*.json"))
 
 
+def test_render_qa_failure_uses_the_same_single_bounded_repair(monkeypatch, tmp_path):
+    artifact_dir = tmp_path / "artifacts" / "abcdef1234567890"
+    artifact_dir.mkdir(parents=True)
+    packet = {
+        "schema_version": 1,
+        "job_id": "abcdef1234567890",
+        "bundle_hash": "bundle-current",
+        "email_draft_policy": {"expected_subject": "Abdelhamid Farah - Senior Design Manager"},
+    }
+    monkeypatch.setattr(
+        assistant,
+        "load_job_context",
+        lambda repo, job_id: {"packet": packet, "application": {}, "artifact_dir": artifact_dir},
+    )
+    dispatch_prompts = []
+
+    def fake_dispatcher(**kwargs):
+        dispatch_prompts.append(kwargs["prompt"])
+        output = kwargs["prompt"].split("OUTPUT PATH:\n", 1)[1].splitlines()[0]
+        Path(output).write_text(json.dumps({
+            "schema_version": 1,
+            "job_id": "abcdef1234567890",
+            "bundle_hash": "bundle-current",
+            "cover_email": {"subject": "Abdelhamid Farah - Senior Design Manager", "body": "Body", "claim_ids": []},
+        }), encoding="utf-8")
+        return {"ok": True}
+
+    monkeypatch.setattr(assistant, "run_dispatcher", fake_dispatcher)
+    imports = 0
+    renders = 0
+
+    def fake_engine(repo, args, timeout):
+        nonlocal imports, renders
+        if args[:2] == ["generate", "import"]:
+            imports += 1
+            return json.dumps({"valid": True, "findings": []})
+        if args[0] == "render":
+            renders += 1
+            if renders == 1:
+                raise assistant.AssistantError("Expected exactly one earlier-role bullet citing cube.projects.25, got 2")
+            return json.dumps({"valid": True})
+        raise AssertionError(args)
+
+    monkeypatch.setattr(assistant, "_run_engine", fake_engine)
+    action = assistant._generate_application_package(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        job_id="abcdef1234567890",
+        force_regenerate=True,
+    )
+    assert action == "generated_and_rendered"
+    assert imports == 2
+    assert renders == 2
+    assert len(dispatch_prompts) == 2
+    assert "RENDER/QA FAILURE" in dispatch_prompts[1]
+    assert not list(artifact_dir.glob("dashboard-batch-*.json"))
+
+
 def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
     jobs = tmp_path / "jobs.json"
     jobs.write_text(json.dumps({"jobs": [{"id": assistant.HERMES_CAREER_CRON_JOB, "fire_claim": {"by": "host:99999999"}}]}), encoding="utf-8")
