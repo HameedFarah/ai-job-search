@@ -33,6 +33,11 @@ if (!company || typeof company !== 'object' || Array.isArray(company)) {
   console.error('career_ops_source_runner: company must be a JSON object');
   process.exit(2);
 }
+// Several maintained adapters intentionally require an explicit provider for
+// branded/custom ATS hosts whose URL does not reveal the vendor. Supplying the
+// selected provider here avoids forcing Career Engine to duplicate each
+// upstream adapter's host-detection rules.
+if (!company.provider) company.provider = provider;
 
 const checkout = checkoutArg || process.env.CAREER_OPS_UI_DIR || '/home/hameedo/projects/career-ops-ui';
 const adapterPath = path.resolve(checkout, 'server', 'lib', 'portals', 'adapters', `${provider}.mjs`);
