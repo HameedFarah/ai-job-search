@@ -73,7 +73,7 @@ def test_global_refresh_request_bypasses_job_key(monkeypatch, tmp_path):
     assert metadata["validation_status"] == "success"
 
 
-def test_global_process_request_passes_score(monkeypatch, tmp_path):
+def test_global_process_request_passes_owner_score_override(monkeypatch, tmp_path):
     captured = {}
     def fake_process(**kwargs):
         captured.update(kwargs)
@@ -83,10 +83,29 @@ def test_global_process_request_passes_score(monkeypatch, tmp_path):
         repo=tmp_path,
         dispatcher=tmp_path / "dispatcher.py",
         website_root=tmp_path,
-        record={"data": {"role_key": assistant.GLOBAL_ROLE_KEY, "request_type": "process_jobs", "min_score": 78}},
+        record={"data": {"role_key": assistant.GLOBAL_ROLE_KEY, "request_type": "process_jobs", "min_score": 65}},
     )
     assert answer == "batch complete"
-    assert captured["min_score"] == 78
+    assert captured["min_score"] == 65
+
+
+def test_process_jobs_uses_owner_threshold_below_default(monkeypatch, tmp_path):
+    commands = []
+    def fake_engine(repo, args, timeout):
+        commands.append(args)
+        return json.dumps({"processed": [], "eligible": []})
+    monkeypatch.setattr(assistant, "_run_engine", fake_engine)
+    monkeypatch.setattr(assistant, "_refresh_dashboard_site", lambda repo, website_root: None)
+
+    answer = assistant.run_process_jobs(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        website_root=tmp_path / "site",
+        min_score=65,
+    )
+
+    assert commands == [["run", "--min-score", "65", "--all"]]
+    assert "Score ≥ 65 processing completed" in answer
 
 
 def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
