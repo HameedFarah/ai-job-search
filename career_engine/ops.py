@@ -1118,14 +1118,17 @@ def run(
     *,
     min_score: int | None = None,
     process_all: bool = False,
+    reprocess_existing: bool = False,
 ) -> dict[str, Any]:
     """Deterministic batch orchestration. Rebuilds/validates the bundle as
-    needed, reconciles tracker statuses, prepares only eligible records through
-    the configured no-send pipeline, syncs the local dashboard data and emits a
-    structured report. ``min_score`` may raise (never lower) the canonical
-    generation threshold. ``process_all`` removes the routine daily packet cap
-    for an explicit owner-triggered batch. Never sends, never submits, never
-    creates Gmail drafts."""
+    needed, reconciles tracker statuses, prepares eligible records through the
+    configured no-send pipeline, syncs the local dashboard data and emits a
+    structured report. ``min_score`` is an explicit owner-selected threshold
+    from 0-100. ``process_all`` removes the routine daily packet cap.
+    ``reprocess_existing`` also re-prepares active verified-live non-submitted
+    records that already have a generated package, so an owner-triggered batch
+    can genuinely refresh current CVs and cover letters. Never sends, never
+    submits, never creates Gmail drafts."""
     config, _ = load_config(root)
     bundle_state = bundle_status(root)
     if not bundle_state.get("valid") or not bundle_state.get("current"):
@@ -1143,18 +1146,30 @@ def run(
     cap = None if process_all else int(config["daily_scanner"]["maximum_generation_packets_per_scan"])
     tracker = _load_tracker_ops(root)
 
-    eligible: list[tuple[int, str]] = []
+    eligible_by_job: dict[str, int] = {}
     for row in tracker.list_rows():
-        if row["processing_status"] != "generation_ready":
-            continue
         record = tracker.get_job(row["job_id"])
-        if (record.get("processing_state") or {}).get("status") == "rejected":
+        processing_state = record.get("processing_state") or {}
+        job = record.get("job") or {}
+        if processing_state.get("status") == "rejected":
             continue
         score = _effective_score(record, row["fit_score"])
         if score < threshold:
             continue
-        eligible.append((score, row["job_id"]))
-    eligible.sort(key=lambda item: (-item[0], item[1]))
+
+        is_generation_ready = row["processing_status"] == "generation_ready"
+        if not is_generation_ready and reprocess_existing:
+            live_status = str(processing_state.get("live_status") or record.get("live_status") or "").lower()
+            application_status = str(job.get("application_status") or record.get("application_status") or "not_submitted").lower()
+            processing_status = str(row.get("processing_status") or "").lower()
+            terminal = processing_status in {"applied", "superseded", "rejected", "closed", "inactive"}
+            submitted = application_status in {"submitted", "sent", "applied"}
+            is_generation_ready = live_status == "live" and not terminal and not submitted
+        if not is_generation_ready:
+            continue
+        eligible_by_job[row["job_id"]] = score
+
+    eligible = sorted(((score, job_id) for job_id, score in eligible_by_job.items()), key=lambda item: (-item[0], item[1]))
 
     processed: list[dict[str, Any]] = []
     deferred: list[dict[str, Any]] = []
@@ -1199,6 +1214,7 @@ def run(
         "owner_threshold_override": threshold != canonical_threshold,
         "generation_packet_cap": cap,
         "process_all": process_all,
+        "reprocess_existing": reprocess_existing,
         "reconciliation": reconciliation,
         "eligible": [{"job_id": item[1], "score": item[0]} for item in eligible],
         "processed": processed,

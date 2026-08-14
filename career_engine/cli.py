@@ -122,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(run)
     run.add_argument("--min-score", type=int, default=None, help="Owner-selected minimum score for this run (0-100; default is the canonical threshold)")
     run.add_argument("--all", action="store_true", dest="process_all", help="Process all eligible jobs instead of the routine daily packet cap")
+    run.add_argument("--reprocess-existing", action="store_true", help="Also refresh active verified-live non-submitted jobs that already have generated packages")
 
     reconcile = sub.add_parser(
         "reconcile",
@@ -425,7 +426,11 @@ def main(argv: list[str] | None = None) -> int:
             emit(result, human=args.human)
             return EXIT_READY
         if args.command == "run":
-            result = run(min_score=args.min_score, process_all=args.process_all)
+            result = run(
+                min_score=args.min_score,
+                process_all=args.process_all,
+                reprocess_existing=args.reprocess_existing,
+            )
             emit(result, human=args.human)
             if not result.get("bundle", {}).get("valid", True):
                 return EXIT_SYSTEM

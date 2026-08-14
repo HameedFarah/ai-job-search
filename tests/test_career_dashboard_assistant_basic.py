@@ -55,9 +55,10 @@ def test_load_api_key_falls_back_to_local_credentials(tmp_path, monkeypatch):
 
 
 def test_run_parser_supports_owner_batch_threshold():
-    args = build_parser().parse_args(["run", "--min-score", "75", "--all"])
+    args = build_parser().parse_args(["run", "--min-score", "75", "--all", "--reprocess-existing"])
     assert args.min_score == 75
     assert args.process_all is True
+    assert args.reprocess_existing is True
 
 
 def test_global_refresh_request_bypasses_job_key(monkeypatch, tmp_path):
@@ -104,8 +105,47 @@ def test_process_jobs_uses_owner_threshold_below_default(monkeypatch, tmp_path):
         min_score=65,
     )
 
-    assert commands == [["run", "--min-score", "65", "--all"]]
+    assert commands == [["run", "--min-score", "65", "--all", "--reprocess-existing"]]
     assert "Score ≥ 65 processing completed" in answer
+
+
+def test_process_jobs_regenerates_existing_packages_and_reports_progress(monkeypatch, tmp_path):
+    generated = []
+    progress = []
+
+    monkeypatch.setattr(
+        assistant,
+        "_run_engine",
+        lambda repo, args, timeout: json.dumps({
+            "processed": [{"job_id": "abcdef1234567890", "generation_packet": True}],
+            "eligible": [{"job_id": "abcdef1234567890", "score": 88}],
+        }),
+    )
+    monkeypatch.setattr(
+        assistant,
+        "_generate_application_package",
+        lambda **kwargs: generated.append(kwargs) or "generated_and_rendered",
+    )
+    monkeypatch.setattr(
+        assistant,
+        "load_job_context",
+        lambda repo, job_id: {"packet": {"vacancy": {"role": "Senior Design Manager", "company": "Parsons"}}},
+    )
+    monkeypatch.setattr(assistant, "_refresh_dashboard_site", lambda repo, website_root: None)
+
+    answer = assistant.run_process_jobs(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        website_root=tmp_path / "site",
+        min_score=70,
+        progress_callback=progress.append,
+    )
+
+    assert generated[0]["force_regenerate"] is True
+    assert progress[0]["kind"] == "batch_progress"
+    assert any(item["current_role_key"] == "tracker-abcdef1234567890" for item in progress)
+    assert progress[-1]["phase"] == "publishing"
+    assert "1 package(s) regenerated/rendered" in answer
 
 
 def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):

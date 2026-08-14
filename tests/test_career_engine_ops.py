@@ -149,6 +149,24 @@ def test_run_command(cli_root: Path, job_payload: dict) -> None:
     assert result["report_path"]
 
 
+def test_run_reprocess_existing_includes_live_prepared_job(cli_root: Path) -> None:
+    job_id = "a1b2c3d4e5f607182930"
+    seed_job(
+        cli_root,
+        job_id,
+        company="Parsons",
+        role="Senior Design Manager",
+        score=88,
+        status="awaiting_owner_approval",
+        live_status="live",
+    )
+    result = json.loads(capture_main(["run", "--min-score", "70", "--all", "--reprocess-existing"]))
+    assert result["reprocess_existing"] is True
+    assert any(item["job_id"] == job_id for item in result["eligible"])
+    assert any(item["job_id"] == job_id for item in result["processed"])
+    assert result["send_or_submit"] is False
+
+
 def test_validate_aggregate_and_per_job(cli_root: Path) -> None:
     seed_job(cli_root, "fd6675da1bb6de6f40a1", company="Parsons", role="Senior Project Manager (Design)", score=73, status="generation_ready")
     aggregate = json.loads(capture_main(["validate"]))

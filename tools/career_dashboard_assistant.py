@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 DEFAULT_REPO = Path("/home/hameedo/projects/ai-job-search")
 DEFAULT_DISPATCHER = Path("/home/hameedo/vps-infra-dev/scripts/operations/model-route-dispatch.py")
@@ -465,9 +465,15 @@ def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
     )
 
 
-def _generate_application_package(*, repo: Path, dispatcher: Path, job_id: str) -> str:
+def _generate_application_package(
+    *,
+    repo: Path,
+    dispatcher: Path,
+    job_id: str,
+    force_regenerate: bool = False,
+) -> str:
     context = load_job_context(repo, job_id)
-    if context["application"]:
+    if context["application"] and not force_regenerate:
         render_result = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
         if not render_result.get("valid"):
             raise AssistantError(f"render failed for {job_id}")
@@ -507,30 +513,99 @@ def _generate_application_package(*, repo: Path, dispatcher: Path, job_id: str) 
         candidate.unlink(missing_ok=True)
 
 
-def run_process_jobs(*, repo: Path, dispatcher: Path, website_root: Path, min_score: int) -> str:
+def run_process_jobs(
+    *,
+    repo: Path,
+    dispatcher: Path,
+    website_root: Path,
+    min_score: int,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> str:
     threshold = int(min_score)
     if threshold < 0 or threshold > 100:
         raise AssistantError("Score limit must be between 0 and 100")
-    prepared = json.loads(_run_engine(repo, ["run", "--min-score", str(threshold), "--all"], timeout=600))
-    processed = []
-    failures = []
-    for item in prepared.get("processed", []):
-        if not item.get("generation_packet"):
-            continue
+    prepared = json.loads(
+        _run_engine(
+            repo,
+            ["run", "--min-score", str(threshold), "--all", "--reprocess-existing"],
+            timeout=600,
+        )
+    )
+    candidates = [
+        item for item in prepared.get("processed", [])
+        if item.get("generation_packet") and str(item.get("job_id", ""))
+    ]
+    processed: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    completed_role_keys: list[str] = []
+    started = time.monotonic()
+    durations: list[float] = []
+    total = len(candidates)
+
+    def emit_progress(*, current: dict[str, Any] | None = None, phase: str = "processing") -> None:
+        if progress_callback is None:
+            return
+        attempted = len(processed) + len(failures)
+        remaining = max(0, total - attempted)
+        eta_seconds = None
+        if durations and remaining:
+            eta_seconds = int(round((sum(durations) / len(durations)) * remaining))
+        current_job_id = str((current or {}).get("job_id", ""))
+        current_role = ""
+        current_company = ""
+        if current_job_id:
+            try:
+                context = load_job_context(repo, current_job_id)
+                vacancy = context.get("packet", {}).get("vacancy", {})
+                current_role = str(vacancy.get("role", ""))
+                current_company = str(vacancy.get("company", ""))
+            except Exception:
+                pass
+        progress_callback({
+            "kind": "batch_progress",
+            "phase": phase,
+            "threshold": threshold,
+            "total": total,
+            "done": attempted,
+            "succeeded": len(processed),
+            "failed": len(failures),
+            "remaining": remaining,
+            "current_job_id": current_job_id,
+            "current_role_key": f"tracker-{current_job_id}" if current_job_id else "",
+            "current_role": current_role,
+            "current_company": current_company,
+            "completed_role_keys": completed_role_keys[-100:],
+            "eta_seconds": eta_seconds,
+            "elapsed_seconds": int(round(time.monotonic() - started)),
+        })
+
+    emit_progress(phase="starting")
+    for item in candidates:
         job_id = str(item.get("job_id", ""))
-        if not job_id:
-            continue
+        emit_progress(current=item, phase="processing")
+        item_started = time.monotonic()
         try:
-            action = _generate_application_package(repo=repo, dispatcher=dispatcher, job_id=job_id)
+            action = _generate_application_package(
+                repo=repo,
+                dispatcher=dispatcher,
+                job_id=job_id,
+                force_regenerate=True,
+            )
             processed.append({"job_id": job_id, "action": action})
+            completed_role_keys.append(f"tracker-{job_id}")
         except Exception as exc:  # noqa: BLE001 - per-job batch failure is reported and batch continues
             failures.append({"job_id": job_id, "error": f"{type(exc).__name__}: {exc}"})
+        finally:
+            durations.append(max(0.01, time.monotonic() - item_started))
+            emit_progress(phase="between_jobs")
+    emit_progress(phase="publishing")
     _refresh_dashboard_site(repo, website_root)
     eligible_count = len(prepared.get("eligible", []))
     blocked_or_already_handled = max(0, eligible_count - len(prepared.get("processed", [])))
     message = (
-        f"Score ≥ {threshold} processing completed. {len(processed)} package(s) generated/rendered; "
-        f"{blocked_or_already_handled} eligible record(s) were deferred/skipped by Career Engine policy."
+        f"Score ≥ {threshold} processing completed. {len(processed)} package(s) regenerated/rendered with fresh "
+        f"CV and cover-letter outputs; {blocked_or_already_handled} eligible record(s) were deferred/skipped by "
+        "Career Engine policy."
     )
     if failures:
         message += f" {len(failures)} package(s) failed and remain unsent/unsubmitted for review."
@@ -601,6 +676,7 @@ def answer_request(
     dispatcher: Path,
     website_root: Path,
     record: dict[str, Any],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     data = _data_of(record)
     role_key = str(data.get("role_key", ""))
@@ -615,6 +691,7 @@ def answer_request(
                 dispatcher=dispatcher,
                 website_root=website_root,
                 min_score=int(data.get("min_score", 70)),
+                progress_callback=progress_callback,
             )
         else:
             raise AssistantError(f"unsupported global request type: {request_type}")
@@ -691,11 +768,20 @@ def process_once(
                     record_id=record_id,
                     fields={"state": "processing"},
                 )
+                def progress_callback(progress: dict[str, Any]) -> None:
+                    patch_request(
+                        slug=slug,
+                        api_key=api_key,
+                        record_id=record_id,
+                        fields={"state": "processing", "answer": json.dumps(progress, ensure_ascii=False)},
+                    )
+
                 response_role_key, response, metadata = answer_request(
                     repo=repo,
                     dispatcher=dispatcher,
                     website_root=website_root,
                     record=record,
+                    progress_callback=progress_callback,
                 )
                 create_response_comment(
                     slug=slug,
