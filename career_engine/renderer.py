@@ -285,15 +285,23 @@ def render_docx(job_id: str, generated_application: dict[str, Any], packet: dict
     if len(earlier_items) != 11:
         raise ValueError(f"The approved template requires exactly eleven generated earlier-role bullets, got {len(earlier_items)}")
 
+    used_earlier_indexes: set[int] = set()
+
     def bullet_for_claim(claim_id: str) -> str:
         matches = [
-            str(item["text"]).strip()
-            for item in earlier_items
-            if claim_id in item.get("claim_ids", [])
+            (index, str(item["text"]).strip())
+            for index, item in enumerate(earlier_items)
+            if claim_id in item.get("claim_ids", []) and index not in used_earlier_indexes
         ]
-        if len(matches) != 1:
-            raise ValueError(f"Expected exactly one earlier-role bullet citing {claim_id}, got {len(matches)}")
-        return matches[0]
+        if matches:
+            index, text = matches[0]
+            used_earlier_indexes.add(index)
+            return text
+        claim = claim_map.get(claim_id) or {}
+        safe_wording = str(claim.get("safe_wording") or "").strip()
+        if safe_wording:
+            return safe_wording
+        raise ValueError(f"No generated earlier-role bullet or verified safe wording is available for {claim_id}")
 
     cube_claim_order = [
         "cube.projects.25",

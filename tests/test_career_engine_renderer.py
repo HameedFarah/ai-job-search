@@ -101,6 +101,26 @@ def test_render_docx_replaces_placeholders(job_payload: dict, engine_root: Path)
     assert "• Led multidisciplinary teams, consultants, contractors and stakeholders, aligning technical quality" not in rendered_text
 
 
+def test_render_docx_falls_back_to_verified_safe_wording_for_missing_fixed_earlier_claim(job_payload: dict, engine_root: Path) -> None:
+    bundle = build_bundle(engine_root)
+    normalized = normalize_job(job_payload, bundle["taxonomy"])
+    matches = match_evidence(normalized, bundle)
+    score = score_fit(normalized, matches, bundle)
+    route = decide_route(normalized, bundle)
+    packet = create_generation_packet(job_id="render-safe-fallback", normalized_job=normalized, matches=matches, score=score, route=route, bundle=bundle)
+    application = seven_bullet_application(packet)
+    for item in application["earlier_role_bullets"]:
+        ids = list(item.get("claim_ids", []))
+        if "cube.team.10plus" in ids:
+            item["claim_ids"] = ["cube.projects.25" if value == "cube.team.10plus" else value for value in ids]
+            break
+    safe_wording = next(item["safe_wording"] for item in packet["selected_claims"] if item["id"] == "cube.team.10plus")
+    result = render_docx("render-safe-fallback", application, packet, root=engine_root)
+    rendered = Document(result["docx"])
+    rendered_text = "\n".join(p.text for p in _all_paragraphs(rendered))
+    assert safe_wording in rendered_text
+
+
 def test_finalize_render_moves_tracker_to_owner_approval(
     job_payload: dict,
     engine_root: Path,
