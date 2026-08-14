@@ -1663,6 +1663,18 @@ main {
   font-weight: 800;
 }
 .overlay-action-bar .primary-next-action:hover { background: #f7f9ff; }
+.overlay-action-bar .primary-next-action,
+.overlay-action-bar .compact-secondary-actions .card-button {
+  color: #102044;
+  background: #f7f9ff;
+  border: 2px solid #102044;
+  font-weight: 800;
+}
+.overlay-action-bar .primary-next-action:hover,
+.overlay-action-bar .compact-secondary-actions .card-button:hover {
+  color: #fff;
+  background: #102044;
+}
 .overlay-action-bar .primary-next-action.disabled {
   color: #a5abc0;
   background: #f3f4f8;
@@ -1929,6 +1941,8 @@ html:not([data-theme="high-contrast"]) .compact-brand .subtitle {
   width: min(440px, 36vw);
   height: 38px;
   display: flex;
+  flex-wrap: nowrap;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   padding: 0 11px;

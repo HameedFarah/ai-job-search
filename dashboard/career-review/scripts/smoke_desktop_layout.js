@@ -30,11 +30,13 @@ async function main() {
   assert(await page.locator('.card-stage-select').first().isVisible(), 'Card status dropdown is always visible on desktop');
   assert(await page.locator('.card-stage-menu').count() === 0, 'Legacy card hamburger stage menu is removed');
   assert(await page.locator('.confirm-submission').count() > 0, 'Submission confirmation is available as a compact secondary icon action');
-  const primaryTextColor = await page.locator('.quick-files .card-button.primary').first().evaluate(node => getComputedStyle(node).color);
-  assert(primaryTextColor === 'rgb(255, 255, 255)', 'Primary blue card buttons use readable white text', primaryTextColor);
 
-  await page.locator('.role-card').first().click();
+  const qiddiyaKey = 'tracker-5a531dd6cfca13213694';
+  const qiddiyaCard = page.locator(`.role-card[data-role-key="${qiddiyaKey}"]`);
+  assert(await qiddiyaCard.count() === 1, 'Qiddiya Design Governance role is present');
+  await qiddiyaCard.click();
   await page.locator('#job-overlay:not([hidden])').waitFor();
+  await page.waitForTimeout(350);
   const overlayRadius = await page.locator('.overlay-panel').evaluate(node => getComputedStyle(node).borderRadius);
   const actionBackground = await page.locator('.overlay-action-bar').evaluate(node => getComputedStyle(node).backgroundImage);
   const resumeBox = await page.locator('.resume-workspace').boundingBox();
@@ -42,8 +44,22 @@ async function main() {
   assert(parseFloat(overlayRadius) >= 14, 'Detail modal should use the rounded screenshot-guided shell', overlayRadius);
   assert(/linear-gradient/i.test(actionBackground), 'Next-step banner should use the blue gradient treatment', actionBackground);
   assert(await page.locator('#ov-job-applied').isVisible(), 'Top CTA bar includes the smaller Job applied button');
+  const ctaStyles = await page.locator('#ov-main-action').evaluate(node => {
+    const style = getComputedStyle(node);
+    return { color: style.color, background: style.backgroundColor, border: style.borderColor };
+  });
+  assert(ctaStyles.background !== 'rgb(255, 255, 255)' || ctaStyles.color !== 'rgb(255, 255, 255)', 'Primary job-detail CTA is not white-on-white', JSON.stringify(ctaStyles));
+  const appliedStyles = await page.locator('#ov-job-applied').evaluate(node => {
+    const style = getComputedStyle(node);
+    return { color: style.color, background: style.backgroundColor, border: style.borderColor };
+  });
+  assert(appliedStyles.background !== appliedStyles.color, 'Job applied CTA has visible contrast', JSON.stringify(appliedStyles));
   assert(await page.locator('#ov-cover-copy').count() === 1, 'Cover text has a one-click copy control');
-  assert(await page.locator('#ov-cover-pdf-download').count() === 1, 'Cover section exposes direct PDF download when available');
+  assert(await page.locator('#ov-cover-pdf-download').isVisible(), 'Cover section exposes direct PDF download when available');
+  const resumeSrc = await page.locator('#ov-resume-frame').getAttribute('src');
+  assert(/Design_Governance_Manager\.pdf/i.test(resumeSrc || ''), 'Qiddiya generated resume is displayed', String(resumeSrc));
+  const coverText = await page.locator('#ov-email-body').inputValue();
+  assert(/Dear Hiring Team/i.test(coverText) && /Manager - Design Governance/i.test(coverText), 'Qiddiya generated cover letter text is displayed', coverText.slice(0, 160));
   assert(resumeBox && assistantBox && assistantBox.x > resumeBox.x + resumeBox.width, 'Assistant should sit to the right of the resume on desktop');
   assert(Math.abs(assistantBox.y - resumeBox.y) < 16, 'Assistant should start at the top of the right utility column', `${assistantBox.y} vs ${resumeBox.y}`);
 

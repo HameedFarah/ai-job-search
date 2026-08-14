@@ -17,8 +17,8 @@ async function main() {
 
   const columns = await page.locator('.column-header h2').allTextContents();
   assert(!columns.some(label => /approved/i.test(label)), 'Approved lifecycle column must be removed', columns.join(', '));
-  assert(columns.includes('Manual Review Needed'), 'Manual Review Needed column is present');
-  assert(columns.indexOf('Manual Review Needed') === columns.indexOf('Found jobs') + 1, 'Manual Review Needed follows Found jobs');
+  assert(columns.includes('Needs review'), 'Needs review column is present');
+  assert(columns.indexOf('Needs review') === columns.indexOf('Found jobs') + 1, 'Needs review follows Found jobs');
   assert(columns.includes('Ready for review'), 'Ready for review column is present');
   assert(await page.locator('#refresh-board').count() === 1, 'Hermes refresh button is present');
   assert(await page.locator('#process-score').inputValue() === '70', 'Process score defaults to 70');

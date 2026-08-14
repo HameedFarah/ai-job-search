@@ -646,14 +646,33 @@ function main() {
   const applications = merged.filter(role => role.kind === 'application' || role.resume?.pdf || role.resume_ats?.pdf);
   const reviewed = merged.filter(role => !applications.includes(role));
   ensureDir(path.join(SITE, 'data'));
+  const detailsDir = path.join(SITE, 'data', 'job-details');
+  ensureDir(detailsDir);
+  const detailKeys = ['full_job_description', 'email_body', 'email_subject', 'resume', 'resume_ats', 'recommended_resume', 'cover_letter'];
+  const slim = role => {
+    const detail = {};
+    for (const key of detailKeys) if (role[key] !== undefined) detail[key] = role[key];
+    for (const key of ['resume', 'resume_ats', 'recommended_resume', 'cover_letter']) {
+      if (detail[key]) detail[key] = { ...detail[key] };
+      // Resume text is large and is not needed for the initial/detail viewer because
+      // the generated PDF is rendered directly. Keep cover-letter text in the lazy
+      // per-job payload so legacy packages with a PDF but no email_body still show
+      // the actual generated letter instead of only a submission URL.
+      if (key !== 'cover_letter' && detail[key]?.text) delete detail[key].text;
+    }
+    fs.writeFileSync(path.join(detailsDir, `${encodeURIComponent(role.key)}.json`), JSON.stringify(detail));
+    const copy = { ...role };
+    for (const key of detailKeys) delete copy[key];
+    return copy;
+  };
   fs.writeFileSync(path.join(SITE, 'data', 'jobs.json'), JSON.stringify({
     generated_at: new Date().toISOString(),
     bundle_hash: raw.bundle_hash || '',
     tracker_records: tracker.length,
     total_roles: merged.length,
-    applications,
-    reviewed
-  }, null, 2));
+    applications: applications.map(slim),
+    reviewed: reviewed.map(slim)
+  }));
   const missingPrepared = prepared.filter(r => !r.resume.pdf || !r.cover_letter.pdf).map(r => r.key);
   console.log(JSON.stringify({
     prepared_packages: prepared.length,

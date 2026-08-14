@@ -64,11 +64,17 @@ async function main() {
   const readyLeft = await page.locator('.kanban-column[data-stage="ready_review"]').evaluate(el => el.getBoundingClientRect().left);
   assert(Math.abs(readyLeft) < 35, 'Awaiting Action chip jumps to review column', `${readyLeft}px`);
 
-  const resumeCard = page.locator('.role-card').filter({ has: page.locator('.quick-files a[href*=".pdf"]') }).first();
-  assert(await resumeCard.count() === 1, 'A role with a resume PDF is available for detail testing');
+  // The initial board payload is intentionally slim; resume and cover-letter
+  // artifacts are loaded only when a job opens. Exercise the known legacy
+  // Qiddiya package that previously showed a blank resume pane.
+  const qiddiyaKey = 'tracker-5a531dd6cfca13213694';
+  const resumeCard = page.locator(`.role-card[data-role-key="${qiddiyaKey}"]`);
+  assert(await resumeCard.count() === 1, 'Qiddiya Design Governance role is available for detail testing');
   await resumeCard.locator('.role-title').click();
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(450);
   assert(await page.locator('#job-overlay').isVisible(), 'Detail overlay opens');
+  const deepLinkedJob = await page.evaluate(() => new URLSearchParams(location.search).get('job'));
+  assert(deepLinkedJob === qiddiyaKey, 'Opening detail creates a stable job deep link', String(deepLinkedJob));
   assert(await page.locator('.overlay-close').isVisible(), 'Close button is visible');
   assert(await page.locator('#ov-main-action').isVisible(), 'Primary next action is visible');
   assert(await page.locator('#ov-job-applied').isVisible(), 'Job applied confirmation button is visible in the top CTA bar');
@@ -90,11 +96,21 @@ async function main() {
   assert(await frame.isVisible(), 'Inline resume frame is visible');
   const src = await frame.getAttribute('src');
   assert(Boolean(src && /\.pdf/i.test(src)), 'Inline resume points to selected PDF', String(src));
+  assert(/Design_Governance_Manager\.pdf/i.test(src), 'Qiddiya detail falls back to its generated role-specific resume', String(src));
+  const coverText = await page.locator('#ov-email-body').inputValue();
+  assert(/Dear Hiring Team/i.test(coverText) && /Manager - Design Governance/i.test(coverText), 'Generated Qiddiya cover letter text is visible', coverText.slice(0, 160));
+  assert(await page.locator('#ov-cover-pdf-download').isVisible(), 'Qiddiya cover-letter PDF download is visible');
 
   await page.locator('.overlay-workspace').evaluate(el => { el.scrollTop = el.scrollHeight; });
   await page.waitForTimeout(100);
   assert(await page.locator('.overlay-close').isVisible(), 'Close remains visible after detail scrolling');
   assert(await page.locator('#ov-main-action').isVisible(), 'Next action remains visible after detail scrolling');
+
+  await page.locator('.overlay-close').click();
+  await page.waitForTimeout(100);
+  assert(!(await page.locator('#job-overlay').isVisible()), 'Detail overlay closes');
+  const closedJobParam = await page.evaluate(() => new URLSearchParams(location.search).get('job'));
+  assert(closedJobParam === null, 'Closing detail restores the board URL', String(closedJobParam));
 
   const bodyOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert(bodyOverflow <= 1, 'No page-level horizontal overflow', `${bodyOverflow}px`);

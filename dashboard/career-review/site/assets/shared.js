@@ -3,7 +3,7 @@
 
 const STAGES = [
   { id: 'found', label: 'Found jobs', next: 'processing', nextLabel: 'Mark processing' },
-  { id: 'manual_review_needed', label: 'Manual Review Needed', next: 'processing', nextLabel: 'Resume processing' },
+  { id: 'manual_review_needed', label: 'Needs review', next: 'processing', nextLabel: 'Resume processing' },
   { id: 'processing', label: 'Processing', next: 'ready_review', nextLabel: 'Package ready' },
   { id: 'ready_review', label: 'Ready for review', next: 'applied', nextLabel: 'Confirm applied / sent' },
   { id: 'applied', label: 'Applied / sent', next: 'ready_review', nextLabel: 'Reopen review' },
@@ -216,7 +216,11 @@ async function responseError(response, fallback) {
 /* ---- Gmail: always a new tab, never the current tab, no mailto ---- */
 
 function cleanedEmailBody(role) {
-  const lines = String(role.email_body || '').split(/\r?\n/);
+  // Prefer the generated cover-letter text when a legacy portal package has a
+  // valid cover-letter artifact but no separate email_body field. This keeps the
+  // job detail useful without inventing generic application text.
+  const sourceText = role.email_body || role.cover_letter?.text || '';
+  const lines = String(sourceText).split(/\r?\n/);
   while (lines.length && (!lines[0].trim() || /^(subject|to):/i.test(lines[0].trim()))) lines.shift();
   let body = sanitizeAccount(lines.join('\n').trim());
   if (role.route !== 'email' && role.application_url && !body.includes(role.application_url)) {
@@ -451,9 +455,21 @@ function defaultTemplateFor(role) {
 }
 
 function selectedTemplateFor(role) {
-  return normalizeTemplateId(state.workflow.get(role.key)?.template_id)
-    || normalizeTemplateId(role.recommended_resume_template)
-    || defaultTemplateFor(role);
+  // Respect an explicit owner override even if its artifact is not generated yet.
+  const ownerChoice = normalizeTemplateId(state.workflow.get(role.key)?.template_id);
+  if (ownerChoice) return ownerChoice;
+
+  const preferred = normalizeTemplateId(role.recommended_resume_template) || defaultTemplateFor(role);
+  // Legacy portal packages sometimes predate the role-specific ATS renderer and
+  // therefore have a valid executive PDF but an empty ATS slot. Do not show a
+  // blank resume pane in that case; use the generated role-specific resume until
+  // an ATS version is explicitly generated or selected by the owner.
+  if (preferred === 'ats-classic'
+      && !(role.resume_ats?.pdf || role.resume_ats?.docx)
+      && (role.resume?.pdf || role.resume?.docx)) {
+    return 'modern-executive-sidebar';
+  }
+  return preferred;
 }
 
 /* Maps every template id to the files that exist for this exact role.

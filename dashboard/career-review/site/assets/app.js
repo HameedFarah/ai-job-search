@@ -727,13 +727,19 @@ function renderOverlayIfOpen() {
   if (role) renderOverlayContent(role);
 }
 
-function openOverlay(key) {
+function openOverlay(key, syncUrl = true) {
   const role = state.roles.find(item => item.key === key);
   if (!role) return;
   state.overlayKey = key;
   state.overlayReturnKey = key;
   state.overlayOpen = true;
+  if (syncUrl) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('job', key);
+    history.pushState({ job: key }, '', url);
+  }
   renderOverlayContent(role);
+  loadRoleDetails(role);
   if (aiRequestsForRole(key).some(record => ['pending', 'processing'].includes(dataOf(record).state || 'pending'))) setupAiPolling(role);
   const overlay = $('#job-overlay');
   overlay.hidden = false;
@@ -752,6 +758,9 @@ function closeOverlay() {
   state.overlayOpen = false;
   state.overlayKey = '';
   state.overlayReturnKey = '';
+  const url = new URL(window.location.href);
+  url.searchParams.delete('job');
+  history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   if (state.aiPollTimer) { clearInterval(state.aiPollTimer); state.aiPollTimer = null; }
   const overlay = $('#job-overlay');
   overlay.hidden = true;
@@ -764,6 +773,16 @@ function closeOverlay() {
       if (card) card.focus();
     });
   }
+}
+
+async function loadRoleDetails(role) {
+  if (role.detailsLoaded || !role.key) return;
+  try {
+    const response = await fetch(`data/job-details/${encodeURIComponent(role.key)}.json`, { cache: 'force-cache' });
+    if (!response.ok) return;
+    Object.assign(role, await response.json(), { detailsLoaded: true });
+    if (state.overlayOpen && state.overlayKey === role.key) renderOverlayContent(role);
+  } catch (error) { console.warn('job detail unavailable', error); }
 }
 
 function setupOverlay() {
@@ -1649,7 +1668,7 @@ async function init() {
     setupOverlay();
     setInterval(updateScanClock, 60000);
     const deepLink = new URLSearchParams(window.location.search).get('job');
-    if (deepLink) openOverlay(deepLink);
+    if (deepLink) openOverlay(deepLink, false);
   } catch (error) {
     const board = $('#board');
     const message = document.createElement('div');
@@ -1660,3 +1679,9 @@ async function init() {
 }
 
 init();
+
+window.addEventListener('popstate', () => {
+  const key = new URLSearchParams(window.location.search).get('job');
+    if (key) openOverlay(key, false);
+  else if (state.overlayOpen) closeOverlay();
+});
