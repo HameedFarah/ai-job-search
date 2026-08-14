@@ -22,12 +22,7 @@ def run_guards(root: Path) -> subprocess.CompletedProcess:
 
 
 class GuardRepoFixture(unittest.TestCase):
-    """Builds a minimal repo tree the guards pass on, then breaks one thing per test.
-
-    The guard script resolves the repo root from its own location, so each test
-    copies it into a temp tree and runs it as a subprocess - the same way CI
-    invokes it - asserting on real exit codes and messages.
-    """
+    """Builds a minimal repo tree the guards pass on, then breaks one thing per test."""
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
@@ -79,8 +74,6 @@ class PermissionGuardTests(GuardRepoFixture):
         self.assertIn("not in the reviewed allowlist", result.stdout)
 
     def test_dropped_allowlisted_permission_still_passes(self):
-        # Removing a shipped permission narrows exposure; the guard only
-        # rejects additions, it must not force entries to exist.
         allow = sorted(security_guards.ALLOWED_PERMISSIONS)[:-1]
         self.write_settings(allow)
         result = run_guards(self.root)
@@ -107,6 +100,117 @@ class PermissionGuardTests(GuardRepoFixture):
                 self.assertNotIn("Traceback", result.stderr)
 
 
+class HookGuardTests(GuardRepoFixture):
+    def write_settings_with_hooks(self, hooks):
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "permissions": {"allow": sorted(security_guards.ALLOWED_PERMISSIONS)},
+                    "hooks": hooks,
+                }
+            )
+        )
+
+    def test_session_start_hook_fails(self):
+        self.write_settings_with_hooks(
+            {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "node .claude/math_init.js"}]}
+                ]
+            }
+        )
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hook not in the reviewed allowlist", result.stdout)
+        self.assertIn("math_init.js", result.stdout)
+
+    def test_hook_is_caught_even_when_permissions_block_is_malformed(self):
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "permissions": {"allow": "not-a-list"},
+                    "hooks": {
+                        "SessionStart": [
+                            {"hooks": [{"type": "command", "command": "echo unreviewed"}]}
+                        ]
+                    },
+                }
+            )
+        )
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hook not in the reviewed allowlist", result.stdout)
+        self.assertIn("permissions.allow must be a list of strings", result.stdout)
+
+    def test_every_hook_event_is_checked(self):
+        for event in ["SessionStart", "PreToolUse", "PostToolUse", "Stop", "UserPromptSubmit"]:
+            with self.subTest(event=event):
+                self.write_settings_with_hooks(
+                    {event: [{"hooks": [{"type": "command", "command": "echo test"}]}]}
+                )
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("hook not in the reviewed allowlist", result.stdout)
+
+    def test_every_command_in_multi_hook_event_is_reported(self):
+        self.write_settings_with_hooks(
+            {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "first.sh"}]},
+                    {"hooks": [{"type": "command", "command": "second.sh"}]},
+                ]
+            }
+        )
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("first.sh", result.stdout)
+        self.assertIn("second.sh", result.stdout)
+
+    def test_unrecognised_hook_shapes_fail_closed(self):
+        for hooks in [
+            {"SessionStart": "echo test"},
+            {"SessionStart": ["echo test"]},
+            {"SessionStart": [{"hooks": "echo test"}]},
+            {"SessionStart": [{"hooks": [{"type": "command"}]}]},
+            {"SessionStart": [{"hooks": [{"type": "command", "command": 42}]}]},
+        ]:
+            with self.subTest(hooks=hooks):
+                self.write_settings_with_hooks(hooks)
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_non_object_hooks_value_fails_cleanly(self):
+        self.write_settings_with_hooks(["SessionStart"])
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hooks must be an object", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_absent_or_empty_hooks_pass(self):
+        for hooks in [{}, {"SessionStart": []}]:
+            with self.subTest(hooks=hooks):
+                self.write_settings_with_hooks(hooks)
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_allowlisted_hook_passes(self):
+        command = "SessionStart:echo reviewed"
+        guard = self.root / "tools" / "security_guards.py"
+        guard.write_text(
+            guard.read_text(encoding="utf-8").replace(
+                "ALLOWED_HOOKS: set[str] = set()",
+                f"ALLOWED_HOOKS: set[str] = {{{command!r}}}",
+            ),
+            encoding="utf-8",
+        )
+        self.write_settings_with_hooks(
+            {"SessionStart": [{"hooks": [{"type": "command", "command": "echo reviewed"}]}]}
+        )
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 class GitignoreGuardTests(GuardRepoFixture):
     def test_each_missing_personal_data_rule_fails(self):
         for rule in security_guards.REQUIRED_IGNORE_RULES:
@@ -127,10 +231,6 @@ class GitignoreGuardTests(GuardRepoFixture):
 
 class GitignoreNegationTests(GuardRepoFixture):
     def test_negation_reincluding_personal_data_fails(self):
-        # .gitignore is order-sensitive: `!salary_data.json` after the
-        # `salary_data.json` rule re-includes the file, so the required rule is
-        # still present but no longer takes effect. Set membership on the
-        # required rules cannot see this, so the negation must be rejected.
         self.write_gitignore(list(security_guards.REQUIRED_IGNORE_RULES) + ["!salary_data.json"])
         result = run_guards(self.root)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -138,8 +238,6 @@ class GitignoreNegationTests(GuardRepoFixture):
         self.assertIn("!salary_data.json", result.stdout)
 
     def test_allowlisted_negations_pass(self):
-        # The template's own benign negations (example CV/cover letter, fonts,
-        # .gitkeep placeholders) must keep passing.
         self.write_gitignore(
             list(security_guards.REQUIRED_IGNORE_RULES)
             + sorted(security_guards.ALLOWED_IGNORE_NEGATIONS)
@@ -152,13 +250,7 @@ class ManifestGuardTests(GuardRepoFixture):
     def test_each_lifecycle_script_fails(self):
         for script in sorted(security_guards.FORBIDDEN_SCRIPTS):
             with self.subTest(script=script):
-                # The guard flags the script KEY; the value is never inspected,
-                # so it must stay benign: attack-shaped values (curl-pipe-to-sh
-                # etc.) written to disk trip AV heuristics - Windows Defender
-                # quarantines the fixture mid-test and the suite goes flaky.
-                self.write_manifest(
-                    {"name": "example-cli", "scripts": {script: "echo test"}}
-                )
+                self.write_manifest({"name": "example-cli", "scripts": {script: "echo test"}})
                 result = run_guards(self.root)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("lifecycle script", result.stdout)
@@ -191,9 +283,6 @@ class ManifestGuardTests(GuardRepoFixture):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_node_modules_manifests_are_ignored(self):
-        # Installed dependencies are not repo-tracked code; a hostile manifest
-        # inside node_modules must not fail the guard (and bun blocks its
-        # lifecycle scripts anyway).
         nm = self.manifest.parent / "node_modules" / "some-dep" / "package.json"
         nm.parent.mkdir(parents=True)
         self.write_manifest({"name": "some-dep", "scripts": {"postinstall": "echo test"}}, path=nm)
@@ -209,7 +298,6 @@ class ManifestGuardTests(GuardRepoFixture):
 
 class RealRepoTests(unittest.TestCase):
     def test_guards_pass_on_this_repo(self):
-        # The live check CI runs: the actual repo tree must satisfy its own guards.
         result = run_guards(REPO_ROOT)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
