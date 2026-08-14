@@ -10,8 +10,11 @@ BOOKMARKS = ROOT / "projects/job-automation/config/consultants-bookmarks.v1.json
 def test_all_consultants_bookmarks_are_accounted_for_and_deduplicated():
     payload = json.loads(BOOKMARKS.read_text(encoding="utf-8"))
     rows = payload["bookmarks"]
-    assert len(rows) == 38
-    assert len({row["id"] for row in rows}) == 38
+    # The stale, unidentified SuccessFactors `abdullahal` bookmark was
+    # deliberately deleted after employer-specific endpoint verification.
+    assert len(rows) == 37
+    assert len({row["id"] for row in rows}) == 37
+    assert "sap-successfactors-abdullahal" not in {row["id"] for row in rows}
     assert all(row.get("url") for row in rows)
     assert all(row["scan"] is False for row in rows if row["class"] in {
         "tool_manual_tracker", "recruiter_poster_signal", "recruiter_discovery_source",
