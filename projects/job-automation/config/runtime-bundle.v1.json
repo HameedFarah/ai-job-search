@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-14T16:44:12+00:00",
-  "source_hash": "bd30523e75a5ee56a46f587945769440de93b766a470035538a8ef4b26049e7c",
+  "built_at": "2026-08-14T16:47:29+00:00",
+  "source_hash": "5ef2e73bd67625b437c0c20ed74ad7ceb0597e3098a62aa20d47c317af809f11",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -36,9 +36,9 @@
     },
     {
       "path": "projects/job-automation/config/consultants-bookmarks.v1.json",
-      "sha256": "6cfd8ce38baec1d9a70a154dd50ee1a4c206262fec2325cb01e2b48e8c17db4e",
-      "size": 9866,
-      "modified_ns": 1786720071387477115
+      "sha256": "08c86e9c556c7ea456082476d981d8266fe1f527eea33cc2e69e308798a3867c",
+      "size": 10808,
+      "modified_ns": 1786726038016158999
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
@@ -1498,6 +1498,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "a1a2b8b2c0135fbc8980ef9c200c4cac4a76eb9140652a7f6fe66219987b8e70",
+  "bundle_hash": "cbe048921a8c066f374fd9bdf0b447e491629dc1deb87a2593d75ce863c280ef",
   "cache_reused": false
 }
