@@ -3,55 +3,20 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 
-from career_engine.sources.adapters.successfactors_xml import SuccessFactorsXmlAdapter
+from career_engine.sources.adapters.successfactors import SuccessFactorsAdapter
 from career_engine.sources.adapters.taleo import TaleoAdapter
 from career_engine.sources.consultants import _adapter_for_row
 
 
-class SuccessFactorsXmlAdapterTests(unittest.TestCase):
-    def test_feed_target_preserves_company_identifier_and_builds_xml_feed(self) -> None:
-        adapter = SuccessFactorsXmlAdapter()
-        name, feed_url, company_id = adapter._feed_target(
-            "Khatib & Alami|https://career2.successfactors.eu/career?company=khatibalam&_s.crb=abc"
+class KhatibAlamiRoutingTests(unittest.TestCase):
+    def test_current_successfactors_portal_is_used(self) -> None:
+        adapter = SuccessFactorsAdapter()
+        name, base = adapter._company_base(
+            "Khatib & Alami|https://careers.khatibalami.com/"
         )
         self.assertEqual(name, "Khatib & Alami")
-        self.assertEqual(company_id, "khatibalam")
-        query = parse_qs(urlsplit(feed_url).query)
-        self.assertEqual(query["company"], ["khatibalam"])
-        self.assertEqual(query["career_ns"], ["job_listing_summary"])
-        self.assertEqual(query["resultType"], ["XML"])
-        self.assertNotIn("_s.crb", query)
-
-    def test_parse_standard_sap_job_feed(self) -> None:
-        adapter = SuccessFactorsXmlAdapter()
-        xml = """<?xml version='1.0' encoding='UTF-8'?>
-<jobs>
-  <job>
-    <title>Senior Design Manager</title>
-    <company>Khatib &amp; Alami</company>
-    <city>Riyadh</city>
-    <country>Saudi Arabia</country>
-    <referencenumber>REQ-123</referencenumber>
-    <description>&lt;p&gt;Lead multidisciplinary design delivery.&lt;/p&gt;</description>
-    <url>https://career2.successfactors.eu/career?company=khatibalam&amp;career_job_req_id=REQ-123</url>
-  </job>
-</jobs>"""
-        jobs = adapter._parse_feed(
-            xml,
-            company_name="Khatib & Alami",
-            company_id="khatibalam",
-            feed_url="https://career2.successfactors.eu/career?company=khatibalam&career_ns=job_listing_summary&resultType=XML",
-        )
-        self.assertEqual(len(jobs), 1)
-        job = jobs[0]
-        self.assertEqual(job.role, "Senior Design Manager")
-        self.assertEqual(job.company, "Khatib & Alami")
-        self.assertEqual(job.location, "Riyadh, Saudi Arabia")
-        self.assertEqual(job.external_job_id, "REQ-123")
-        self.assertIn("multidisciplinary design delivery", job.description_text)
-        self.assertTrue(job.provenance.official)
+        self.assertEqual(base, "https://careers.khatibalami.com")
 
 
 class TaleoAdapterTests(unittest.TestCase):
@@ -88,7 +53,7 @@ class TaleoAdapterTests(unittest.TestCase):
 
 
 class ConsultantRegistryTests(unittest.TestCase):
-    def test_new_adapters_are_routable_and_stale_abdullahal_record_is_absent(self) -> None:
+    def test_khatib_worley_routable_and_stale_abdullahal_record_absent(self) -> None:
         root = Path(__file__).resolve().parents[1]
         rows = json.loads(
             (root / "projects/job-automation/config/consultants-bookmarks.v1.json").read_text(encoding="utf-8")
@@ -99,10 +64,11 @@ class ConsultantRegistryTests(unittest.TestCase):
         ka = by_id["khatib-alami-successfactors"]
         self.assertEqual(ka["status"], "active")
         self.assertTrue(ka["scan"])
+        self.assertEqual(ka["url"], "https://careers.khatibalami.com/")
         adapter, name, route, provider = _adapter_for_row(ka, offline=False)
-        self.assertIsInstance(adapter, SuccessFactorsXmlAdapter)
-        self.assertEqual(name, "successfactors_xml")
-        self.assertEqual(route, "official_ats_feed")
+        self.assertIsInstance(adapter, SuccessFactorsAdapter)
+        self.assertEqual(name, "successfactors")
+        self.assertEqual(route, "official_ats_api")
         self.assertIsNone(provider)
 
         worley = by_id["worley-taleo"]
