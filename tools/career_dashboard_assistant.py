@@ -228,16 +228,39 @@ def _archive_submission_record(*, repo: Path, record: dict[str, Any]) -> tuple[s
     ).hexdigest()[:16]
     archive_dir = artifact_dir / "submissions" / record_id
     manifest_path = archive_dir / "submission_manifest.json"
+    tracker_path = repo / "projects/job-automation/data/jobs" / f"{job_id}.json"
+    tracker_payload: dict[str, Any] = {}
+    tracker_job: dict[str, Any] = {}
+    if tracker_path.is_file():
+        try:
+            tracker_payload = json.loads(tracker_path.read_text(encoding="utf-8"))
+            tracker_job = tracker_payload.get("job") if isinstance(tracker_payload.get("job"), dict) else tracker_payload
+        except (OSError, json.JSONDecodeError):
+            tracker_payload = {}
+            tracker_job = {}
     if manifest_path.is_file():
         try:
             existing = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             existing = {}
         if existing.get("status") == "archived":
+            enriched = False
+            for key in ("company", "role"):
+                if not existing.get(key) and tracker_job.get(key):
+                    existing[key] = str(tracker_job[key])
+                    enriched = True
+            if not existing.get("application_url"):
+                route = tracker_payload.get("route") if isinstance(tracker_payload.get("route"), dict) else {}
+                application_url = route.get("application_url") or tracker_job.get("source_url") or ""
+                if application_url:
+                    existing["application_url"] = str(application_url)
+                    enriched = True
+            if enriched:
+                manifest_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             return "existing", str(manifest_path)
 
     note = _submission_note(data)
-    evidence = {**data, **note}
+    evidence = {**tracker_job, **data, **note}
     resume_sha = str(evidence.get("document_sha256", "")).strip().lower()
     if not resume_sha:
         return "unresolved", "submitted_resume_hash_missing"
