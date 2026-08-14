@@ -33,8 +33,9 @@ class SourceExpansionTests(unittest.TestCase):
         self.assertEqual(report["summary"]["sources_skipped"], 4)
         self.assertEqual(report["summary"]["sources_attempted"], 18)
         self.assertFalse(report["send_or_submit"])
-        self.assertEqual(len(report["jobs"]), 1)
-        self.assertEqual(report["jobs"][0]["adapter"], "workday")
+        self.assertGreaterEqual(len(report["jobs"]), 1)
+        self.assertIn("workday", {job["adapter"] for job in report["jobs"]})
+        self.assertIn("oracle_hcm", {job["adapter"] for job in report["jobs"]})
         self.assertTrue(all({"source_id", "source_name", "attempted", "status", "adapter", "jobs_fetched", "verified_authoritative", "error"} <= set(row) for row in report["sources"]))
 
     def test_missing_provider_keys_make_sources_unavailable(self) -> None:

@@ -43,6 +43,21 @@ _KIND_LABELS = {
 # official, status, blocked_reason, base_url, docs_url, notes, probe.
 _SOURCES: list[dict[str, Any]] = [
     {
+        "id": "oracle_hcm",
+        "name": "Oracle Cloud HCM Candidate Experience",
+        "kind": "ats_api",
+        "priority": 1,
+        "auth": "none",
+        "posting_date": "exact",
+        "official": True,
+        "status": STATUS_ACTIVE,
+        "blocked_reason": "",
+        "base_url": "https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions",
+        "docs_url": "https://docs.oracle.com/en/cloud/saas/human-resources/",
+        "notes": "Public unauthenticated Oracle CX API; identifier is <host>|<siteNumber>.",
+        "probe": {"verified": True, "companies": ["hcib.fa.us2.oraclecloud.com|CX_1001"], "verified_at": "2026-08-14"},
+    },
+    {
         "id": "workday",
         "name": "Workday public CXS jobs",
         "kind": "ats_api",

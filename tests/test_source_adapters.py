@@ -114,6 +114,23 @@ def test_jsonld_requires_a_url() -> None:
         offline_adapter("jsonld").search(company="meridian", offline=OFFLINE)
 
 
+def test_oracle_hcm_parses_native_list_and_detail() -> None:
+    jobs = offline_adapter("oracle_hcm").search(
+        company="hcib.fa.us2.oraclecloud.com|CX_1001", location="Saudi Arabia",
+        fetch_full=True, offline=OFFLINE,
+    )
+    assert len(jobs) == 1
+    assert jobs[0].external_job_id == "1001"
+    assert jobs[0].detail_url.endswith("/sites/CX_1001/job/1001")
+    assert "Coordinate consultants" in jobs[0].description_text
+    assert jobs[0].provenance and jobs[0].provenance.official
+
+
+def test_oracle_hcm_requires_host_and_site_identifier() -> None:
+    with pytest.raises(SourceError, match="host.*siteNumber"):
+        offline_adapter("oracle_hcm").search(company="hcib.fa.us2.oraclecloud.com")
+
+
 def test_jsonld_parses_sitemap_offline() -> None:
     from career_engine.sources.adapters.jsonld import JsonLdAdapter
 

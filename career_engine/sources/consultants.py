@@ -20,6 +20,7 @@ def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> d
     for row in rows:
         if row.get("status") != "active" or row.get("scan") is not True: continue
         adapter_id = str(row.get("adapter") or ("workday" if row.get("ats") == "workday" else "jsonld"))
+        adapter_company = str(row.get("adapter_company") or row["url"])
         source = {"source_id": row["id"], "source_name": row["label"], "attempted": False, "status": "skipped", "adapter": adapter_id, "route": "official_ats_api" if adapter_id != "jsonld" else "official_page_jsonld", "jobs_fetched": 0, "verified_authoritative": False, "error": ""}
         if row.get("duplicate_of"):
             source["error"] = f"duplicate_of:{row['duplicate_of']}"; report["duplicates_dropped"] += 1; report["sources"].append(source); continue
@@ -29,8 +30,9 @@ def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> d
         seen_urls.add(canonical); source["attempted"] = True; source["status"] = "empty"
         try:
             adapter = build_adapter(adapter_id, offline=offline)
-            jobs = adapter.search(company=row["url"], limit=max(1, min(limit, 100)), fetch_full=True, offline=offline)
-            source["jobs_fetched"] = len(jobs); source["verified_authoritative"] = bool(jobs) and all(bool(j.provenance and j.provenance.official) for j in jobs); source["status"] = "ok" if jobs else "empty"
+            jobs = adapter.search(company=adapter_company, location=row.get("location"), limit=max(1, min(limit, 100)), fetch_full=True, offline=offline)
+            source["jobs_fetched"] = len(jobs); source["verified_authoritative"] = all(bool(j.provenance and j.provenance.official) for j in jobs)
+            source["status"] = "ok" if jobs else ("parser-needed" if adapter_id == "jsonld" else "empty")
             for job in jobs:
                 key = job.dedupe_key()
                 if key in seen_jobs: report["duplicates_dropped"] += 1; continue

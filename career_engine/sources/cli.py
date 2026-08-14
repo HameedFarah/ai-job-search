@@ -88,6 +88,9 @@ def build_adapter(
     elif adapter_id == "workday":
         from .adapters.workday import WorkdayAdapter
         cls = WorkdayAdapter
+    elif adapter_id == "oracle_hcm":
+        from .adapters.oracle_hcm import OracleHcmAdapter
+        cls = OracleHcmAdapter
     elif adapter_id == "workable":
         from .adapters.workable import WorkableAdapter
         cls = WorkableAdapter
