@@ -31,10 +31,10 @@ class SourceExpansionTests(unittest.TestCase):
         report = scan_consultants(root=root, offline=True, limit=3)
         # K&A and Worley are now active verified ATS sources; the stale
         # unidentified abdullahal record was deleted. Five active duplicate
-        # bookmark records remain intentionally skipped, leaving 20 attempts.
-        self.assertEqual(report["summary"]["active_records"], 25)
+        # bookmark records remain intentionally skipped, leaving 21 attempts.
+        self.assertEqual(report["summary"]["active_records"], 26)
         self.assertEqual(report["summary"]["sources_skipped"], 5)
-        self.assertEqual(report["summary"]["sources_attempted"], 20)
+        self.assertEqual(report["summary"]["sources_attempted"], 21)
         self.assertFalse(report["send_or_submit"])
         self.assertGreaterEqual(len(report["jobs"]), 1)
         self.assertIn("workday", {job["adapter"] for job in report["jobs"]})
