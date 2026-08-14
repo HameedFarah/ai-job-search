@@ -1,5 +1,6 @@
 # Watches the separately maintained ATS implementation dependency.
-# Reports a new upstream ref; NEVER changes the lock or production checkout.
+# Reports a new upstream ref in the GitHub Actions summary; NEVER changes the
+# reviewed lock or production checkout automatically.
 
 name: Managed ATS source watch
 
@@ -10,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   watch:
@@ -42,7 +42,7 @@ jobs:
             if [ "$locked" = "$latest" ]; then echo "changed=false"; else echo "changed=true"; fi
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build rolling report
+      - name: Build and publish managed-source report
         env:
           REPO: ${{ steps.compare.outputs.repo }}
           BRANCH: ${{ steps.compare.outputs.branch }}
@@ -51,7 +51,9 @@ jobs:
           CHANGED: ${{ steps.compare.outputs.changed }}
         run: |
           {
-            echo "_Last checked: $(date -u '+%Y-%m-%d %H:%M UTC')_"
+            echo "# Managed ATS source review"
+            echo
+            echo "_Last checked: $(date -u '+%Y-%m-%d %H:%M UTC') · [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
             echo
             echo "Managed ATS implementation: \`$REPO\`"
             echo
@@ -59,7 +61,7 @@ jobs:
             echo "- current \`$BRANCH\`: \`$LATEST\`"
             echo
             if [ "$CHANGED" = "true" ]; then
-              echo "**Review required.** Upstream moved. Compare the locked ref to the new ref, review changes touching the enabled portal adapters/sources, run Career Engine regression probes, then deliberately bump the lock and the VPS sparse checkout. Do not auto-activate the new code."
+              echo "**Review required.** Upstream moved. Compare the locked ref to the new ref, review changes touching enabled portal adapters/sources, run Career Engine regression probes, then deliberately bump the lock and VPS sparse checkout. Do not auto-activate the new code."
               echo
               echo "Compare: https://github.com/$REPO/compare/$LOCKED...$LATEST"
             else
@@ -67,16 +69,4 @@ jobs:
             fi
           } > managed-source-report.md
           cat managed-source-report.md
-
-      - name: Open or update rolling issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          title="Managed ATS source sync watch"
-          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number,title --jq ".[] | select(.title==\"$title\") | .number" | head -n1)
-          if [ -n "$existing" ]; then
-            gh issue edit "$existing" --body-file managed-source-report.md
-          else
-            gh issue create --title "$title" --body-file managed-source-report.md
-          fi
+          cat managed-source-report.md >> "$GITHUB_STEP_SUMMARY"
