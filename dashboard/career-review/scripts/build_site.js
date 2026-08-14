@@ -647,31 +647,49 @@ function main() {
   const reviewed = merged.filter(role => !applications.includes(role));
   ensureDir(path.join(SITE, 'data'));
   const detailsDir = path.join(SITE, 'data', 'job-details');
+  // Keep lazy detail loading without creating one publish file per job. here.now
+  // caps a publish at 1,000 files, so use a small deterministic shard set instead.
+  fs.rmSync(detailsDir, { recursive: true, force: true });
   ensureDir(detailsDir);
   const detailKeys = ['full_job_description', 'email_body', 'email_subject', 'resume', 'resume_ats', 'recommended_resume', 'cover_letter'];
+  const detailShardCount = 16;
+  const detailShards = Array.from({ length: detailShardCount }, () => ({}));
+  const detailShardFor = key => {
+    let hash = 2166136261;
+    for (const char of String(key || '')) {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) % detailShardCount;
+  };
   const slim = role => {
     const detail = {};
     for (const key of detailKeys) if (role[key] !== undefined) detail[key] = role[key];
     for (const key of ['resume', 'resume_ats', 'recommended_resume', 'cover_letter']) {
       if (detail[key]) detail[key] = { ...detail[key] };
-      // Resume text is large and is not needed for the initial/detail viewer because
-      // the generated PDF is rendered directly. Keep cover-letter text in the lazy
-      // per-job payload so legacy packages with a PDF but no email_body still show
-      // the actual generated letter instead of only a submission URL.
+      // Resume text is large and is not needed for the detail viewer because the
+      // generated PDF is rendered directly. Keep cover-letter text so legacy
+      // portal packages with no email_body still show their generated letter.
       if (key !== 'cover_letter' && detail[key]?.text) delete detail[key].text;
     }
-    fs.writeFileSync(path.join(detailsDir, `${encodeURIComponent(role.key)}.json`), JSON.stringify(detail));
-    const copy = { ...role };
+    const shard = detailShardFor(role.key);
+    detailShards[shard][role.key] = detail;
+    const copy = { ...role, detail_shard: shard };
     for (const key of detailKeys) delete copy[key];
     return copy;
   };
+  const slimApplications = applications.map(slim);
+  const slimReviewed = reviewed.map(slim);
+  detailShards.forEach((shard, index) => {
+    fs.writeFileSync(path.join(detailsDir, `${index}.json`), JSON.stringify(shard));
+  });
   fs.writeFileSync(path.join(SITE, 'data', 'jobs.json'), JSON.stringify({
     generated_at: new Date().toISOString(),
     bundle_hash: raw.bundle_hash || '',
     tracker_records: tracker.length,
     total_roles: merged.length,
-    applications: applications.map(slim),
-    reviewed: reviewed.map(slim)
+    applications: slimApplications,
+    reviewed: slimReviewed
   }));
   const missingPrepared = prepared.filter(r => !r.resume.pdf || !r.cover_letter.pdf).map(r => r.key);
   console.log(JSON.stringify({

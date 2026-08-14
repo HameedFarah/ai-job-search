@@ -14,6 +14,7 @@ const state = {
   lastScanAt: null,
   dragging: false,
   templatesData: null,
+  detailShards: new Map(),
   overlayOpen: false,
   overlayKey: '',
   overlayReturnKey: '',
@@ -778,9 +779,23 @@ function closeOverlay() {
 async function loadRoleDetails(role) {
   if (role.detailsLoaded || !role.key) return;
   try {
-    const response = await fetch(`data/job-details/${encodeURIComponent(role.key)}.json`, { cache: 'force-cache' });
-    if (!response.ok) return;
-    Object.assign(role, await response.json(), { detailsLoaded: true });
+    const shardId = Number.isInteger(Number(role.detail_shard)) ? Number(role.detail_shard) : null;
+    let detail = null;
+    if (shardId !== null) {
+      if (!state.detailShards.has(shardId)) {
+        const response = await fetch(`data/job-details/${shardId}.json`, { cache: 'force-cache' });
+        if (!response.ok) return;
+        state.detailShards.set(shardId, await response.json());
+      }
+      detail = state.detailShards.get(shardId)?.[role.key] || null;
+    } else {
+      // Backward-compatible fallback for an older generated dashboard payload.
+      const response = await fetch(`data/job-details/${encodeURIComponent(role.key)}.json`, { cache: 'force-cache' });
+      if (!response.ok) return;
+      detail = await response.json();
+    }
+    if (!detail) return;
+    Object.assign(role, detail, { detailsLoaded: true });
     if (state.overlayOpen && state.overlayKey === role.key) renderOverlayContent(role);
   } catch (error) { console.warn('job detail unavailable', error); }
 }
