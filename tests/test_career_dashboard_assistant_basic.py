@@ -207,6 +207,61 @@ def test_generated_contract_metadata_is_stamped_from_packet(tmp_path):
     assert stamped["cover_email"]["body"] == "Body"
 
 
+def test_generation_gets_one_bounded_repair_after_deterministic_rejection(monkeypatch, tmp_path):
+    artifact_dir = tmp_path / "artifacts" / "abcdef1234567890"
+    artifact_dir.mkdir(parents=True)
+    packet = {
+        "schema_version": 1,
+        "job_id": "abcdef1234567890",
+        "bundle_hash": "bundle-current",
+        "email_draft_policy": {"expected_subject": "Abdelhamid Farah - Senior Design Manager"},
+    }
+    monkeypatch.setattr(
+        assistant,
+        "load_job_context",
+        lambda repo, job_id: {"packet": packet, "application": {}, "artifact_dir": artifact_dir},
+    )
+    dispatch_prompts = []
+
+    def fake_dispatcher(**kwargs):
+        dispatch_prompts.append(kwargs["prompt"])
+        output = kwargs["prompt"].split("OUTPUT PATH:\n", 1)[1].splitlines()[0]
+        Path(output).write_text(json.dumps({
+            "schema_version": 1,
+            "job_id": "abcdef1234567890",
+            "bundle_hash": "bundle-current",
+            "cover_email": {"subject": "Abdelhamid Farah - Senior Design Manager", "body": "Body", "claim_ids": []},
+        }), encoding="utf-8")
+        return {"ok": True}
+
+    monkeypatch.setattr(assistant, "run_dispatcher", fake_dispatcher)
+    import_count = 0
+
+    def fake_engine(repo, args, timeout):
+        nonlocal import_count
+        if args[:2] == ["generate", "import"]:
+            import_count += 1
+            if import_count == 1:
+                return json.dumps({"valid": False, "findings": [{"code": "redundancy", "message": "Remove repeated claim"}]})
+            return json.dumps({"valid": True, "findings": []})
+        if args[0] == "render":
+            return json.dumps({"valid": True})
+        raise AssertionError(args)
+
+    monkeypatch.setattr(assistant, "_run_engine", fake_engine)
+    action = assistant._generate_application_package(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        job_id="abcdef1234567890",
+        force_regenerate=True,
+    )
+    assert action == "generated_and_rendered"
+    assert import_count == 2
+    assert len(dispatch_prompts) == 2
+    assert "VALIDATION FINDINGS" in dispatch_prompts[1]
+    assert not list(artifact_dir.glob("dashboard-batch-*.json"))
+
+
 def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
     jobs = tmp_path / "jobs.json"
     jobs.write_text(json.dumps({"jobs": [{"id": assistant.HERMES_CAREER_CRON_JOB, "fire_claim": {"by": "host:99999999"}}]}), encoding="utf-8")

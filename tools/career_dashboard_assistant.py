@@ -515,6 +515,7 @@ def _generate_application_package(
         f"OUTPUT PATH:\n{candidate}\n\nGENERATION PACKET:\n"
         + json.dumps(context["packet"], ensure_ascii=False, indent=2)
     )
+    repair_candidate: Path | None = None
     try:
         dispatch_error: AssistantError | None = None
         try:
@@ -536,13 +537,54 @@ def _generate_application_package(
         imported = json.loads(_run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(candidate)], timeout=180))
         if not imported.get("valid"):
             findings = imported.get("findings") or []
-            raise AssistantError("generation rejected: " + "; ".join(str(item.get("message", item)) for item in findings[:5]))
+            repair_candidate = artifact_dir / f"dashboard-batch-{token}-repair.json"
+            repair_evidence = artifact_dir / "assistant" / f"batch-{token}-repair-routing.json"
+            repair_prompt = (
+                "The first generated application below failed Career Engine deterministic validation. Correct ONLY the "
+                "listed validation findings using the same generation packet and verified claims. Preserve all supported "
+                "facts and chronology, do not add claims, and return a complete JSON application object. Write ONLY valid "
+                "JSON to the exact output path; modify no other file. After the file is written successfully, reply exactly DONE.\n\n"
+                f"OUTPUT PATH:\n{repair_candidate}\n\nVALIDATION FINDINGS:\n"
+                + json.dumps(findings, ensure_ascii=False, indent=2)
+                + "\n\nFIRST CANDIDATE:\n"
+                + candidate.read_text(encoding="utf-8")
+                + "\n\nGENERATION PACKET:\n"
+                + json.dumps(context["packet"], ensure_ascii=False, indent=2)
+            )
+            repair_error: AssistantError | None = None
+            try:
+                run_dispatcher(
+                    dispatcher=dispatcher,
+                    repo=repo,
+                    prompt=repair_prompt,
+                    mode="workspace-write",
+                    evidence_path=repair_evidence,
+                    timeout_seconds=600,
+                )
+            except AssistantError as exc:
+                repair_error = exc
+            if not repair_candidate.is_file():
+                if repair_error is not None:
+                    raise repair_error
+                raise AssistantError(f"validation repair produced no candidate for {job_id}")
+            _stamp_generated_application_contract(repair_candidate, context["packet"])
+            imported = json.loads(
+                _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(repair_candidate)], timeout=180)
+            )
+            if not imported.get("valid"):
+                repaired_findings = imported.get("findings") or []
+                raise AssistantError(
+                    "generation rejected after one repair: "
+                    + "; ".join(str(item.get("message", item)) for item in repaired_findings[:5])
+                )
         rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
         if not rendered.get("valid"):
             raise AssistantError(f"render/QA failed for {job_id}")
         return "generated_and_rendered"
     finally:
         candidate.unlink(missing_ok=True)
+        if repair_candidate is not None:
+            repair_candidate.unlink(missing_ok=True)
 
 
 def run_process_jobs(
