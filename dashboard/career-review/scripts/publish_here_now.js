@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const ROOT = '/home/hameedo/websites/career-review';
+// Resolve deployment inputs from this versioned dashboard checkout. The old
+// /home/hameedo/websites/career-review copy was intentionally retired.
+const ROOT = path.resolve(__dirname, '..');
 const SITE = path.join(ROOT, 'site');
 const STATE = path.join(ROOT, '.deploy.json');
 const API = 'https://here.now/api/v1';

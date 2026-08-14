@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const ROOT = '/home/hameedo/websites/career-review';
+// Deployment state lives with the versioned dashboard source. The obsolete
+// /home/hameedo/websites/career-review copy has been removed.
+const ROOT = path.resolve(__dirname, '..');
 const STATE_PATH = path.join(ROOT, '.deploy.json');
 const HERE_API = 'https://here.now/api/v1';
 const CF_API = 'https://api.cloudflare.com/client/v4';
