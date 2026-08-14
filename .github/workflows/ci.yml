@@ -76,6 +76,13 @@ jobs:
       - name: Publish Python failure details
         if: failure()
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("python-tests.log").read_text(encoding="utf-8", errors="replace")
+          tail = "\n".join(text.splitlines()[-80:])
+          escaped = tail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Python unit test failure::{escaped}")
+          PY
           {
             echo "## Python test failure"
             echo
@@ -86,12 +93,6 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    # Requires the repo's Dependency graph, which not every repo (upstream or
-    # fork) has enabled - so the graph is probed first, and the job warns and
-    # passes instead of hard-failing if it's unavailable (the same
-    # graceful-skip pattern the workflow uses for optional tools), rather than
-    # being gated to a specific repository. Enabling Dependency graph under
-    # Settings -> Advanced Security activates the real check on any repo.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
