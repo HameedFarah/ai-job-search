@@ -12,7 +12,10 @@ reviewable rather than buried.
 Checks:
 1. .claude/settings.json — every permissions.allow entry must be in the exact
    allowlist below. Catches permission widening (e.g. Bash(*), Bash(curl:*)),
-   which would auto-approve commands on every fork.
+   which would auto-approve commands on every fork. The same file's ``hooks``
+   key is held to an allowlist too: a hook runs automatically when its event
+   fires, with no prompt, so it is strictly more dangerous than a pre-approved
+   permission.
 2. .gitignore — the personal-data ignore rules must all still be present,
    and no un-allowlisted negation (!pattern) may re-include them. Catches
    weakening that would make future users silently commit their tracker,
@@ -80,7 +83,35 @@ ALLOWED_IGNORE_NEGATIONS = {
     "!projects/job-automation/artifacts/.gitkeep",
 }
 
+# Hook commands the repository legitimately ships, as "<Event>:<command>" strings.
+# Empty by design: this repository currently ships no automatic Claude hooks.
+# Any future hook must be reviewed and added here in the same change.
+ALLOWED_HOOKS: set[str] = set()
+
 FORBIDDEN_SCRIPTS = {"preinstall", "install", "postinstall", "prepare", "prepack"}
+
+
+def _hook_commands(event: str, entries: object):
+    """Yield ``<Event>:<command>`` for every command a hook event would run.
+
+    Fail closed: an unrecognised hook shape yields a marker that cannot be in
+    ``ALLOWED_HOOKS`` rather than silently skipping executable configuration.
+    """
+    unrecognised = f"{event}:<unrecognised hook shape>"
+    if not isinstance(entries, list):
+        yield unrecognised
+        return
+    for entry in entries:
+        if not isinstance(entry, dict):
+            yield unrecognised
+            continue
+        inner = entry.get("hooks")
+        if not isinstance(inner, list):
+            yield unrecognised
+            continue
+        for hook in inner:
+            command = hook.get("command") if isinstance(hook, dict) else None
+            yield f"{event}:{command}" if isinstance(command, str) else unrecognised
 
 
 def check_permissions() -> None:
@@ -93,6 +124,24 @@ def check_permissions() -> None:
     if not isinstance(data, dict):
         errors.append(".claude/settings.json: top-level JSON value must be an object")
         return
+
+    # Check hooks before any permissions-shape early return. Otherwise malformed
+    # permissions paired with a live hook could fail open and skip hook review.
+    hooks = data.get("hooks", {})
+    if hooks:
+        if not isinstance(hooks, dict):
+            errors.append(".claude/settings.json: hooks must be an object")
+        else:
+            for event, entries in hooks.items():
+                for command in _hook_commands(str(event), entries):
+                    if command not in ALLOWED_HOOKS:
+                        errors.append(
+                            ".claude/settings.json: hook not in the reviewed allowlist: "
+                            f"{command!r}. A hook runs automatically when its event fires and is "
+                            "not gated by a permissions prompt. If intentional, add it to "
+                            "ALLOWED_HOOKS in tools/security_guards.py in the same PR."
+                        )
+
     permissions = data.get("permissions", {})
     if not isinstance(permissions, dict):
         errors.append(".claude/settings.json: permissions must be an object")
@@ -184,7 +233,10 @@ def main() -> int:
         for err in errors:
             print(f"  - {err}")
         return 1
-    print("security_guards: OK (permissions allowlist, gitignore rules, package manifests)")
+    print(
+        "security_guards: OK (permissions allowlist, hooks allowlist, gitignore rules, "
+        "package manifests)"
+    )
     return 0
 
 

@@ -94,6 +94,12 @@ def build_adapter(
     elif adapter_id == "dar_al_riyadh":
         from .adapters.dar_al_riyadh import DarAlRiyadhAdapter
         cls = DarAlRiyadhAdapter
+    elif adapter_id == "jibeapply":
+        from .adapters.jibeapply import JibeApplyAdapter
+        cls = JibeApplyAdapter
+    elif adapter_id == "successfactors":
+        from .adapters.successfactors import SuccessFactorsAdapter
+        cls = SuccessFactorsAdapter
     elif adapter_id == "workable":
         from .adapters.workable import WorkableAdapter
         cls = WorkableAdapter

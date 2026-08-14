@@ -1,0 +1,21 @@
+{
+  "totalCount": 1,
+  "count": 1,
+  "jobs": [
+    {
+      "data": {
+        "slug": "12532",
+        "req_id": "12532",
+        "title": "Senior MEP Engineer",
+        "description": "<p>Lead multidisciplinary MEP supervision, design review, coordination and constructability activities.</p>",
+        "qualifications": "<p>15+ years of consultancy experience required.</p>",
+        "full_location": "Riyadh, Saudi Arabia",
+        "city": "Riyadh",
+        "country": "Saudi Arabia",
+        "country_code": "SA",
+        "brand": "KEO International Consultants",
+        "employment_type": "FULL_TIME"
+      }
+    }
+  ]
+}

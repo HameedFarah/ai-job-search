@@ -52,6 +52,37 @@ def test_lever_parses_fixture_and_ms_epoch_date() -> None:
     assert first.detail_url.startswith("https://jobs.example.lever.co/")
     assert first.has_description
 
+def test_successfactors_parses_full_description_fixture() -> None:
+    from career_engine.sources.cli import build_adapter
+    jobs = build_adapter("successfactors", offline=True).search(
+        company="Red Sea Global|https://careers.theredsea.sa/",
+        limit=10,
+        fetch_full=True,
+        offline=True,
+    )
+    assert len(jobs) == 1
+    assert jobs[0].company == "Red Sea Global"
+    assert jobs[0].external_job_id == "857309723"
+    assert "10+ years" in jobs[0].description_text
+    assert jobs[0].provenance.official is True
+
+
+def test_jibeapply_parses_full_description_fixture() -> None:
+    from career_engine.sources.cli import build_adapter
+    jobs = build_adapter("jibeapply", offline=True).search(
+        company="https://careers.keo.com/api/jobs",
+        location="Saudi Arabia",
+        limit=10,
+        offline=True,
+    )
+    assert len(jobs) == 1
+    assert jobs[0].company == "KEO International Consultants"
+    assert jobs[0].external_job_id == "12532"
+    assert jobs[0].location == "Riyadh, Saudi Arabia"
+    assert "15+ years" in jobs[0].description_text
+    assert jobs[0].provenance.official is True
+
+
 def test_dar_al_riyadh_parses_public_careers_api_fixture() -> None:
     from career_engine.sources.cli import build_adapter
     jobs = build_adapter("dar_al_riyadh", offline=True).search(
