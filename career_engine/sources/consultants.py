@@ -54,6 +54,9 @@ def _managed_provider(row: dict[str, Any]) -> str | None:
 def _adapter_for_row(row: dict[str, Any], *, offline: bool):
     """Prefer verified native adapters, then pinned managed providers, then JSON-LD."""
     explicit = str(row.get("adapter") or "").strip()
+    if explicit == "taleo":
+        from .adapters.taleo import TaleoAdapter
+        return TaleoAdapter(fixtures_dir=None), explicit, "official_ats_api", None
     if explicit:
         return build_adapter(explicit, offline=offline), explicit, "official_ats_api", None
     provider = _managed_provider(row)

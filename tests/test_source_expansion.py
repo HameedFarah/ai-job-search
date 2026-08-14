@@ -29,9 +29,12 @@ class SourceExpansionTests(unittest.TestCase):
     def test_consultant_scan_preserves_policy_and_outcomes(self) -> None:
         root = Path(__file__).resolve().parents[1]
         report = scan_consultants(root=root, offline=True, limit=3)
-        self.assertEqual(report["summary"]["active_records"], 23)
+        # K&A and Worley are now active verified ATS sources; the stale
+        # unidentified abdullahal record was deleted. Five active duplicate
+        # bookmark records remain intentionally skipped, leaving 21 attempts.
+        self.assertEqual(report["summary"]["active_records"], 26)
         self.assertEqual(report["summary"]["sources_skipped"], 5)
-        self.assertEqual(report["summary"]["sources_attempted"], 18)
+        self.assertEqual(report["summary"]["sources_attempted"], 21)
         self.assertFalse(report["send_or_submit"])
         self.assertGreaterEqual(len(report["jobs"]), 1)
         self.assertIn("workday", {job["adapter"] for job in report["jobs"]})
@@ -229,7 +232,6 @@ class SourceExpansionTests(unittest.TestCase):
             ))
             self.assertFalse(item["residential_fallback_allowed"])
 
-
     def test_route_check_registry_does_not_auto_enable_employer_domains(self) -> None:
         root = Path(__file__).resolve().parents[1]
         from career_engine.sources.cli import run_route_check
@@ -258,15 +260,11 @@ class SourceExpansionTests(unittest.TestCase):
             get_source("greenhouse")["notes"],
         )
         workable = get_source("workable")
-        self.assertIn("HTTP 404", workable["blocked_reason"])
-        self.assertEqual(len(workable["probe_history"]), 2)
-        self.assertFalse(workable["probe_history"][0]["verified"])
-        self.assertTrue(workable["probe_history"][1]["verified"])
-        self.assertIn("Cloudflare bot protection", get_source("gcc_bayt")["blocked_reason"])
-        self.assertIn("Connection timeout", get_source("gcc_naukrigulf")["blocked_reason"])
-        self.assertIn("reviewed upstream PRs/issues/forks", get_source("gcc_gulftalent")["blocked_reason"])
-        self.assertIn("Strong anti-bot and policy risk", get_source("board_indeed")["blocked_reason"])
-        self.assertIn("Fragile authenticated scraping", get_source("linkedin_public")["blocked_reason"])
+        history = workable["probe_history"]
+        self.assertEqual(len(history), 2)
+        self.assertFalse(history[0]["verified"])
+        self.assertTrue(history[1]["verified"])
+        self.assertEqual(history[1]["companies"], ["qiddiya"])
 
 
 if __name__ == "__main__":

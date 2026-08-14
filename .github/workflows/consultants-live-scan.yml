@@ -1,0 +1,78 @@
+name: Consultants live scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Maximum jobs per source
+        required: false
+        default: "100"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Official consultant sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run bounded live scan
+        env:
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          python3 -m career_engine.cli consultants-scan \
+            --limit "${LIMIT:-100}" \
+            --output consultants-scan.json
+
+      - name: Publish scan summary
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from collections import Counter
+
+          data = json.load(open("consultants-scan.json", encoding="utf-8"))
+          sources = data.get("sources", [])
+          jobs = data.get("jobs", [])
+          statuses = Counter(str(s.get("status") or "unknown") for s in sources)
+          adapters = Counter(str(s.get("adapter") or "unknown") for s in sources if s.get("attempted"))
+
+          print("# Consultants live scan")
+          print()
+          print(f"- active records: **{data.get('summary', {}).get('active_records', 0)}**")
+          print(f"- sources attempted: **{data.get('summary', {}).get('sources_attempted', 0)}**")
+          print(f"- jobs emitted after cross-source dedupe: **{len(jobs)}**")
+          print(f"- duplicates dropped: **{data.get('duplicates_dropped', 0)}**")
+          print(f"- send or submit: **{data.get('send_or_submit')}**")
+          print()
+          print("## Source status")
+          print()
+          print("| status | sources |")
+          print("|---|---:|")
+          for key, value in sorted(statuses.items()):
+              print(f"| {key} | {value} |")
+          print()
+          print("## Attempted adapters")
+          print()
+          print("| adapter | sources |")
+          print("|---|---:|")
+          for key, value in sorted(adapters.items()):
+              print(f"| {key} | {value} |")
+          print()
+          print("## Per-source counts")
+          print()
+          print("| source | adapter | status | jobs |")
+          print("|---|---|---|---:|")
+          for s in sources:
+              print(f"| {s.get('source_name','')} | {s.get('adapter','')} | {s.get('status','')} | {s.get('jobs_fetched',0)} |")
+          PY
+
+      - name: Upload raw report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: consultants-live-scan
+          path: consultants-scan.json
+          retention-days: 7
