@@ -152,6 +152,7 @@ def test_domain_requirement_gate_requires_both_domain_and_mandatory_signal(engin
     assert domain_requirement_gate("Led stadium design coordination across the programme.", taxonomy) is None
     # Mandatory wording without a domain term is not gated.
     assert domain_requirement_gate("At least 15 years of progressive design management experience is essential.", taxonomy) is None
+    assert domain_requirement_gate("At least 15 years of related engineering and design management experience on large-scale programs.", taxonomy) is None
     assert domain_requirement_gate("10+ years of RAMS or reliability engineering experience in rail transportation is required.", taxonomy) == "rams_reliability_systems_assurance"
     assert domain_requirement_gate("Lead design management for rail projects.", taxonomy) is None
 

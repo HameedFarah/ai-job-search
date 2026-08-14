@@ -184,6 +184,29 @@ def test_workspace_write_prompts_request_terminal_acknowledgement(tmp_path):
     assert "reply exactly DONE" in prompt
 
 
+def test_generated_contract_metadata_is_stamped_from_packet(tmp_path):
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text(json.dumps({
+        "schema_version": 99,
+        "job_id": "wrong",
+        "bundle_hash": "stale",
+        "cover_email": {"subject": "Decorated subject", "body": "Body", "claim_ids": []},
+    }), encoding="utf-8")
+    packet = {
+        "schema_version": 1,
+        "job_id": "abcdef1234567890",
+        "bundle_hash": "current-bundle",
+        "email_draft_policy": {"expected_subject": "Abdelhamid Farah - Senior Design Manager"},
+    }
+    assistant._stamp_generated_application_contract(candidate, packet)
+    stamped = json.loads(candidate.read_text(encoding="utf-8"))
+    assert stamped["schema_version"] == 1
+    assert stamped["job_id"] == "abcdef1234567890"
+    assert stamped["bundle_hash"] == "current-bundle"
+    assert stamped["cover_email"]["subject"] == "Abdelhamid Farah - Senior Design Manager"
+    assert stamped["cover_email"]["body"] == "Body"
+
+
 def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
     jobs = tmp_path / "jobs.json"
     jobs.write_text(json.dumps({"jobs": [{"id": assistant.HERMES_CAREER_CRON_JOB, "fire_claim": {"by": "host:99999999"}}]}), encoding="utf-8")

@@ -152,7 +152,7 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     matches = match_evidence(normalized, bundle)
     path, cache = _write_stage(
         artifact_dir, "requirement_matrix", matches,
-        stable_hash({"jd": normalized["jd_hash"], "bundle": bundle["bundle_hash"], "stage": "match"}),
+        stable_hash({"jd": normalized["jd_hash"], "bundle": bundle["bundle_hash"], "stage": "match", "algorithm": 2}),
     )
     outputs["requirement_matrix"] = str(path)
     reused["requirement_matrix"] = cache

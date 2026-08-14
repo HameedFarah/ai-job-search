@@ -203,6 +203,21 @@ def _terms(text: str, aliases: dict[str, list[str]]) -> list[str]:
     return list(dict.fromkeys(found))[:20]
 
 
+def _contains_domain_variant(text: str, variant: str) -> bool:
+    """Match a domain phrase without allowing acronym substrings inside words.
+
+    This keeps short taxonomy terms such as RAMS, RBD and FTA from matching
+    unrelated words such as ``programs`` while preserving multi-word and
+    punctuation-bearing phrases such as ``high-rise`` or ``security/defense``.
+    """
+    phrase = str(variant or "").strip().lower()
+    if not phrase:
+        return False
+    prefix = r"(?<![a-z0-9])" if phrase[0].isalnum() else ""
+    suffix = r"(?![a-z0-9])" if phrase[-1].isalnum() else ""
+    return re.search(prefix + re.escape(phrase) + suffix, text.lower()) is not None
+
+
 def domain_requirement_gate(text: str, taxonomy: dict[str, Any]) -> str | None:
     """Return the mandatory domain a requirement demands, or None.
 
@@ -221,7 +236,7 @@ def domain_requirement_gate(text: str, taxonomy: dict[str, Any]) -> str | None:
     if not any(signal in low for signal in signals):
         return None
     for domain, variants in taxonomy.get("mandatory_domain_terms", {}).items():
-        if any(variant in low for variant in variants):
+        if any(_contains_domain_variant(low, variant) for variant in variants):
             return domain
     return None
 

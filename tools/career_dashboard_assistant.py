@@ -465,6 +465,30 @@ def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
     )
 
 
+def _stamp_generated_application_contract(candidate: Path, packet: dict[str, Any]) -> None:
+    """Stamp deterministic packet metadata before central content validation.
+
+    These fields are execution-contract data, not creative prose. Keeping them
+    out of model discretion prevents a valid evidence-grounded application from
+    being rejected because the model copied an old hash or decorated the
+    required email subject.
+    """
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - converted to bounded assistant error
+        raise AssistantError(f"generated candidate is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise AssistantError("generated candidate must be a JSON object")
+    for field in ("schema_version", "job_id", "bundle_hash"):
+        if packet.get(field) is not None:
+            payload[field] = packet[field]
+    expected_subject = str((packet.get("email_draft_policy") or {}).get("expected_subject") or "").strip()
+    cover_email = payload.get("cover_email")
+    if expected_subject and isinstance(cover_email, dict):
+        cover_email["subject"] = expected_subject
+    candidate.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def _generate_application_package(
     *,
     repo: Path,
@@ -508,6 +532,7 @@ def _generate_application_package(
             if dispatch_error is not None:
                 raise dispatch_error
             raise AssistantError(f"generation produced no candidate for {job_id}")
+        _stamp_generated_application_contract(candidate, context["packet"])
         imported = json.loads(_run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(candidate)], timeout=180))
         if not imported.get("valid"):
             findings = imported.get("findings") or []
@@ -649,6 +674,7 @@ def apply_cv_edit(
             if dispatch_error is not None:
                 raise dispatch_error
             raise AssistantError("assistant edit did not produce candidate JSON")
+        _stamp_generated_application_contract(candidate, context["packet"])
         import_result = json.loads(
             _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(candidate)], timeout=180)
         )
