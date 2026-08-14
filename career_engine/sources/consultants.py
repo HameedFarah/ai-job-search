@@ -54,9 +54,6 @@ def _managed_provider(row: dict[str, Any]) -> str | None:
 def _adapter_for_row(row: dict[str, Any], *, offline: bool):
     """Prefer verified native adapters, then pinned managed providers, then JSON-LD."""
     explicit = str(row.get("adapter") or "").strip()
-    if explicit == "successfactors_xml":
-        from .adapters.successfactors_xml import SuccessFactorsXmlAdapter
-        return SuccessFactorsXmlAdapter(fixtures_dir=None), explicit, "official_ats_feed", None
     if explicit == "taleo":
         from .adapters.taleo import TaleoAdapter
         return TaleoAdapter(fixtures_dir=None), explicit, "official_ats_api", None
