@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="executive-navy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="description" content="Private ATS resume design comparison">
+  <title>ATS Resume Designs — Career Engine</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="topbar board-topbar design-topbar">
+    <div class="brand compact-brand design-brand">
+      <button id="back-button" class="back-button compact-back" type="button" aria-label="Back to board" title="Back to board">←</button>
+      <h1>Career Engine</h1>
+    </div>
+    <div class="scan-status design-status" aria-label="Resume comparison">
+      <strong>ATS CVs</strong>
+      <span>5 options</span>
+    </div>
+  </header>
+  <main class="design-main">
+    <section class="design-intro compact-design-toolbar" aria-label="Resume comparison controls">
+      <p class="design-context">Portal CV comparison · tap a preview to open the PDF</p>
+      <label>
+        <span>Theme</span>
+        <select id="theme-select">
+          <option value="executive-navy">Executive Navy</option>
+          <option value="compact-slate">Compact Slate</option>
+          <option value="warm-paper">Warm Paper</option>
+          <option value="high-contrast">High Contrast</option>
+          <option value="minimal-grid">Minimal Grid</option>
+        </select>
+      </label>
+    </section>
+    <div id="design-error" class="board-error" hidden></div>
+    <section id="design-grid" class="resume-design-grid" aria-live="polite"></section>
+  </main>
+  <template id="design-template">
+    <article class="resume-design-card">
+      <div class="resume-design-head">
+        <div>
+          <p class="design-id"></p>
+          <h2 class="design-label"></h2>
+        </div>
+        <span class="design-recommended tag tag-high" hidden>Default</span>
+      </div>
+      <p class="design-description"></p>
+      <a class="design-preview-link" target="_blank" rel="noopener noreferrer">
+        <img class="design-preview" alt="ATS resume first-page preview">
+      </a>
+      <div class="design-metrics"></div>
+      <div class="design-checks"></div>
+      <div class="design-actions"></div>
+    </article>
+  </template>
+  <script src="assets/shared.js" defer></script>
+  <script src="assets/resume-designs.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+/* Focused acceptance test for the production Career Engine mobile surface. */
+'use strict';
+const path = require('path');
+const { execSync } = require('child_process');
+
+const BASE = 'http://127.0.0.1:4173';
+function loadPlaywright() {
+  const root = execSync('npm root -g').toString().trim();
+  try { return require(path.join(root, 'playwright')); }
+  catch { return require('playwright'); }
+}
+
+function assert(ok, message, detail = '') {
+  if (!ok) throw new Error(`${message}${detail ? `: ${detail}` : ''}`);
+}
+
+async function main() {
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', msg => { if (msg.type() === 'error' && !/404|here\.now|unavailable/.test(msg.text())) errors.push(msg.text()); });
+
+  await page.goto(`${BASE}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  assert(errors.length === 0, 'Console/page errors', errors.join(' | '));
+
+  const header = await page.locator('.board-topbar').boundingBox();
+  assert(header && header.height <= 52, 'Mobile header is compact', header ? `${header.height}px` : 'missing');
+  const headerText = (await page.locator('.board-topbar').innerText()).toLowerCase();
+  assert(!/private|owner-controlled|nothing auto-sent|discover|process, review/.test(headerText), 'Header removes operational boilerplate', headerText);
+  assert(await page.locator('.scan-status').isVisible(), 'Last scan status is visible');
+  const scanFits = await page.locator('#scan-relative').evaluate(el => el.scrollWidth <= el.clientWidth + 1);
+  assert(scanFits, 'Last scan timing is not visually cropped');
+
+  const summary = page.locator('#summary .summary-filter');
+  assert(await summary.count() === 5, 'Five compact status chips are present', String(await summary.count()));
+  assert(await page.locator('.kanban-column[data-stage="inactive"]').count() === 1, 'Closed / inactive Kanban column is present');
+  assert(await page.locator('#summary .priority-filter').isVisible(), 'Awaiting Action chip is visible');
+  const chipHeight = await page.locator('#summary .summary-filter').first().evaluate(el => el.getBoundingClientRect().height);
+  assert(chipHeight <= 32, 'Status chips remain compact', `${chipHeight}px`);
+  const firstColumn = await page.locator('.kanban-column').first().boundingBox();
+  assert(firstColumn && firstColumn.width <= 330 && firstColumn.width >= 300, 'Mobile column leaves a partial next column visible', firstColumn ? `${firstColumn.width}px` : 'missing');
+
+  assert(await page.locator('#mobile-search-toggle').isVisible(), 'Mobile search is represented by a dedicated icon');
+  assert(!(await page.locator('#search-filter').isVisible()), 'Mobile search field stays collapsed by default');
+  await page.locator('#mobile-search-toggle').click();
+  assert(await page.locator('#search-filter').isVisible(), 'Mobile search field drops down after tapping the icon');
+  await page.locator('#search-filter').fill('Parsons');
+  await page.locator('#search-filter').fill('');
+  await page.keyboard.press('Escape');
+  assert(!(await page.locator('#search-filter').isVisible()), 'Mobile search field collapses again');
+  assert(await page.locator('.compact-toolbar .tool-menu').count() === 3, 'Filter/sort/display use compact menus');
+  assert(await page.locator('.compact-toolbar .tool-menu[open]').count() === 0, 'Compact menus are collapsed by default');
+  await page.locator('.compact-toolbar .tool-menu').first().locator('summary').click();
+  assert(await page.locator('.compact-toolbar .tool-menu').first().locator('.tool-popover').isVisible(), 'Filter menu expands on click');
+  await page.keyboard.press('Escape').catch(() => {});
+
+  const awaiting = page.locator('#summary .priority-filter');
+  await awaiting.click();
+  await page.waitForTimeout(350);
+  const readyLeft = await page.locator('.kanban-column[data-stage="ready_review"]').evaluate(el => el.getBoundingClientRect().left);
+  assert(Math.abs(readyLeft) < 35, 'Awaiting Action chip jumps to review column', `${readyLeft}px`);
+
+  const resumeCard = page.locator('.role-card').filter({ has: page.locator('.quick-files a[href*=".pdf"]') }).first();
+  assert(await resumeCard.count() === 1, 'A role with a resume PDF is available for detail testing');
+  await resumeCard.locator('.role-title').click();
+  await page.waitForTimeout(250);
+  assert(await page.locator('#job-overlay').isVisible(), 'Detail overlay opens');
+  assert(await page.locator('.overlay-close').isVisible(), 'Close button is visible');
+  assert(await page.locator('#ov-main-action').isVisible(), 'Primary next action is visible');
+  assert(await page.locator('#ov-job-applied').isVisible(), 'Job applied confirmation button is visible in the top CTA bar');
+
+  const closeTop = await page.locator('.overlay-close').evaluate(el => el.getBoundingClientRect().top);
+  const actionTop = await page.locator('#ov-main-action').evaluate(el => el.getBoundingClientRect().top);
+  assert(closeTop >= 0 && closeTop < 60, 'Close button stays at top', `${closeTop}px`);
+  assert(actionTop >= 35 && actionTop < 130, 'Next action stays at top', `${actionTop}px`);
+
+  const viewer = page.locator('#ov-resume-viewer');
+  const viewerMetrics = await viewer.evaluate(el => {
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return { height: rect.height, overflowY: style.overflowY, touchAction: style.touchAction };
+  });
+  assert(viewerMetrics.height >= 500, 'Resume viewer dominates mobile detail view', JSON.stringify(viewerMetrics));
+  assert(['auto', 'scroll'].includes(viewerMetrics.overflowY), 'Resume bounding box is scrollable', JSON.stringify(viewerMetrics));
+  const frame = page.locator('#ov-resume-frame');
+  assert(await frame.isVisible(), 'Inline resume frame is visible');
+  const src = await frame.getAttribute('src');
+  assert(Boolean(src && /\.pdf/i.test(src)), 'Inline resume points to selected PDF', String(src));
+
+  await page.locator('.overlay-workspace').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await page.waitForTimeout(100);
+  assert(await page.locator('.overlay-close').isVisible(), 'Close remains visible after detail scrolling');
+  assert(await page.locator('#ov-main-action').isVisible(), 'Next action remains visible after detail scrolling');
+
+  const bodyOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(bodyOverflow <= 1, 'No page-level horizontal overflow', `${bodyOverflow}px`);
+
+  console.log(JSON.stringify({ valid: true, viewport: '390x844', headerHeight: header.height, chipHeight, readyColumnLeft: readyLeft, viewer: viewerMetrics, resumeSrc: src }, null, 2));
+  await context.close();
+  await browser.close();
+}
+
+main().catch(error => { console.error(error.message); process.exit(1); });

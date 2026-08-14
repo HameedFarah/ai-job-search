@@ -47,7 +47,7 @@ Read the current Vault index, status and playbook, the verified profile, metrics
 ./career-engine render-ats --job-id <id>
 ./career-engine render-ats-options --job-id <id> [--out-dir <dir>]
 ./career-engine package --job-id <id>
-node /home/hameedo/websites/career-review/scripts/read_feedback.js [role-key] [--pending-only]
+node dashboard/career-review/scripts/read_feedback.js [role-key] [--pending-only]
 ```
 
 See `AGENTS.md`, `docs/CAREER_ENGINE_V1.md`, `CAREER_ENGINE_V1_IMPLEMENTATION.md` and `docs/CAREER_ENGINE_CLOSEOUT_PLAN_2026-08-03.md` for the production design and recovery instructions.

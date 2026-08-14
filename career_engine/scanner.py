@@ -7,6 +7,7 @@ from typing import Any
 
 from .bundle import load_bundle
 from .config import load_config
+from .pipeline import _load_tracker
 from .service import prepare_job
 
 SCANNER_ACTORS = {
@@ -114,6 +115,116 @@ def add_path_scan_statistics(report: dict[str, Any], sources: list[dict[str, Any
     return report
 
 
+INSUFFICIENT_DESCRIPTION_MESSAGE = "Job description is too short to evaluate"
+MANUAL_REVIEW_STATUS = "manual_review_needed"
+
+
+def _manual_review_for_insufficient_description(
+    item: dict[str, Any],
+    *,
+    root: Path,
+    actor: str,
+) -> dict[str, Any]:
+    """Persist an unscored vacancy for human review without aborting the scan.
+
+    This path is intentionally narrow: it is used only when the central normalizer
+    rejects a missing/short description.  It preserves source metadata and never
+    invents requirements or a fit score.
+    """
+    _, paths = load_config(root)
+    tracker = _load_tracker(paths)
+    description = str(item.get("full_job_description") or item.get("job_description") or "").strip()
+    if not description:
+        description = "[Source provided no job description]"
+    source_url = str(item.get("source_url") or "").strip()
+    application_url = str(item.get("application_url") or "").strip()
+    reason_code = "insufficient_job_description"
+    ingest = tracker.ingest(
+        {
+            "source": str(item.get("source") or "manual"),
+            "external_job_id": str(item.get("external_job_id") or item.get("reference") or ""),
+            "source_url": source_url,
+            "company": str(item.get("company") or "Unknown company"),
+            "role": str(item.get("role") or "Unknown role"),
+            "location": str(item.get("location") or ""),
+            "posting_date": str(item.get("posting_date") or ""),
+            "posting_date_precision": str(item.get("posting_date_precision") or ""),
+            "posting_date_source": str(item.get("posting_date_source") or ""),
+            "full_job_description": description,
+            "fit_score": "",
+            "priority": "unscored",
+            "processing_status": MANUAL_REVIEW_STATUS,
+            "next_action": "Review the official vacancy manually and obtain a complete job description before scoring",
+            "notes": "Manual review required: source description is too short for evidence-based scoring.",
+            "provenance": item.get("provenance") if isinstance(item.get("provenance"), dict) else {},
+            "scoring": {
+                "total": None,
+                "recommendation": "unscored",
+                "reason_code": reason_code,
+                "reason": "The source job description is insufficient for evidence-based scoring.",
+            },
+            "processing_state": {
+                "owner": "owner",
+                "status": MANUAL_REVIEW_STATUS,
+                "reason_code": reason_code,
+                "reason": "The source job description is insufficient for evidence-based scoring.",
+                "source_url": source_url,
+                "application_url": application_url,
+                "external_action_allowed": False,
+                "send_or_submit": False,
+            },
+        },
+        comment="Retained vacancy for manual review because the source description is insufficient for evidence-based scoring",
+        actor=actor,
+        source_refs=[value for value in (source_url, application_url) if value],
+        confidence="high",
+    )
+    job_id = ingest["job_id"]
+    # Duplicate ingest preserves the previous workflow state by design, so make
+    # the manual-review classification explicit on both new and existing rows.
+    tracker.update_job(
+        job_id,
+        {
+            "fit_score": "",
+            "priority": "unscored",
+            "processing_status": MANUAL_REVIEW_STATUS,
+            "next_action": "Review the official vacancy manually and obtain a complete job description before scoring",
+            "scoring": {
+                "total": None,
+                "recommendation": "unscored",
+                "reason_code": reason_code,
+                "reason": "The source job description is insufficient for evidence-based scoring.",
+            },
+            "processing_state": {
+                "owner": "owner",
+                "status": MANUAL_REVIEW_STATUS,
+                "reason_code": reason_code,
+                "reason": "The source job description is insufficient for evidence-based scoring.",
+                "source_url": source_url,
+                "application_url": application_url,
+                "external_action_allowed": False,
+                "send_or_submit": False,
+            },
+        },
+        comment="Classified insufficient-description vacancy as Manual Review Needed without assigning a fit score",
+        actor=actor,
+        action="updated",
+        source_refs=[value for value in (source_url, application_url) if value],
+        requires_owner_review=True,
+    )
+    return {
+        "job_id": job_id,
+        "live_status": str(item.get("live_status") or "unverified"),
+        "fit_score": {"total": None, "recommendation": "unscored"},
+        "route": {"route": "manual_review", "application_url": application_url},
+        "blockers": [reason_code],
+        "warnings": [],
+        "outputs": {},
+        "stage": MANUAL_REVIEW_STATUS,
+        "manual_review_reason": reason_code,
+    }
+
+
 def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
     if scanner_id not in SCANNER_ACTORS:
         raise ValueError(f"Unsupported scanner_id: {scanner_id}")
@@ -135,6 +246,7 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
         "source_file": str(path),
         "results": [],
         "generation_candidates": [],
+        "manual_review_needed": [],
         "weak_or_blocked": [],
         "statistics": {
             "jobs_discovered": len(jobs),
@@ -142,6 +254,7 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
             "new_jobs": 0,
             "existing_jobs": 0,
             "generation_candidates": 0,
+            "manual_review_needed": 0,
             "weak_or_blocked": 0,
             "paths_total": 0,
             "paths_scanned": 0,
@@ -161,18 +274,26 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
         path_stats["jobs_discovered"] = max(
             path_stats["jobs_discovered"], path_stats["jobs_ingested"] + 1
         )
-        state = prepare_job(item, root=root, actor=actor)
+        try:
+            state = prepare_job(item, root=root, actor=actor)
+        except ValueError as exc:
+            if str(exc) != INSUFFICIENT_DESCRIPTION_MESSAGE:
+                raise
+            state = _manual_review_for_insufficient_description(item, root=root, actor=actor)
         is_new = state["job_id"] not in known_job_ids
         known_job_ids.add(state["job_id"])
+        fit = state.get("fit_score") or {}
         summary = {
             "job_id": state["job_id"],
-            "live_status": state["live_status"],
-            "fit_score": state["fit_score"]["total"],
-            "recommendation": state["fit_score"]["recommendation"],
-            "route": state["route"],
-            "blockers": state["blockers"],
+            "live_status": state.get("live_status", "unverified"),
+            "fit_score": fit.get("total"),
+            "recommendation": fit.get("recommendation", "unscored"),
+            "route": state.get("route", {}),
+            "blockers": state.get("blockers", []),
             "warnings": state.get("warnings", []),
-            "generation_packet": state["outputs"].get("generation_packet", ""),
+            "generation_packet": state.get("outputs", {}).get("generation_packet", ""),
+            "processing_status": state.get("stage", ""),
+            "manual_review_reason": state.get("manual_review_reason", ""),
             "source_path": logical_path,
             "is_new": is_new,
         }
@@ -185,7 +306,11 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
         else:
             report["statistics"]["existing_jobs"] += 1
             path_stats["existing_jobs"] += 1
-        if summary["fit_score"] >= minimum and not summary["blockers"] and len(report["generation_candidates"]) < maximum:
+        if summary["processing_status"] == MANUAL_REVIEW_STATUS:
+            report["manual_review_needed"].append(summary)
+            report["statistics"]["manual_review_needed"] += 1
+            path_stats["blocked_or_below_threshold"] += 1
+        elif summary["fit_score"] is not None and summary["fit_score"] >= minimum and not summary["blockers"] and len(report["generation_candidates"]) < maximum:
             report["generation_candidates"].append(summary)
             report["statistics"]["generation_candidates"] += 1
             path_stats["generation_candidates"] += 1

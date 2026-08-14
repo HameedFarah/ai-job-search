@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-theme="executive-navy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="description" content="Private Career Engine job detail view">
+  <title>Job Detail — Career Engine</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="topbar detail-topbar">
+    <button id="back-button" class="back-button" type="button">← Back to board</button>
+    <div class="header-meta">
+      <strong>Job detail</strong>
+      <span class="status-dot">Owner-controlled · nothing auto-sent</span>
+    </div>
+  </header>
+
+  <main class="detail-main">
+    <div id="detail-error" class="board-error" hidden></div>
+
+    <article id="detail" class="detail" hidden>
+      <section class="detail-header">
+        <div class="detail-title">
+          <h1 id="d-role">—</h1>
+          <p id="d-company"></p>
+          <p id="d-location" class="muted"></p>
+        </div>
+        <div class="detail-badges">
+          <span id="d-decision" class="decision-badge"></span>
+          <span id="d-score" class="score-chip"><strong></strong><small>/100</small></span>
+          <span id="d-score-tag" class="tag"></span>
+        </div>
+      </section>
+
+      <div class="detail-grid">
+        <div class="detail-col">
+          <section class="detail-block">
+            <h2>Dates</h2>
+            <dl class="kv">
+              <div><dt>Posted</dt><dd id="d-posted"></dd></div>
+              <div><dt>Found / verified</dt><dd id="d-found"></dd></div>
+              <div><dt>Last scan</dt><dd id="d-scan"></dd></div>
+            </dl>
+          </section>
+
+          <section class="detail-block">
+            <h2>Review summary</h2>
+            <p id="d-brief" class="detail-brief"></p>
+            <h3>Why it fits</h3>
+            <ul id="d-strengths"></ul>
+            <h3>Material gaps / risks</h3>
+            <ul id="d-gaps"></ul>
+            <details class="jd-details">
+              <summary>Full job description</summary>
+              <pre id="d-jd" class="jd-text"></pre>
+            </details>
+          </section>
+
+          <section class="detail-block">
+            <h2>Documents</h2>
+            <div class="doc-group">
+              <h3>Resume template</h3>
+              <p id="d-template-default" class="help-note"></p>
+              <select id="d-template" class="stage-select" aria-label="Select resume template for this job"></select>
+              <div id="d-template-files" class="doc-links"></div>
+              <p id="d-template-note" class="missing-note"></p>
+              <h3>Executive resume <span id="d-exec-recommendation" class="tag tag-type" hidden>Recommended</span></h3>
+              <div id="d-resume-exec" class="doc-links"></div>
+              <h3>ATS resume variant <span id="d-ats-recommendation" class="tag tag-type" hidden>Recommended for portal</span></h3>
+              <div id="d-resume-ats" class="doc-links"></div>
+              <p><a class="card-button" href="resume-designs.html">Compare 5 ATS designs</a></p>
+              <h3>Cover letter</h3>
+              <div id="d-cover" class="doc-links"></div>
+              <h3>Email draft package</h3>
+              <div class="doc-links" id="d-eml"></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="detail-col">
+          <section class="detail-block">
+            <h2>Actions</h2>
+            <div class="route-actions" id="d-actions"></div>
+            <details class="email-details">
+              <summary>Cover email text</summary>
+              <p class="email-meta" id="d-email-meta"></p>
+              <pre class="email-body" id="d-email-body"></pre>
+            </details>
+          </section>
+
+          <section class="detail-block">
+            <h2>Stage</h2>
+            <div class="stage-row">
+              <select id="d-stage-select" class="stage-select" aria-label="Move job to stage"></select>
+              <div id="d-stage-action" class="stage-action"></div>
+            </div>
+            <h3>Activity history</h3>
+            <div id="d-timeline" class="timeline"></div>
+          </section>
+
+          <section class="detail-block">
+            <h2>Comment history <small>append-only</small></h2>
+            <p class="help-note">Comments are permanent and never rewritten. Resolution state can be toggled; ChatGPT/agents read them through the owner API.</p>
+            <div id="d-comments" class="comment-list"></div>
+            <form id="d-comment-form" class="panel-form">
+              <label>New comment type
+                <select id="d-comment-type"></select>
+              </label>
+              <textarea id="d-comment-text" rows="3" placeholder="Decision, edit request, question or note…"></textarea>
+              <div class="form-row">
+                <button type="submit" class="card-button primary">Add comment</button>
+                <span id="d-comment-status" class="comment-status"></span>
+              </div>
+            </form>
+          </section>
+
+          <section class="detail-block assistant-block">
+            <h2>Career Engine assistant</h2>
+            <p class="help-note">Job-specific requests and replies stay in Site Data. Personal or factual details that are not in the package are marked <strong>Owner input needed</strong>; the assistant must not invent them.</p>
+            <div class="assistant-quick-actions" aria-label="Assistant quick actions">
+              <button type="button" class="card-button quick-action" data-assistant-action="headline">Headline</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="summary">Summary</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="skills">Skills</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="current_role">Current role</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="experience">Experience</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="cover_letter">Cover letter</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="application_question">Application question</button>
+              <button type="button" class="card-button quick-action" data-assistant-action="edit_cv">Edit CV</button>
+            </div>
+            <div id="d-ai-requests" class="ai-list"></div>
+            <form id="d-ai-form" class="panel-form">
+              <label>Ask about this job
+                <textarea id="d-ai-prompt" rows="3" placeholder="Ask a job-specific question…"></textarea>
+              </label>
+              <div class="form-row">
+                <button type="submit" class="card-button primary">Send / Ask</button>
+                <span id="d-ai-status" class="comment-status"></span>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <script src="assets/shared.js" defer></script>
+  <script src="assets/detail.js" defer></script>
+</body>
+</html>

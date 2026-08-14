@@ -35,7 +35,7 @@ from typing import Any, Callable
 DEFAULT_REPO = Path("/home/hameedo/projects/ai-job-search")
 DEFAULT_DISPATCHER = Path("/home/hameedo/vps-infra-dev/scripts/operations/model-route-dispatch.py")
 DEFAULT_SITE_SLUG = "gilded-timber-xfj7"
-DEFAULT_WEBSITE_ROOT = Path("/home/hameedo/websites/career-review")
+DEFAULT_WEBSITE_ROOT = DEFAULT_REPO / "dashboard" / "career-review"
 HERMES_CAREER_CRON_JOB = "edc36e531637"
 HERMES_EXECUTABLE = Path("/home/hameedo/.hermes/hermes-agent/venv/bin/hermes")
 HERMES_CRON_JOBS = Path("/home/hameedo/.hermes/cron/jobs.json")

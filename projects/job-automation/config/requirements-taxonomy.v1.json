@@ -7,13 +7,13 @@
   },
   "aliases": {
     "design governance": ["design assurance", "design quality", "technical governance", "design controls"],
-    "design management": ["design coordination", "multidisciplinary coordination", "technical coordination"],
-    "project delivery": ["programme delivery", "project management", "delivery management"],
-    "construction oversight": ["construction supervision", "site supervision", "construction-stage services"],
+    "design management": ["design coordination", "multidisciplinary coordination", "technical coordination", "manage design", "managing design", "design process", "design team", "design teams", "design delivery"],
+    "project delivery": ["programme delivery", "program delivery", "project management", "delivery management", "deliver projects", "deliver project", "project execution", "project lifecycle", "project life cycle"],
+    "construction oversight": ["construction supervision", "site supervision", "construction-stage services", "construction management", "site-stage", "site stage", "construction delivery"],
     "contract administration": ["commercial assessment", "variation assessment", "payment certification", "dispute avoidance"],
     "bim": ["building information modelling", "building information modeling", "digital delivery"],
-    "client management": ["stakeholder management", "client engagement", "senior client interface"],
-    "leadership": ["team leadership", "people management", "mentoring", "line management"],
+    "client management": ["stakeholder management", "client engagement", "senior client interface", "client interface", "client relationship", "client relationships", "client liaison"],
+    "leadership": ["team leadership", "people management", "mentoring", "line management", "lead teams", "lead team", "manage teams", "manage team", "direct teams", "team management"],
     "value engineering": ["value optimisation", "value optimization", "cost engineering"],
     "quality assurance": ["qa", "quality control", "technical review", "design review"],
     "saudi council of engineers": ["sce", "professional classification"],
@@ -102,7 +102,8 @@
   ],
   "specialization": {
     "design_lane_terms": ["design", "architect", "architecture", "architectural", "technical", "station", "landscape", "public realm", "urban", "interior", "masterplan", "compliance", "governance"],
-    "out_of_lane_terms": ["planner", "planning", "planning engineer", "scheduling", "schedule manager", "project engineer", "engineering manager", "site engineer", "process engineer", "civil engineer", "structural engineer", "mechanical engineer", "electrical engineer", "estimator", "quantity surveyor", "cost engineer", "theming", "smart city", "software", "developer", "analyst", "strategy", "strategic", "data scientist", "accountant", "finance", "marketing", "sales", "legal counsel", "rams", "reliability engineer", "reliability engineering", "systems assurance", "system assurance", "ram analysis", "safety assurance", "functional safety", "product design", "design operations", "partner onboarding"],
+    "target_management_terms": ["design manager", "design director", "project manager", "project director", "director of projects", "program manager", "programme manager", "program director", "programme director", "delivery manager", "delivery director", "construction manager", "construction director", "technical manager", "technical director", "architecture manager", "architecture director", "architectural manager", "architectural director", "design lead", "project lead", "technical lead", "construction lead", "district manager"],
+    "out_of_lane_terms": ["planner", "planning", "planning engineer", "scheduling", "schedule manager", "project engineer", "engineering manager", "site engineer", "process engineer", "civil engineer", "structural engineer", "mechanical engineer", "electrical engineer", "estimator", "quantity surveyor", "cost engineer", "hse", "health and safety", "health safety", "safety officer", "safety manager", "safety inspector", "hse inspector", "hse manager", "inspector", "inspection engineer", "environment manager", "environment senior manager", "senior environment manager", "environmental manager", "environmental senior manager", "senior environmental manager", "environment director", "director environment", "environmental director", "director environmental", "contracts administrator", "contract administrator", "commercial manager", "senior commercial manager", "commercial head", "head of commercial", "procurement", "financial", "finance", "cost control", "human resources", "workers welfare", "welfare", "logistics representative", "logistics manager", "warehouse supervisor", "supervisor warehouse", "warehouse manager", "maintenance foreman", "area maintenance foreman", "static tech", "static technician", "facility management", "facilities management", "document controller", "document control", "land surveyor", "surveyor", "gis specialist", "gis manager", "cad manager", "cad technician", "fire protection engineer", "safety engineer", "process safety engineer", "theming", "smart city", "software", "developer", "analyst", "strategy", "strategic", "data scientist", "accountant", "marketing", "sales", "legal counsel", "rams", "reliability engineer", "reliability engineering", "systems assurance", "system assurance", "ram analysis", "safety assurance", "functional safety", "product design", "design operations", "partner onboarding"],
     "production_terms": ["architect", "designer", "planner", "engineer", "coordinator", "technician", "drafter", "consultant", "specialist", "associate", "analyst", "architectural designer"],
     "junior_terms": ["junior", "graduate", "intern", "entry-level", "entry level", "assistant"]
   }

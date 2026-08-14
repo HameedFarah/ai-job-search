@@ -83,6 +83,46 @@ def test_scanner_uses_central_pipeline_and_bundle(engine_root: Path) -> None:
     assert record["processing_state"]["bundle_hash"] == report["bundle_hash"]
 
 
+def test_scanner_routes_short_jd_to_manual_review_and_continues_batch(engine_root: Path) -> None:
+    short = {
+        "company": "Short JD Co",
+        "role": "Design Manager",
+        "location": "Riyadh, Saudi Arabia",
+        "source": "test",
+        "source_url": "https://example.com/jobs/short",
+        "application_url": "https://example.com/jobs/short/apply",
+        "live_status": "live",
+        "live_verified_at": "2026-08-14T10:00:00+00:00",
+        "live_verification_source": "official employer careers page",
+        "full_job_description": "Design Manager vacancy. Apply via the official portal.",
+    }
+    valid = dict(job_dict())
+    valid["source_url"] = "https://example.com/jobs/valid-after-short"
+    valid["application_url"] = "https://example.com/jobs/valid-after-short/apply"
+    source = engine_root / "scan-short-and-valid.json"
+    source.write_text(json.dumps({"jobs": [short, valid]}), encoding="utf-8")
+
+    report = run_scan(source, root=engine_root, scanner_id="chatgpt_scanner")
+
+    assert report["statistics"]["jobs_ingested"] == 2
+    assert report["statistics"]["manual_review_needed"] == 1
+    assert len(report["manual_review_needed"]) == 1
+    manual = report["manual_review_needed"][0]
+    assert manual["processing_status"] == "manual_review_needed"
+    assert manual["fit_score"] is None
+    assert manual["recommendation"] == "unscored"
+    assert manual["manual_review_reason"] == "insufficient_job_description"
+    assert any(result["generation_packet"] for result in report["results"] if result["job_id"] != manual["job_id"])
+
+    record_path = engine_root / "projects/job-automation/data/jobs" / f"{manual['job_id']}.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["job"]["processing_status"] == "manual_review_needed"
+    assert record["job"]["fit_score"] == ""
+    assert record["scoring"]["total"] is None
+    assert record["processing_state"]["reason_code"] == "insufficient_job_description"
+    assert record["processing_state"]["external_action_allowed"] is False
+
+
 def test_scanner_rejects_unknown_scanner_id(engine_root: Path) -> None:
     source = engine_root / "scan-input.json"
     source.write_text(json.dumps({"jobs": [dict(job_dict())]}), encoding="utf-8")

@@ -52,6 +52,13 @@ def test_lever_parses_fixture_and_ms_epoch_date() -> None:
     assert first.detail_url.startswith("https://jobs.example.lever.co/")
     assert first.has_description
 
+def test_successfactors_nested_description_parser_keeps_full_text() -> None:
+    from career_engine.sources.adapters.successfactors import _JobDescriptionTextParser
+    parser = _JobDescriptionTextParser()
+    parser.feed('<span itemprop="description" class="jobdescription"><p>Lead <span>design</span> delivery</p><ul><li>Coordinate teams</li></ul></span>')
+    assert parser.text() == "Lead design delivery Coordinate teams"
+
+
 def test_successfactors_parses_full_description_fixture() -> None:
     from career_engine.sources.cli import build_adapter
     jobs = build_adapter("successfactors", offline=True).search(
@@ -65,6 +72,39 @@ def test_successfactors_parses_full_description_fixture() -> None:
     assert jobs[0].external_job_id == "857309723"
     assert "10+ years" in jobs[0].description_text
     assert jobs[0].provenance.official is True
+
+
+def test_successfactors_detail_failure_keeps_vacancy_and_continues(monkeypatch) -> None:
+    from career_engine.sources.adapters.successfactors import SuccessFactorsAdapter
+
+    adapter = SuccessFactorsAdapter()
+    monkeypatch.setattr(
+        adapter,
+        "_enumerate",
+        lambda base, requested, offline: [
+            ("100", "Design Manager", "/job/Design-Manager/100/"),
+            ("101", "Project Director", "/job/Project-Director/101/"),
+        ],
+    )
+
+    def fake_detail(url: str, *, offline: bool) -> str:
+        if url.endswith("/100/"):
+            raise SourceError("Timeout after 12s fetching detail")
+        return '<span class="jobdescription"><p>Lead multidisciplinary project delivery and client coordination through design and construction.</p></span>'
+
+    monkeypatch.setattr(adapter, "_load_detail", fake_detail)
+    jobs = adapter.search(
+        company="Red Sea Global|https://careers.theredsea.sa/",
+        limit=10,
+        fetch_full=True,
+        offline=False,
+    )
+    assert len(jobs) == 2
+    assert jobs[0].external_job_id == "100"
+    assert jobs[0].description_text == ""
+    assert "Timeout" in jobs[0].extra["detail_fetch_error"]
+    assert jobs[1].external_job_id == "101"
+    assert "multidisciplinary project delivery" in jobs[1].description_text
 
 
 def test_jibeapply_parses_full_description_fixture() -> None:

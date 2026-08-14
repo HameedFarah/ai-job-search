@@ -128,6 +128,105 @@ def test_adjacent_design_management_roles_keep_multiplier_one(engine_root: Path,
     assert score["calibration"]["adjacent_design_management"] or score["calibration"]["has_management"]
 
 
+@pytest.mark.parametrize("role", [
+    "QA Manager",
+    "Senior Commercial Manager",
+    "Facility Management Director",
+    "Logistics Manager",
+])
+def test_non_target_function_managers_stay_below_generation_threshold(engine_root: Path, role: str) -> None:
+    payload = _jd(
+        role,
+        "- Lead a specialist functional team and manage compliance, reporting, budgets and internal stakeholders.\n- Direct functional procedures and performance reviews.",
+        "- 15 years of specialist functional experience.\n- Strong management, reporting and regulatory knowledge.\n- Proven leadership of specialist teams.",
+    )
+    score = _score(payload, engine_root)
+    assert score["total"] < 70, (role, score)
+    assert score["calibration"]["mismatch_multiplier"] < 1.0
+
+
+def test_logistics_project_manager_remains_target_lane(engine_root: Path) -> None:
+    payload = _jd(
+        "Senior Project Manager (Logistics)",
+        "- Lead multidisciplinary project delivery for logistics facilities from design through construction.\n- Manage design coordination, client interfaces, risk, programme and construction-stage delivery.",
+        "- Degree in architecture or engineering.\n- 15 years of project management experience delivering logistics or industrial facilities in Saudi Arabia.",
+    )
+    score = _score(payload, engine_root)
+    assert score["calibration"]["target_management"] is True
+    assert score["calibration"]["out_of_lane"] is False
+    assert score["calibration"]["mismatch_multiplier"] == 1.0
+    assert score["total"] >= 70, score
+
+
+def test_environment_manager_does_not_get_generic_manager_full_credit(engine_root: Path) -> None:
+    environment = _jd(
+        "Environment Senior Manager",
+        "- Lead environmental compliance, ecology, permitting and sustainability reporting.\n- Manage environmental specialists and regulatory submissions.",
+        "- Environmental management experience is required.\n- Degree in environmental science or environmental engineering.\n- Strong knowledge of environmental regulation and impact assessment.",
+    )
+    score = _score(environment, engine_root)
+    assert score["total"] < 70, score
+    assert score["calibration"]["out_of_lane"] is True
+    assert score["calibration"]["mismatch_multiplier"] < 1.0
+
+
+@pytest.mark.parametrize("role", [
+    "Supervisor-Warehouse",
+    "Area Maintenance Foreman",
+    "Static Tech I",
+])
+def test_non_target_operations_titles_stay_below_generation_threshold(engine_root: Path, role: str) -> None:
+    payload = _jd(
+        role,
+        "- Perform or supervise specialist maintenance and warehouse operations.\n- Maintain operational records and coordinate daily site tasks.",
+        "- Relevant technical or operations experience is required.\n- Knowledge of maintenance or warehouse procedures is required.",
+    )
+    score = _score(payload, engine_root)
+    assert score["total"] < 70, (role, score)
+    assert score["calibration"]["out_of_lane"] is True
+
+
+def test_pure_hse_and_inspection_roles_stay_below_generation_threshold(engine_root: Path) -> None:
+    hse = _jd(
+        "HSE Inspector",
+        "- Conduct site safety inspections and enforce permit-to-work requirements.\n- Record safety observations and report incidents.",
+        "- HSE inspection experience is required.\n- NEBOSH or equivalent safety certification preferred.\n- Strong knowledge of occupational health and safety procedures.",
+    )
+    score = _score(hse, engine_root)
+    assert score["total"] < 70, score
+    assert score["calibration"]["out_of_lane"] is True
+    assert score["calibration"]["mismatch_multiplier"] < 1.0
+
+
+def test_design_management_ranks_above_hse_inspection(engine_root: Path) -> None:
+    design = _jd(
+        "Design Manager",
+        "- Manage design teams and multidisciplinary coordination from concept through construction.\n- Lead client interfaces, design reviews, value engineering and project delivery.",
+        "- Degree in architecture.\n- Experience managing design delivery and technical coordination on complex projects.\n- Strong stakeholder and team management experience.",
+    )
+    hse = _jd(
+        "Senior HSE Inspector",
+        "- Lead safety inspections and compliance reporting across construction sites.\n- Investigate incidents and monitor toolbox talks.",
+        "- HSE inspection experience and safety certification required.\n- Knowledge of occupational health and safety legislation.",
+    )
+    design_score = _score(design, engine_root)
+    hse_score = _score(hse, engine_root)
+    assert design_score["total"] >= 70, design_score
+    assert design_score["total"] > hse_score["total"] + 20, (design_score, hse_score)
+
+
+def test_project_delivery_manager_remains_in_target_lane(engine_root: Path) -> None:
+    project = _jd(
+        "Senior Project Manager",
+        "- Lead multidisciplinary project delivery, client relationships, design coordination and construction-stage oversight.\n- Direct teams, programme milestones, risk reviews and stakeholder decisions.",
+        "- Degree in architecture or engineering.\n- 15 years of project management experience delivering complex built-environment projects in Saudi Arabia.",
+    )
+    score = _score(project, engine_root)
+    assert score["calibration"]["out_of_lane"] is False
+    assert score["calibration"]["mismatch_multiplier"] == 1.0
+    assert score["total"] >= 70, score
+
+
 def test_adjacent_design_management_with_strong_evidence_scores_80(engine_root: Path) -> None:
     jd = _jd("Senior Design Manager", DESIGN_MANAGEMENT_JD, DESIGN_MANAGEMENT_JD,
              "Saudi Council of Engineers professional classification.")

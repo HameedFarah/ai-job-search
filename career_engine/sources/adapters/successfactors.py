@@ -12,10 +12,9 @@ retention stay inside the central Career Engine.
 
 from __future__ import annotations
 
-import json
 import re
 from html import unescape
-from typing import Any
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from .. import network
@@ -26,10 +25,48 @@ from ..provenance import provenance as make_provenance
 _TILE_RE = re.compile(r'<li class="job-tile job-id-(\d+)\b[\s\S]*?</li>', re.I)
 _URL_RE = re.compile(r'data-url="([^"]+)"', re.I)
 _TITLE_RE = re.compile(r'class="jobTitle-link[^"]*"[^>]*>([\s\S]*?)</a>', re.I)
-_DESC_RE = re.compile(
-    r'<span[^>]*class="[^"]*jobdescription[^"]*"[^>]*>([\s\S]*?)</span>',
-    re.I,
-)
+_BLOCK_TAGS = {"p", "li", "ul", "ol", "br", "div", "h1", "h2", "h3", "h4", "h5", "h6"}
+
+
+class _JobDescriptionTextParser(HTMLParser):
+    """Extract the complete nested SuccessFactors ``jobdescription`` element."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.depth = 0
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        classes = ""
+        for key, value in attrs:
+            if key.lower() == "class":
+                classes = value or ""
+                break
+        if self.depth == 0:
+            if tag.lower() == "span" and "jobdescription" in classes.split():
+                self.depth = 1
+            return
+        self.depth += 1
+        if tag.lower() in _BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.depth and tag.lower() in _BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.depth:
+            return
+        if tag.lower() in _BLOCK_TAGS:
+            self.parts.append("\n")
+        self.depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self.depth:
+            self.parts.append(data)
+
+    def text(self) -> str:
+        return " ".join(" ".join(self.parts).split())
 
 
 class SuccessFactorsAdapter(SourceAdapter):
@@ -54,11 +91,19 @@ class SuccessFactorsAdapter(SourceAdapter):
         for raw_id, role, path in tiles:
             detail_url = urljoin(base.rstrip("/") + "/", path)
             description_html = ""
+            description_text = ""
+            detail_fetch_error = ""
             if fetch_full:
-                detail_html = self._load_detail(detail_url, offline=offline)
-                match = _DESC_RE.search(detail_html)
-                if match:
-                    description_html = match.group(1).strip()
+                try:
+                    detail_html = self._load_detail(detail_url, offline=offline)
+                    parser = _JobDescriptionTextParser()
+                    parser.feed(detail_html)
+                    description_text = parser.text()
+                except SourceError as exc:
+                    # A single RMK detail page must not zero the entire source.
+                    # Keep the official vacancy and let the central scanner route
+                    # the insufficient description to Manual Review Needed.
+                    detail_fetch_error = str(exc)
             job = DiscoveryJob(
                 adapter_id=self.source_id,
                 company=company_name,
@@ -70,7 +115,7 @@ class SuccessFactorsAdapter(SourceAdapter):
                 posted=unknown(self.source_id),
                 found_date=self._today(),
                 description_html=description_html,
-                description_text=html_to_text(description_html),
+                description_text=description_text,
                 provenance=make_provenance(
                     source_id=self.source_id,
                     source_name=self.source_name,
@@ -80,6 +125,7 @@ class SuccessFactorsAdapter(SourceAdapter):
                     detail_url=detail_url,
                     raw_id=raw_id,
                 ),
+                extra={"detail_fetch_error": detail_fetch_error} if detail_fetch_error else {},
             )
             # Only apply a location filter when the tenant actually exposes a
             # location. A blank RMK location must not turn a live board into a

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.0",
-  "built_at": "2026-08-14T15:10:30+00:00",
-  "source_hash": "16e988bd0f59d7913f41f4cddf5ae07e121d191983f673562a14fca3788dbf72",
+  "built_at": "2026-08-14T16:44:12+00:00",
+  "source_hash": "bd30523e75a5ee56a46f587945769440de93b766a470035538a8ef4b26049e7c",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -12,9 +12,9 @@
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "de51cfe3f49fad9cd15f552ae4516f707f5fbfa478ca21bb686e8c973708619d",
-      "size": 7014,
-      "modified_ns": 1786691283863190932
+      "sha256": "d6ea46f3b4ea34f9d87548b6d2f8327934c02f298a81912844089f6549b7cee6",
+      "size": 9181,
+      "modified_ns": 1786725833944422305
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -242,17 +242,33 @@
       "design management": [
         "design coordination",
         "multidisciplinary coordination",
-        "technical coordination"
+        "technical coordination",
+        "manage design",
+        "managing design",
+        "design process",
+        "design team",
+        "design teams",
+        "design delivery"
       ],
       "project delivery": [
         "programme delivery",
+        "program delivery",
         "project management",
-        "delivery management"
+        "delivery management",
+        "deliver projects",
+        "deliver project",
+        "project execution",
+        "project lifecycle",
+        "project life cycle"
       ],
       "construction oversight": [
         "construction supervision",
         "site supervision",
-        "construction-stage services"
+        "construction-stage services",
+        "construction management",
+        "site-stage",
+        "site stage",
+        "construction delivery"
       ],
       "contract administration": [
         "commercial assessment",
@@ -268,13 +284,23 @@
       "client management": [
         "stakeholder management",
         "client engagement",
-        "senior client interface"
+        "senior client interface",
+        "client interface",
+        "client relationship",
+        "client relationships",
+        "client liaison"
       ],
       "leadership": [
         "team leadership",
         "people management",
         "mentoring",
-        "line management"
+        "line management",
+        "lead teams",
+        "lead team",
+        "manage teams",
+        "manage team",
+        "direct teams",
+        "team management"
       ],
       "value engineering": [
         "value optimisation",
@@ -540,6 +566,32 @@
         "compliance",
         "governance"
       ],
+      "target_management_terms": [
+        "design manager",
+        "design director",
+        "project manager",
+        "project director",
+        "director of projects",
+        "program manager",
+        "programme manager",
+        "program director",
+        "programme director",
+        "delivery manager",
+        "delivery director",
+        "construction manager",
+        "construction director",
+        "technical manager",
+        "technical director",
+        "architecture manager",
+        "architecture director",
+        "architectural manager",
+        "architectural director",
+        "design lead",
+        "project lead",
+        "technical lead",
+        "construction lead",
+        "district manager"
+      ],
       "out_of_lane_terms": [
         "planner",
         "planning",
@@ -557,6 +609,61 @@
         "estimator",
         "quantity surveyor",
         "cost engineer",
+        "hse",
+        "health and safety",
+        "health safety",
+        "safety officer",
+        "safety manager",
+        "safety inspector",
+        "hse inspector",
+        "hse manager",
+        "inspector",
+        "inspection engineer",
+        "environment manager",
+        "environment senior manager",
+        "senior environment manager",
+        "environmental manager",
+        "environmental senior manager",
+        "senior environmental manager",
+        "environment director",
+        "director environment",
+        "environmental director",
+        "director environmental",
+        "contracts administrator",
+        "contract administrator",
+        "commercial manager",
+        "senior commercial manager",
+        "commercial head",
+        "head of commercial",
+        "procurement",
+        "financial",
+        "finance",
+        "cost control",
+        "human resources",
+        "workers welfare",
+        "welfare",
+        "logistics representative",
+        "logistics manager",
+        "warehouse supervisor",
+        "supervisor warehouse",
+        "warehouse manager",
+        "maintenance foreman",
+        "area maintenance foreman",
+        "static tech",
+        "static technician",
+        "facility management",
+        "facilities management",
+        "document controller",
+        "document control",
+        "land surveyor",
+        "surveyor",
+        "gis specialist",
+        "gis manager",
+        "cad manager",
+        "cad technician",
+        "fire protection engineer",
+        "safety engineer",
+        "process safety engineer",
         "theming",
         "smart city",
         "software",
@@ -566,7 +673,6 @@
         "strategic",
         "data scientist",
         "accountant",
-        "finance",
         "marketing",
         "sales",
         "legal counsel",
@@ -1392,6 +1498,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "eba2743c59a1e7c060a9b26c724f05e114df11dd670417764acb76020b1a7f76",
+  "bundle_hash": "a1a2b8b2c0135fbc8980ef9c200c4cac4a76eb9140652a7f6fe66219987b8e70",
   "cache_reused": false
 }

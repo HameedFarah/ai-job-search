@@ -1,5 +1,5 @@
 ---
-framework_version: 1.2.6
+framework_version: 1.2.7
 ---
 
 # Agent Guidelines: AI Job Search
@@ -63,7 +63,7 @@ Before material work, read the central machine policy, operating contract, curre
 ./career-engine render-ats --job-id <id>
 ./career-engine render-ats-options --job-id <id> [--out-dir <dir>]
 ./career-engine package --job-id <id>
-node /home/hameedo/websites/career-review/scripts/read_feedback.js [role-key] [--pending-only]
+node dashboard/career-review/scripts/read_feedback.js [role-key] [--pending-only]
 ```
 
 `validate-config` validates the central config, required files, bundle

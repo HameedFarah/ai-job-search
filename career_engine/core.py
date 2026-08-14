@@ -120,6 +120,15 @@ _MARKETING_HEADINGS = (
     "a place for everyone",
     "apply today",
 )
+_BOILERPLATE_PREFIXES = (
+    "we are an equal opportunity employer",
+    "equal opportunity employer",
+    "all qualified applicants",
+    "parsons equally employs representation",
+    "parsons is aware of fraudulent recruitment practices",
+    "to learn more about recruitment fraud",
+    "we truly invest and care about our employee",
+)
 _CLAUSE_STARTERS = (
     "lead", "manage", "oversee", "provide", "review", "support", "develop",
     "define", "evaluate", "conduct", "create", "write", "liaise", "prepare",
@@ -138,7 +147,7 @@ def _heading_kind(line: str, headings: dict[str, list[str]]) -> str | None:
     cleaned = re.sub(r"^#{1,6}\s*", "", cleaned)
     cleaned = re.sub(r"^(?:\*\*|__)+", "", cleaned)
     cleaned = re.sub(r"(?:\*\*|__)+$", "", cleaned)
-    cleaned = re.sub(r"^[^\w]+", "", cleaned, flags=re.UNICODE).strip(" :*#_")
+    cleaned = re.sub(r"^[^\w]+", "", cleaned, flags=re.UNICODE).strip(" :;*#_")
     for kind, values in headings.items():
         if cleaned in values:
             return kind
@@ -159,14 +168,14 @@ def _requirement_lines(text: str, headings: dict[str, list[str]]) -> list[str]:
     heading_map: dict[str, str] = {}
     for kind, values in headings.items():
         for value in values:
-            heading_map[value.lower().strip(" :")] = kind
+            heading_map[value.lower().strip(" :;")] = kind
     for kind, values in _INLINE_HEADING_ALIASES.items():
         for value in values:
             heading_map[value] = kind
 
     markers = sorted(set(heading_map) | set(_MARKETING_HEADINGS), key=len, reverse=True)
     marker_pattern = re.compile(
-        r"(?<![A-Za-z0-9])(" + "|".join(re.escape(item) for item in markers) + r")(?:\s*:)?(?=\s|$)",
+        r"(?<![A-Za-z0-9])(" + "|".join(re.escape(item) for item in markers) + r")(?:\s*[:;])?(?=\s|$)",
         re.IGNORECASE,
     )
     expanded: list[str] = []
@@ -187,7 +196,7 @@ def _requirement_lines(text: str, headings: dict[str, list[str]]) -> list[str]:
 
     output: list[str] = []
     stop = False
-    sentence_boundary = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+    sentence_boundary = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
     starter_boundary = re.compile(
         r"\s+(?=(?:" + "|".join(re.escape(item) for item in _CLAUSE_STARTERS) + r")\b)",
         re.IGNORECASE,
@@ -333,6 +342,11 @@ def normalize_job(payload: dict[str, Any], taxonomy: dict[str, Any]) -> dict[str
         line = BULLET_RE.sub("", raw).strip()
         if not line or len(line) < 8:
             continue
+        low_line = line.lower().strip()
+        if any(low_line.startswith(prefix) for prefix in _BOILERPLATE_PREFIXES):
+            break
+        if low_line.startswith("http://") or low_line.startswith("https://"):
+            continue
         if raw.endswith(":") and len(raw.split()) <= 8:
             ambiguous.append(raw)
             continue
@@ -425,7 +439,18 @@ def match_evidence(normalized_job: dict[str, Any], bundle: dict[str, Any]) -> li
             eligible = claims
         scored: list[tuple[float, str]] = []
         for claim in eligible:
-            claim_terms = set(str(term).lower() for term in claim.get("tags", []) + claim.get("aliases", []))
+            # Match against the approved claim's actual safe wording and label,
+            # not only its manually assigned tags.  The previous tag-only path
+            # systematically under-scored broad senior delivery/design roles
+            # whose JDs describe the same work in natural prose.
+            claim_corpus = " ".join([
+                str(claim.get("label", "")),
+                str(claim.get("safe_wording", "")),
+                *[str(term) for term in claim.get("tags", [])],
+                *[str(term) for term in claim.get("aliases", [])],
+            ])
+            claim_terms = set(_terms(claim_corpus, aliases))
+            claim_terms.update(str(term).lower() for term in claim.get("tags", []) + claim.get("aliases", []))
             for canonical, variants in aliases.items():
                 if canonical in req_terms and (canonical in claim_terms or any(v in claim_terms for v in variants)):
                     claim_terms.add(canonical)
@@ -476,9 +501,12 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
         planner, engineer, ...) without management authority;
       - ``junior``: explicitly junior title.
     """
-    title = role.lower()
+    # Normalize punctuation so equivalent titles such as "Supervisor-Warehouse"
+    # and "Supervisor / Warehouse" are classified the same way.
+    title = re.sub(r"[^a-z0-9]+", " ", role.lower()).strip()
     spec = taxonomy.get("specialization", {})
     design_lane = spec.get("design_lane_terms", [])
+    target_management = spec.get("target_management_terms", [])
     out_of_lane = spec.get("out_of_lane_terms", [])
     production = spec.get("production_terms", [])
     junior = spec.get("junior_terms", [])
@@ -486,6 +514,7 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
 
     has_management = any(term in title for term in seniority_terms)
     has_design_lane = any(term in title for term in design_lane)
+    has_target_management = any(term in title for term in target_management)
     has_out_of_lane = any(term in title for term in out_of_lane) or "account manager" in title
     has_production = any(term in title for term in production)
     has_junior = any(term in title for term in junior)
@@ -496,19 +525,25 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
         specialization_factor, seniority_factor, multiplier = 0.3, 1.0, 0.35
     elif has_out_of_lane:
         specialization_factor, seniority_factor, multiplier = 0.2, 0.5, 0.35
-    elif has_management and has_design_lane:
-        # Adjacent senior design-management roles are never suppressed.
+    elif has_management and (has_design_lane or has_target_management):
+        # Explicit design/project/program/delivery/construction/technical
+        # management roles are central target lanes and are never suppressed.
         specialization_factor, seniority_factor, multiplier = 1.0, 1.0, 1.0
     elif has_production and not has_management:
         specialization_factor, seniority_factor, multiplier = 0.4, 0.35, 0.6
     elif has_management:
-        specialization_factor, seniority_factor, multiplier = 1.0, 1.0, 1.0
+        # A generic Manager/Director title proves seniority, not functional fit.
+        # Keep it potentially selective, but require an explicit target-lane
+        # title before generic management can receive full fit credit.
+        specialization_factor, seniority_factor, multiplier = 0.6, 1.0, 0.65
     else:
         specialization_factor, seniority_factor, multiplier = 1.0, 0.55, 1.0
 
     return {
         "role_title": role,
         "adjacent_design_management": bool(has_management and has_design_lane),
+        "target_management": bool(has_management and has_target_management),
+        "generic_management": bool(has_management and not has_design_lane and not has_target_management and not has_out_of_lane),
         "out_of_lane": has_out_of_lane,
         "production": has_production and not has_management,
         "junior": has_junior,

@@ -292,11 +292,15 @@ def _row_summary(tracker: Any, row: dict[str, str]) -> dict[str, Any]:
         "job_id": row["job_id"],
         "company": row["company"],
         "role": row["role"],
+        "source": row["source"],
+        "source_url": row["source_url"],
         "fit_score": row["fit_score"],
         "raw_total": scoring.get("raw_total", row["fit_score"]),
         "priority": row["priority"],
         "processing_status": row["processing_status"],
         "application_status": row["application_status"],
+        "manual_review_reason": processing_state.get("reason_code", "") if row["processing_status"] == "manual_review_needed" else "",
+        "manual_review_detail": processing_state.get("reason", "") if row["processing_status"] == "manual_review_needed" else "",
         "live_status": processing_state.get("live_status", ""),
         "route": route.get("route", ""),
         "application_url": route.get("application_url", ""),
@@ -390,7 +394,7 @@ def show_job(job_id: str, root: Path | None = None) -> dict[str, Any]:
 
 DASHBOARD_PUBLISHER = {
     "established_publisher": (
-        "Static career-review site at /home/hameedo/websites/career-review "
+        "Static career-review site at dashboard/career-review "
         "(scripts/build_site.js builds from the canonical tracker; "
         "scripts/publish_here_now.js deploys the permanent here.now URL)."
     ),

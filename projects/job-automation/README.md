@@ -57,7 +57,7 @@ Central engine commands (verified against `career_engine/cli.py`; run from the r
 Before regenerating any package, read unresolved dashboard comments and pending AI requests:
 
 ```bash
-node /home/hameedo/websites/career-review/scripts/read_feedback.js [role-key] [--pending-only]
+node dashboard/career-review/scripts/read_feedback.js [role-key] [--pending-only]
 ```
 
 Tracker CLI:

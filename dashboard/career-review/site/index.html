@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en" data-theme="executive-navy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="description" content="Private Career Engine application workflow for Abdelhamid Farah">
+  <title>Career Application Board</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="topbar board-topbar">
+    <div class="brand compact-brand">
+      <h1>Career Engine</h1>
+      <p class="subtitle">Track, evaluate, and move opportunities forward.</p>
+    </div>
+    <div class="scan-status" title="Latest dashboard refresh">
+      <strong id="scan-relative">Loading…</strong>
+      <span id="scan-absolute"></span>
+      <button id="refresh-board" class="header-refresh-button" type="button" aria-label="Scan for new jobs through Hermes" title="Run a fresh Hermes Career Engine scan">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"></path><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary-grid" id="summary"></section>
+
+    <section class="toolbar compact-toolbar" aria-label="Board controls">
+      <button id="mobile-search-toggle" class="icon-button mobile-search-toggle" type="button" aria-label="Open job search" aria-expanded="false" title="Search jobs">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      </button>
+      <label class="desktop-search-control" aria-label="Search jobs, roles, or companies">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input id="search-filter" type="search" placeholder="Search jobs, roles, or companies…" autocomplete="off">
+      </label>
+
+      <details class="tool-menu dismissible-menu">
+        <summary aria-label="Filter recommendation" title="Filter">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" x2="4" y1="21" y2="14"></line><line x1="4" x2="4" y1="10" y2="3"></line><line x1="12" x2="12" y1="21" y2="12"></line><line x1="12" x2="12" y1="8" y2="3"></line><line x1="20" x2="20" y1="21" y2="16"></line><line x1="20" x2="20" y1="12" y2="3"></line><line x1="1" x2="7" y1="14" y2="14"></line><line x1="9" x2="15" y1="8" y2="8"></line><line x1="17" x2="23" y1="16" y2="16"></line></svg>
+          <span class="toolbar-label">Filters</span>
+        </summary>
+        <div class="tool-popover menu-popover" aria-label="Recommendation filter">
+          <span class="menu-heading">Recommendation</span>
+          <div class="direct-menu-list" data-direct-control="decision-filter">
+            <button type="button" class="direct-menu-item is-active" data-value="all">All</button>
+            <button type="button" class="direct-menu-item" data-value="pursue">Pursue</button>
+            <button type="button" class="direct-menu-item" data-value="selective">Selective</button>
+            <button type="button" class="direct-menu-item" data-value="stretch">Stretch</button>
+            <button type="button" class="direct-menu-item" data-value="do_not_pursue">Do not pursue</button>
+          </div>
+          <select id="decision-filter" hidden aria-hidden="true" tabindex="-1">
+            <option value="all">All</option><option value="pursue">Pursue</option><option value="selective">Selective</option><option value="stretch">Stretch</option><option value="do_not_pursue">Do not pursue</option>
+          </select>
+        </div>
+      </details>
+
+      <details class="tool-menu dismissible-menu">
+        <summary aria-label="Sort jobs" title="Sort">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+          <span class="toolbar-label">Sort</span>
+        </summary>
+        <div class="tool-popover menu-popover" aria-label="Sort jobs">
+          <span class="menu-heading">Sort</span>
+          <div class="direct-menu-list" data-direct-control="sort-order">
+            <button type="button" class="direct-menu-item is-active" data-value="recommended">Recommended</button>
+            <button type="button" class="direct-menu-item" data-value="score_desc">Score: high to low</button>
+            <button type="button" class="direct-menu-item" data-value="score_asc">Score: low to high</button>
+            <button type="button" class="direct-menu-item" data-value="posted_newest">Posted: newest first</button>
+            <button type="button" class="direct-menu-item" data-value="posted_oldest">Posted: oldest first</button>
+            <button type="button" class="direct-menu-item" data-value="activity_desc">Recent activity</button>
+            <button type="button" class="direct-menu-item" data-value="found_desc">Newest found</button>
+            <button type="button" class="direct-menu-item" data-value="company_asc">Company A-Z</button>
+          </div>
+          <select id="sort-order" hidden aria-hidden="true" tabindex="-1">
+            <option value="recommended">Recommended</option><option value="score_desc">Score: high to low</option><option value="score_asc">Score: low to high</option><option value="posted_newest">Posted: newest first</option><option value="posted_oldest">Posted: oldest first</option><option value="activity_desc">Recent activity</option><option value="found_desc">Newest found</option><option value="company_asc">Company A-Z</option>
+          </select>
+        </div>
+      </details>
+
+      <details class="tool-menu dismissible-menu">
+        <summary aria-label="Display options" title="Display">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect></svg>
+          <span class="toolbar-label">Display</span>
+        </summary>
+        <div class="tool-popover menu-popover" aria-label="Display options">
+          <span class="menu-heading">Design</span>
+          <div class="direct-menu-list" data-direct-control="theme-select">
+            <button type="button" class="direct-menu-item is-active" data-value="executive-navy">Executive Navy</button>
+            <button type="button" class="direct-menu-item" data-value="compact-slate">Compact Slate</button>
+            <button type="button" class="direct-menu-item" data-value="warm-paper">Warm Paper</button>
+            <button type="button" class="direct-menu-item" data-value="high-contrast">High Contrast</button>
+            <button type="button" class="direct-menu-item" data-value="minimal-grid">Minimal Grid</button>
+          </div>
+          <select id="theme-select" hidden aria-hidden="true" tabindex="-1">
+            <option value="executive-navy">Executive Navy</option><option value="compact-slate">Compact Slate</option><option value="warm-paper">Warm Paper</option><option value="high-contrast">High Contrast</option><option value="minimal-grid">Minimal Grid</option>
+          </select>
+          <a class="direct-menu-item direct-menu-link" href="resume-designs.html">Compare ATS designs</a>
+        </div>
+      </details>
+
+      <!-- Hermes refresh control is aligned with the scan status in the header. -->
+      <div class="process-control" aria-label="Process jobs by score">
+        <button id="process-jobs" class="toolbar-button process-jobs-button" type="button" title="Process all eligible live jobs at or above this score">
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18"></path><path d="m7 8 5-5 5 5"></path><path d="M5 14h14"></path></svg>
+          <span class="toolbar-label">Process all ≥</span>
+        </button>
+        <label for="process-score" class="sr-only">Minimum score to process</label>
+        <input id="process-score" type="number" min="0" max="100" step="1" value="70" aria-label="Minimum score to process">
+      </div>
+      <span id="operation-status" class="operation-status" aria-live="polite"></span>
+    </section>
+
+    <section id="board" class="kanban" aria-label="Career application Kanban board"></section>
+
+    <details class="workflow-help">
+      <summary>Workflow, data and Gmail notes</summary>
+      <div class="help-grid">
+        <p><strong>Open a job:</strong> click anywhere on a card (not on buttons, selects or links) to open its detail overlay. The overlay shows score, dates, the selected resume template, cover letter, email text, stage controls, comments and the AI-request queue — all inside the dashboard, no page navigation. <kbd>Esc</kbd> closes it.</p>
+        <p><strong>Move cards:</strong> drag between columns or use the stage select / action button on each card. <strong>Mark processing</strong> is manual workflow tracking only; use <strong>Process all ≥ N</strong> for actual Career Engine package processing. Stage, resume template, comments, AI requests and design preference are saved to the private site data and survive re-publishes.</p>
+        <p><strong>Gmail:</strong> the main action opens Gmail compose (email routes) or the official application portal (portal routes) only in a new tab. If the popup is blocked, the page shows a copyable link and never replaces this tab.</p>
+        <p><strong>External gate:</strong> Ready for review is the final internal pre-submission state. You still submit or send manually, then confirm it here.</p>
+        <p><strong>Recency tags:</strong> Fresh ≤2 days · Recent ≤7 days · Aging ≤30 days · Old &gt;30 days · Unknown when no date. <strong>Score tags:</strong> High ≥85 · Good 70–84 · Marginal 55–69 · Low &lt;55.</p>
+      </div>
+    </details>
+  </main>
+
+  <div id="job-overlay" class="overlay" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="ov-role">
+    <div class="overlay-backdrop" data-overlay-close></div>
+    <div class="overlay-panel" role="document">
+      <div id="overlay-content"></div>
+    </div>
+  </div>
+
+  <template id="role-template">
+    <article class="role-card clickable" draggable="true" tabindex="0">
+      <div class="card-topline">
+        <span class="decision-badge"></span>
+        <span class="score-chip"><strong class="score-value"></strong><small>/100</small></span>
+      </div>
+      <h3 class="role-title"></h3>
+      <p class="role-company"></p>
+      <div class="card-meta">
+        <span class="role-location"></span>
+        <span class="role-age"></span>
+      </div>
+      <div class="tag-row">
+        <span class="tag tag-recency"></span>
+        <span class="tag tag-score"></span>
+        <span class="tag tag-posted" hidden></span>
+      </div>
+      <p class="brief"></p>
+      <div class="quick-files"></div>
+      <div class="stage-actions"></div>
+    </article>
+  </template>
+
+  <script src="assets/shared.js" defer></script>
+  <script src="assets/app.js" defer></script>
+</body>
+</html>

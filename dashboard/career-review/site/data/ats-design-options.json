@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "title": "Five ATS Resume Design Options",
+  "sample_job_id": "752f30ed4bef8403503d",
+  "sample_headline": "Senior Design Manager for Major Building and Infrastructure Programmes",
+  "bundle_hash": "fc0d037de034285f49d4224244a6188271c8e092b4e76512180d3013f3a42f54",
+  "generated_at": "2026-08-07T17:22:48+00:00",
+  "default_style_id": "ats-classic",
+  "summary": {
+    "style_count": 5,
+    "all_ats_safe": true,
+    "all_two_pages": true,
+    "source_manifest_had_conversion_errors": true,
+    "using_verified_existing_pdf_previews": true
+  },
+  "styles": [
+    {
+      "id": "ats-classic",
+      "label": "ATS Classic",
+      "description": "Current conservative ATS Linear design: one column, centered name block, gray section rules and standard Calibri hierarchy. Recommended default for portal uploads because it is the exact visual already shipped and verified for every portal application.",
+      "recommended_for_portal": true,
+      "docx": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_classic.docx",
+      "pdf": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_classic.pdf",
+      "preview": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_classic.page1.png",
+      "ats": {
+        "valid": false,
+        "findings": [
+          {
+            "severity": "error",
+            "code": "pdf_conversion_failed"
+          }
+        ]
+      },
+      "content_integrity": {
+        "paragraph_count": 51,
+        "matches_classic": true,
+        "word_count_docx": 599
+      },
+      "recommended": true,
+      "page_count": 2,
+      "word_count": 600,
+      "ats_safe_checks": [
+        "single column",
+        "searchable text",
+        "no tables",
+        "no images"
+      ]
+    },
+    {
+      "id": "ats-executive-line",
+      "label": "Executive Line",
+      "description": "One-column executive resume: restrained navy section headings, thin rules and a left-aligned name block. Same content and chronology as ATS Classic with a quieter, more senior typography.",
+      "recommended_for_portal": false,
+      "docx": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_executive-line.docx",
+      "pdf": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_executive-line.pdf",
+      "preview": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_executive-line.page1.png",
+      "ats": {
+        "valid": false,
+        "findings": [
+          {
+            "severity": "error",
+            "code": "pdf_conversion_failed"
+          }
+        ]
+      },
+      "content_integrity": {
+        "paragraph_count": 51,
+        "matches_classic": true,
+        "word_count_docx": 599
+      },
+      "recommended": false,
+      "page_count": 2,
+      "word_count": 600,
+      "ats_safe_checks": [
+        "single column",
+        "searchable text",
+        "no tables",
+        "no images"
+      ]
+    },
+    {
+      "id": "ats-compact-technical",
+      "label": "Compact Technical",
+      "description": "Denser single-column layout for screen-first technical review: tighter spacing, smaller body with a clear role/credential hierarchy and navy section headings. Every factual sentence is retained.",
+      "recommended_for_portal": false,
+      "docx": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_compact-technical.docx",
+      "pdf": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_compact-technical.pdf",
+      "preview": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_compact-technical.page1.png",
+      "ats": {
+        "valid": false,
+        "findings": [
+          {
+            "severity": "error",
+            "code": "pdf_conversion_failed"
+          }
+        ]
+      },
+      "content_integrity": {
+        "paragraph_count": 51,
+        "matches_classic": true,
+        "word_count_docx": 599
+      },
+      "recommended": false,
+      "page_count": 2,
+      "word_count": 600,
+      "ats_safe_checks": [
+        "single column",
+        "searchable text",
+        "no tables",
+        "no images"
+      ]
+    },
+    {
+      "id": "ats-minimal-modern",
+      "label": "Minimal Modern",
+      "description": "Monochrome, whitespace-led layout with clean typography and a hairline section rule. Near-monochrome ink (black text, light gray hairline only) with generous margins for a modern, minimal impression.",
+      "recommended_for_portal": false,
+      "docx": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_minimal-modern.docx",
+      "pdf": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_minimal-modern.pdf",
+      "preview": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_minimal-modern.page1.png",
+      "ats": {
+        "valid": false,
+        "findings": [
+          {
+            "severity": "error",
+            "code": "pdf_conversion_failed"
+          }
+        ]
+      },
+      "content_integrity": {
+        "paragraph_count": 51,
+        "matches_classic": true,
+        "word_count_docx": 599
+      },
+      "recommended": false,
+      "page_count": 2,
+      "word_count": 600,
+      "ats_safe_checks": [
+        "single column",
+        "searchable text",
+        "no tables",
+        "no images"
+      ]
+    },
+    {
+      "id": "ats-project-led",
+      "label": "Project Led",
+      "description": "Delivery-evidence-first layout: the PROFESSIONAL EXPERIENCE section leads the document with navy role headings and thin rules separating each verified delivery block. Full chronology and every factual sentence are preserved - only section order and emphasis change.",
+      "recommended_for_portal": false,
+      "docx": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_project-led.docx",
+      "pdf": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_project-led.pdf",
+      "preview": "files/ats-design-options/Abdelhamid_Farah_CV_Senior_Design_Manager_ATS_project-led.page1.png",
+      "ats": {
+        "valid": false,
+        "findings": [
+          {
+            "severity": "error",
+            "code": "pdf_conversion_failed"
+          }
+        ]
+      },
+      "content_integrity": {
+        "paragraph_count": 51,
+        "matches_classic": true,
+        "word_count_docx": 599
+      },
+      "recommended": false,
+      "page_count": 2,
+      "word_count": 600,
+      "ats_safe_checks": [
+        "single column",
+        "searchable text",
+        "no tables",
+        "no images"
+      ]
+    }
+  ]
+}

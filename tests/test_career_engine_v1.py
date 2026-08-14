@@ -243,6 +243,34 @@ Desired Skills
     assert priorities["Professional registration such as RIBA."] == "preferred"
 
 
+def test_semicolon_required_skills_heading_is_recognized_in_flattened_jd(engine_root: Path) -> None:
+    taxonomy = json.loads((engine_root / "projects/job-automation/config/requirements-taxonomy.v1.json").read_text())
+    payload = {
+        "company": "Parsons",
+        "role": "Design Manager - Infrastructure",
+        "full_job_description": (
+            "The Design Manager will manage and coordinate multidisciplinary design across assigned projects, packages and asset scopes. "
+            "Support design delivery across all project stages and coordinate design consultants and technical teams. "
+            "Review design submissions, resolve constructability issues and liaise with stakeholders. "
+            "What Required Skills You'll Bring; Bachelor’s degree in engineering, or related discipline. "
+            "10 years’ experience in design coordination or design management roles. "
+            "Experience working with multidisciplinary design consultants. "
+            "Good understanding of design development stages and coordination requirements. "
+            "Strong organizational, communication and stakeholder coordination skills. "
+            "Parsons equally employs representation at all job levels no matter the race, color, religion or sex. "
+            "Parsons is aware of fraudulent recruitment practices."
+        ),
+    }
+    normalized = normalize_job(payload, taxonomy)
+    priorities = {item["text"]: item["priority"] for item in normalized["requirements"]}
+    assert "What Required Skills You'll Bring" not in priorities
+    assert priorities["Bachelor’s degree in engineering, or related discipline."] == "mandatory"
+    assert priorities["10 years’ experience in design coordination or design management roles."] == "mandatory"
+    assert priorities["Experience working with multidisciplinary design consultants."] == "mandatory"
+    assert not any(text.startswith("Parsons equally employs") for text in priorities)
+    assert not any(text.startswith("Parsons is aware of fraudulent recruitment") for text in priorities)
+
+
 def test_markdown_decorated_requirement_and_desired_headings_are_recognized(engine_root: Path) -> None:
     taxonomy = json.loads((engine_root / "projects/job-automation/config/requirements-taxonomy.v1.json").read_text())
     payload = {
