@@ -35,6 +35,7 @@ DEFAULT_SITE_SLUG = "gilded-timber-xfj7"
 DEFAULT_WEBSITE_ROOT = Path("/home/hameedo/websites/career-review")
 HERMES_CAREER_CRON_JOB = "edc36e531637"
 HERMES_EXECUTABLE = Path("/home/hameedo/.hermes/hermes-agent/venv/bin/hermes")
+HERMES_CRON_JOBS = Path("/home/hameedo/.hermes/cron/jobs.json")
 HERMES_REFRESH_TIMEOUT_SECONDS = 90 * 60
 GLOBAL_ROLE_KEY = "__career_engine__"
 RESPONSE_COMMENT_TYPE = "assistant_response"
@@ -370,6 +371,35 @@ def _refresh_dashboard_site(repo: Path, website_root: Path) -> None:
     _run_command(["/usr/bin/node", "scripts/publish_here_now.js"], cwd=website_root, timeout=300)
 
 
+def _hermes_direct_claim_owner_alive() -> bool:
+    """Return False only when the local direct-run claim owner is provably dead.
+
+    Hermes records direct fire ownership as ``host:pid`` in cron/jobs.json. A
+    development client killed mid-run can leave a durable execution marked
+    running even though that claimant no longer exists. Do not reuse that stale
+    execution. Unknown/non-local claim shapes remain conservative (reusable).
+    """
+    try:
+        payload = json.loads(HERMES_CRON_JOBS.read_text(encoding="utf-8"))
+        jobs = payload.get("jobs", payload) if isinstance(payload, dict) else payload
+        job = next(item for item in jobs if str(item.get("id", "")) == HERMES_CAREER_CRON_JOB)
+        claim = job.get("fire_claim") or {}
+        owner = str(claim.get("by", ""))
+        pid_text = owner.rsplit(":", 1)[-1]
+        if not pid_text.isdigit():
+            return True
+        pid = int(pid_text)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    except (OSError, ValueError, StopIteration, TypeError, json.JSONDecodeError):
+        return True
+
+
 def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
     baseline_id, baseline_status = _latest_hermes_run(repo)
     if not HERMES_EXECUTABLE.is_file():
@@ -381,7 +411,8 @@ def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
     # If a Career scan is already running, reuse it rather than creating a
     # duplicate owner-triggered scan.
     trigger: subprocess.Popen[str] | None = None
-    seen_id = baseline_id if baseline_status == "running" else ""
+    reusable_running = baseline_status == "running" and _hermes_direct_claim_owner_alive()
+    seen_id = baseline_id if reusable_running else ""
     if not seen_id:
         trigger = subprocess.Popen(
             [str(HERMES_EXECUTABLE), "cron", "run", HERMES_CAREER_CRON_JOB],

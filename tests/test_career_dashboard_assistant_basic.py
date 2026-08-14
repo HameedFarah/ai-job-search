@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from career_engine.cli import build_parser
@@ -88,12 +89,20 @@ def test_global_process_request_passes_score(monkeypatch, tmp_path):
     assert captured["min_score"] == 78
 
 
+def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
+    jobs = tmp_path / "jobs.json"
+    jobs.write_text(json.dumps({"jobs": [{"id": assistant.HERMES_CAREER_CRON_JOB, "fire_claim": {"by": "host:99999999"}}]}), encoding="utf-8")
+    monkeypatch.setattr(assistant, "HERMES_CRON_JOBS", jobs)
+    assert assistant._hermes_direct_claim_owner_alive() is False
+
+
 def test_refresh_reuses_existing_running_hermes_scan(monkeypatch, tmp_path):
     executable = tmp_path / "hermes"
     executable.write_text("", encoding="utf-8")
     statuses = iter([("run-1", "running"), ("run-1", "completed")])
     refreshed = []
     monkeypatch.setattr(assistant, "HERMES_EXECUTABLE", executable)
+    monkeypatch.setattr(assistant, "_hermes_direct_claim_owner_alive", lambda: True)
     monkeypatch.setattr(assistant, "_latest_hermes_run", lambda repo: next(statuses))
     monkeypatch.setattr(assistant.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(assistant, "_refresh_dashboard_site", lambda repo, website_root: refreshed.append((repo, website_root)))
