@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from html import unescape
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from .. import network
 from ..base import DiscoveryJob, SourceAdapter, SourceError, html_to_text
@@ -21,6 +21,7 @@ from ..dates import parse_date, unknown
 from ..provenance import provenance as make_provenance
 
 _TALEO_HOST_RE = re.compile(r"(?:^|\.)taleo\.net$", re.I)
+_PORTAL_NO_RE = re.compile(r"portalNo\s*:\s*['\"]([^'\"]+)['\"]", re.I)
 _DESC_PATTERNS = (
     re.compile(r'<span[^>]+class="[^"]*jobdescription[^"]*"[^>]*>([\s\S]*?)</span>', re.I),
     re.compile(r'<div[^>]+class="[^"]*jobdescription[^"]*"[^>]*>([\s\S]*?)</div>', re.I),
@@ -53,7 +54,20 @@ class TaleoAdapter(SourceAdapter):
         else:
             pages = None
 
-        endpoint = f"https://{tenant}.taleo.net/careersection/rest/jobboard/searchjobs"
+        career_url = f"https://{tenant}.taleo.net/careersection/{career_section}/jobsearch.ftl?lang=en"
+        if offline:
+            portal_no = ""
+        else:
+            landing = network.fetch_text(career_url, max_bytes=4 * 1024 * 1024)
+            portal_match = _PORTAL_NO_RE.search(landing)
+            if not portal_match:
+                raise SourceError(f"Taleo career section did not expose portalNo: {career_url}")
+            portal_no = portal_match.group(1)
+        endpoint = "https://%s.taleo.net/careersection/rest/jobboard/searchjobs" % tenant
+        query = {"lang": "en"}
+        if portal_no:
+            query["portal"] = portal_no
+        endpoint = f"{endpoint}?{urlencode(query)}"
         jobs: list[DiscoveryJob] = []
         page_no = 1
         while len(jobs) < requested:
@@ -63,17 +77,33 @@ class TaleoAdapter(SourceAdapter):
                 payload = network.request_json(
                     endpoint,
                     method="POST",
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                    headers={
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Content-Type": "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": career_url,
+                        "tzname": "Asia/Riyadh",
+                        "tz": "GMT+03:00",
+                    },
                     json_body={
-                        "multilineEnabled": False,
+                        "multilineEnabled": True,
                         "sortingSelection": {
-                            "sortBySelectionParam": "postedDate",
+                            "sortBySelectionParam": "3",
                             "ascendingSortingOrder": "false",
                         },
+                        "fieldData": {
+                            "fields": {
+                                "KEYWORD": "",
+                                # Taleo's current REST contract rejects free-text
+                                # LOCATION values with HTTP 500. Fetch the public
+                                # board and apply the bounded location matcher
+                                # locally; location facet IDs are tenant-specific.
+                                "LOCATION": "",
+                                "CATEGORY": "",
+                            },
+                            "valid": True,
+                        },
                         "pageNo": page_no,
-                        "pageSize": 25,
-                        "keyword": "",
-                        "location": location or "",
                     },
                     max_bytes=4 * 1024 * 1024,
                 )
@@ -128,8 +158,9 @@ class TaleoAdapter(SourceAdapter):
         return tenant, career_section
 
     def _map_item(self, item: dict, *, tenant: str, career_section: str) -> DiscoveryJob:
-        title = str(item.get("title") or "").strip()
-        contest_no = str(item.get("contestNo") or "").strip()
+        columns = item.get("column") if isinstance(item.get("column"), list) else []
+        title = str(item.get("title") or (columns[0] if len(columns) > 0 else "")).strip()
+        contest_no = str(item.get("contestNo") or (columns[1] if len(columns) > 1 else "")).strip()
         contest_url = str(item.get("contestUrl") or "").strip()
         if contest_url.startswith("http"):
             detail_url = contest_url
@@ -137,8 +168,15 @@ class TaleoAdapter(SourceAdapter):
             detail_url = f"https://{tenant}.taleo.net/careersection/{career_section}/jobdetail.ftl?job={contest_no}"
         else:
             detail_url = f"https://{tenant}.taleo.net/careersection/{career_section}/jobsearch.ftl"
-        location = str(item.get("primaryLocation") or "").strip()
-        raw_date = item.get("postingDate") or item.get("openingDate")
+        raw_locations = item.get("primaryLocation") or (columns[3] if len(columns) > 3 else "")
+        if isinstance(raw_locations, str) and raw_locations.startswith("["):
+            try:
+                import json
+                raw_locations = " / ".join(json.loads(raw_locations))
+            except (TypeError, ValueError):
+                pass
+        location = str(raw_locations).strip()
+        raw_date = item.get("postingDate") or item.get("openingDate") or (columns[4] if len(columns) > 4 else "")
         posted = parse_date(raw_date, "Taleo posting/opening date") if raw_date else unknown(self.source_id)
         raw_id = contest_no or detail_url
         return DiscoveryJob(
