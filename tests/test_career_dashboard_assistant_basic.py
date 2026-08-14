@@ -393,3 +393,77 @@ def test_refresh_reuses_existing_running_hermes_scan(monkeypatch, tmp_path):
     assert "run-1" in answer
     assert "reused existing" in answer
     assert refreshed == [(tmp_path, tmp_path / "site")]
+
+
+def test_submission_confirmation_archives_exact_resume_and_cover(monkeypatch, tmp_path):
+    job_id = "abcdef1234567890"
+    artifact_dir = tmp_path / "projects/job-automation/artifacts" / job_id
+    artifact_dir.mkdir(parents=True)
+    resume_pdf = artifact_dir / "Abdelhamid_Farah_CV_Test_ATS.pdf"
+    resume_docx = artifact_dir / "Abdelhamid_Farah_CV_Test_ATS.docx"
+    cover_pdf = artifact_dir / "Abdelhamid_Farah_Cover_Letter_Test.pdf"
+    cover_docx = artifact_dir / "Abdelhamid_Farah_Cover_Letter_Test.docx"
+    resume_pdf.write_bytes(b"resume-pdf-exact")
+    resume_docx.write_bytes(b"resume-docx-exact")
+    cover_pdf.write_bytes(b"cover-pdf-exact")
+    cover_docx.write_bytes(b"cover-docx-exact")
+    resume_sha = assistant._sha256_path(resume_pdf)
+    cover_sha = assistant._sha256_path(cover_pdf)
+    monkeypatch.setattr(assistant, "_pdf_text", lambda path: f"TEXT::{path.name}")
+    record = {
+        "id": "history-123",
+        "createdAt": "2026-08-14T08:00:00+00:00",
+        "data": {
+            "role_key": f"tracker-{job_id}",
+            "event": "application_submitted",
+            "submitted_at": "2026-08-14T08:00:00+00:00",
+            "template_id": "ats-classic",
+            "document_sha256": resume_sha,
+            "note": json.dumps({
+                "job_id": job_id,
+                "company": "Example Co",
+                "role": "Senior Design Manager",
+                "route": "portal",
+                "application_url": "https://example.com/apply",
+                "submitted_at": "2026-08-14T08:00:00+00:00",
+                "template_id": "ats-classic",
+                "document_sha256": resume_sha,
+                "cover_letter_sha256": cover_sha,
+            }),
+        },
+    }
+
+    status, manifest_path = assistant._archive_submission_record(repo=tmp_path, record=record)
+    assert status == "archived"
+    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert manifest["resume"]["sha256"] == resume_sha
+    assert manifest["resume"]["text"] == "TEXT::submitted_resume.pdf"
+    assert manifest["cover_letter"]["sha256"] == cover_sha
+    assert manifest["cover_letter"]["text"] == "TEXT::submitted_cover_letter.pdf"
+    assert (Path(manifest_path).parent / "submitted_resume.pdf").read_bytes() == b"resume-pdf-exact"
+    assert (Path(manifest_path).parent / "submitted_resume.docx").read_bytes() == b"resume-docx-exact"
+    assert (Path(manifest_path).parent / "submitted_cover_letter.pdf").read_bytes() == b"cover-pdf-exact"
+
+    second_status, second_manifest = assistant._archive_submission_record(repo=tmp_path, record=record)
+    assert second_status == "existing"
+    assert second_manifest == manifest_path
+
+
+def test_submission_confirmation_fails_closed_without_exact_hash(tmp_path):
+    job_id = "abcdef1234567890"
+    artifact_dir = tmp_path / "projects/job-automation/artifacts" / job_id
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "Abdelhamid_Farah_CV_Test_ATS.pdf").write_bytes(b"different-resume")
+    record = {
+        "id": "history-456",
+        "data": {
+            "role_key": f"tracker-{job_id}",
+            "event": "application_submitted",
+            "document_sha256": "a" * 64,
+            "note": "{}",
+        },
+    }
+    status, reason = assistant._archive_submission_record(repo=tmp_path, record=record)
+    assert status == "unresolved"
+    assert reason == f"submitted_resume_hash_not_found:{'a' * 64}"
+    assert not (artifact_dir / "submissions" / "history-456" / "submission_manifest.json").exists()

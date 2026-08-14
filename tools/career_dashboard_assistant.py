@@ -17,15 +17,18 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -41,6 +44,8 @@ GLOBAL_ROLE_KEY = "__career_engine__"
 RESPONSE_COMMENT_TYPE = "assistant_response"
 REQUEST_COLLECTION = "ai_requests"
 COMMENT_COLLECTION = "comments"
+HISTORY_COLLECTION = "history"
+SUBMISSION_EVENTS = {"application_submitted", "email_sent_owner_confirmed"}
 
 
 def load_api_key(api_key_env: str) -> str:
@@ -141,6 +146,176 @@ def pending_requests(*, slug: str, api_key: str, limit: int) -> list[dict[str, A
         for record in records
         if str(_data_of(record).get("state", "pending")).lower() == "pending"
     ]
+
+
+def history_records(*, slug: str, api_key: str, limit: int = 500) -> list[dict[str, Any]]:
+    result = _request_json(
+        _site_api(slug, HISTORY_COLLECTION) + f"?limit={max(1, min(limit, 1000))}",
+        api_key=api_key,
+    )
+    return list(result.get("records") or [])
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _pdf_text(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    result = subprocess.run(
+        ["pdftotext", str(path), "-"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return re.sub(r"\n{3,}", "\n\n", result.stdout.replace("\f", "\n")).strip()
+
+
+def _submission_note(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("note")
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _find_pdf_by_hash(artifact_dir: Path, expected_sha256: str, *, cover_letter: bool = False) -> Path | None:
+    expected = expected_sha256.strip().lower()
+    if not expected:
+        return None
+    for path in artifact_dir.rglob("*.pdf"):
+        relative_parts = path.relative_to(artifact_dir).parts
+        if "submissions" in relative_parts:
+            continue
+        filename = path.name.lower()
+        is_cover = "cover" in filename and "letter" in filename
+        if cover_letter != is_cover:
+            continue
+        try:
+            if _sha256_path(path).lower() == expected:
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def _archive_submission_record(*, repo: Path, record: dict[str, Any]) -> tuple[str, str]:
+    data = _data_of(record)
+    event = str(data.get("event", ""))
+    if event not in SUBMISSION_EVENTS:
+        return "ignored", ""
+    role_key = str(data.get("role_key", ""))
+    try:
+        job_id = job_id_from_role_key(role_key)
+    except AssistantError as exc:
+        return "unresolved", str(exc)
+    artifact_dir = repo / "projects/job-automation/artifacts" / job_id
+    if not artifact_dir.is_dir():
+        return "unresolved", "artifact_dir_missing"
+    record_id = re.sub(r"[^A-Za-z0-9._-]+", "-", str(record.get("id", "") or "")) or hashlib.sha256(
+        json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:16]
+    archive_dir = artifact_dir / "submissions" / record_id
+    manifest_path = archive_dir / "submission_manifest.json"
+    if manifest_path.is_file():
+        try:
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        if existing.get("status") == "archived":
+            return "existing", str(manifest_path)
+
+    note = _submission_note(data)
+    evidence = {**data, **note}
+    resume_sha = str(evidence.get("document_sha256", "")).strip().lower()
+    if not resume_sha:
+        return "unresolved", "submitted_resume_hash_missing"
+    resume_pdf = _find_pdf_by_hash(artifact_dir, resume_sha, cover_letter=False)
+    if resume_pdf is None:
+        return "unresolved", f"submitted_resume_hash_not_found:{resume_sha}"
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived_resume_pdf = archive_dir / "submitted_resume.pdf"
+    shutil.copy2(resume_pdf, archived_resume_pdf)
+    resume_docx = resume_pdf.with_suffix(".docx")
+    archived_resume_docx: Path | None = archive_dir / "submitted_resume.docx"
+    if resume_docx.is_file():
+        shutil.copy2(resume_docx, archived_resume_docx)
+    else:
+        archived_resume_docx = None
+
+    cover_sha = str(evidence.get("cover_letter_sha256", "")).strip().lower()
+    archived_cover_pdf: Path | None = None
+    archived_cover_docx: Path | None = None
+    if cover_sha:
+        cover_pdf = _find_pdf_by_hash(artifact_dir, cover_sha, cover_letter=True)
+        if cover_pdf is not None:
+            archived_cover_pdf = archive_dir / "submitted_cover_letter.pdf"
+            shutil.copy2(cover_pdf, archived_cover_pdf)
+            cover_docx = cover_pdf.with_suffix(".docx")
+            if cover_docx.is_file():
+                archived_cover_docx = archive_dir / "submitted_cover_letter.docx"
+                shutil.copy2(cover_docx, archived_cover_docx)
+
+    manifest = {
+        "schema_version": 1,
+        "status": "archived",
+        "archived_at": datetime.now(timezone.utc).isoformat(),
+        "source_history_event_id": str(record.get("id", "")),
+        "event": event,
+        "role_key": role_key,
+        "job_id": job_id,
+        "company": str(evidence.get("company", "")),
+        "role": str(evidence.get("role", "")),
+        "route": str(evidence.get("route", "")),
+        "application_url": str(evidence.get("application_url") or evidence.get("url") or ""),
+        "submitted_at": str(evidence.get("submitted_at") or record.get("createdAt") or ""),
+        "confirmation_reference": str(evidence.get("confirmation_reference", "")),
+        "resume": {
+            "template_id": str(evidence.get("template_id", "")),
+            "pdf": archived_resume_pdf.name,
+            "docx": archived_resume_docx.name if archived_resume_docx else "",
+            "sha256": resume_sha,
+            "text": _pdf_text(archived_resume_pdf),
+        },
+        "cover_letter": {
+            "pdf": archived_cover_pdf.name if archived_cover_pdf else "",
+            "docx": archived_cover_docx.name if archived_cover_docx else "",
+            "sha256": cover_sha if archived_cover_pdf else "",
+            "text": _pdf_text(archived_cover_pdf) if archived_cover_pdf else "",
+        },
+        "package_version": str(evidence.get("package_version", "")),
+    }
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return "archived", str(manifest_path)
+
+
+def archive_confirmed_submissions(*, repo: Path, slug: str, api_key: str) -> dict[str, Any]:
+    archived = 0
+    existing = 0
+    unresolved: list[dict[str, str]] = []
+    for record in history_records(slug=slug, api_key=api_key):
+        if str(_data_of(record).get("event", "")) not in SUBMISSION_EVENTS:
+            continue
+        status, detail = _archive_submission_record(repo=repo, record=record)
+        if status == "archived":
+            archived += 1
+        elif status == "existing":
+            existing += 1
+        elif status == "unresolved":
+            unresolved.append({"record_id": str(record.get("id", "")), "reason": detail})
+    return {"archived": archived, "existing": existing, "unresolved": unresolved}
 
 
 def patch_request(*, slug: str, api_key: str, record_id: str, fields: dict[str, Any]) -> None:
@@ -921,6 +1096,10 @@ def process_once(
         except BlockingIOError:
             return {"processed": 0, "failed": 0, "skipped": "worker_already_running"}
 
+        submission_sync = archive_confirmed_submissions(repo=repo, slug=slug, api_key=api_key)
+        if submission_sync["archived"]:
+            _refresh_dashboard_site(repo, website_root)
+
         for record in pending_requests(slug=slug, api_key=api_key, limit=limit):
             record_id = str(record.get("id", ""))
             data = _data_of(record)
@@ -992,7 +1171,13 @@ def process_once(
                     )
                 except Exception:
                     pass
-    return {"processed": processed, "failed": failed}
+    return {
+        "processed": processed,
+        "failed": failed,
+        "submission_archived": submission_sync["archived"],
+        "submission_existing": submission_sync["existing"],
+        "submission_unresolved": len(submission_sync["unresolved"]),
+    }
 
 
 def main() -> int:
