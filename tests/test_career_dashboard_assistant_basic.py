@@ -145,7 +145,8 @@ def test_process_jobs_regenerates_existing_packages_and_reports_progress(monkeyp
     assert progress[0]["kind"] == "batch_progress"
     assert any(item["current_role_key"] == "tracker-abcdef1234567890" for item in progress)
     assert progress[-1]["phase"] == "publishing"
-    assert "1 package(s) regenerated/rendered" in answer
+    assert "1 package(s) freshly regenerated/rendered" in answer
+    assert "0 existing validated package(s) were preserved" in answer
 
 
 def test_workspace_write_candidate_survives_empty_completion_router_error(monkeypatch, tmp_path):
@@ -317,6 +318,54 @@ def test_render_qa_failure_uses_the_same_single_bounded_repair(monkeypatch, tmp_
     assert renders == 2
     assert len(dispatch_prompts) == 2
     assert "RENDER/QA FAILURE" in dispatch_prompts[1]
+    assert not list(artifact_dir.glob("dashboard-batch-*.json"))
+
+
+def test_failed_fresh_regeneration_preserves_existing_validated_package(monkeypatch, tmp_path):
+    artifact_dir = tmp_path / "artifacts" / "abcdef1234567890"
+    artifact_dir.mkdir(parents=True)
+    packet = {
+        "schema_version": 1,
+        "job_id": "abcdef1234567890",
+        "bundle_hash": "bundle-current",
+        "email_draft_policy": {"expected_subject": "Abdelhamid Farah - Senior Design Manager"},
+    }
+    existing = {
+        "schema_version": 1,
+        "job_id": "abcdef1234567890",
+        "bundle_hash": "stale",
+        "cover_email": {"subject": "Old subject", "body": "Existing tailored body", "claim_ids": []},
+    }
+    monkeypatch.setattr(
+        assistant,
+        "load_job_context",
+        lambda repo, job_id: {"packet": packet, "application": existing, "artifact_dir": artifact_dir},
+    )
+    monkeypatch.setattr(assistant, "run_dispatcher", lambda **kwargs: {"ok": True})
+    calls = []
+
+    def fake_engine(repo, args, timeout):
+        calls.append(args)
+        if args[:2] == ["generate", "import"]:
+            candidate = Path(args[-1])
+            saved = json.loads(candidate.read_text(encoding="utf-8"))
+            assert saved["bundle_hash"] == "bundle-current"
+            assert saved["cover_email"]["subject"] == "Abdelhamid Farah - Senior Design Manager"
+            return json.dumps({"valid": True, "findings": []})
+        if args[0] == "render":
+            return json.dumps({"valid": True})
+        raise AssertionError(args)
+
+    monkeypatch.setattr(assistant, "_run_engine", fake_engine)
+    action = assistant._generate_application_package(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        job_id="abcdef1234567890",
+        force_regenerate=True,
+    )
+    assert action == "preserved_existing_after_regeneration_failure"
+    assert any(args[:2] == ["generate", "import"] for args in calls)
+    assert any(args[0] == "render" for args in calls)
     assert not list(artifact_dir.glob("dashboard-batch-*.json"))
 
 

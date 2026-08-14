@@ -516,6 +516,7 @@ def _generate_application_package(
         + json.dumps(context["packet"], ensure_ascii=False, indent=2)
     )
     repair_candidate: Path | None = None
+    fallback_candidate: Path | None = None
     repair_used = False
     try:
         dispatch_error: AssistantError | None = None
@@ -638,10 +639,31 @@ def _generate_application_package(
             if not rendered.get("valid"):
                 raise AssistantError(f"render/QA failed after one bounded repair for {job_id}")
         return "generated_and_rendered"
+    except AssistantError as original_error:
+        if force_regenerate and context.get("application"):
+            fallback_candidate = artifact_dir / f"dashboard-batch-{token}-fallback.json"
+            try:
+                fallback_candidate.write_text(
+                    json.dumps(context["application"], ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                _stamp_generated_application_contract(fallback_candidate, context["packet"])
+                imported = json.loads(
+                    _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(fallback_candidate)], timeout=180)
+                )
+                if imported.get("valid"):
+                    rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
+                    if rendered.get("valid"):
+                        return "preserved_existing_after_regeneration_failure"
+            except AssistantError:
+                pass
+        raise original_error
     finally:
         candidate.unlink(missing_ok=True)
         if repair_candidate is not None:
             repair_candidate.unlink(missing_ok=True)
+        if fallback_candidate is not None:
+            fallback_candidate.unlink(missing_ok=True)
 
 
 def run_process_jobs(
@@ -692,6 +714,7 @@ def run_process_jobs(
                 current_company = str(vacancy.get("company", ""))
             except Exception:
                 pass
+        preserved_count = sum(1 for item in processed if item.get("action") == "preserved_existing_after_regeneration_failure")
         progress_callback({
             "kind": "batch_progress",
             "phase": phase,
@@ -699,6 +722,7 @@ def run_process_jobs(
             "total": total,
             "done": attempted,
             "succeeded": len(processed),
+            "preserved": preserved_count,
             "failed": len(failures),
             "remaining": remaining,
             "current_job_id": current_job_id,
@@ -706,6 +730,7 @@ def run_process_jobs(
             "current_role": current_role,
             "current_company": current_company,
             "completed_role_keys": completed_role_keys[-100:],
+            "recent_failures": failures[-3:],
             "eta_seconds": eta_seconds,
             "elapsed_seconds": int(round(time.monotonic() - started)),
         })
@@ -733,10 +758,13 @@ def run_process_jobs(
     _refresh_dashboard_site(repo, website_root)
     eligible_count = len(prepared.get("eligible", []))
     blocked_or_already_handled = max(0, eligible_count - len(prepared.get("processed", [])))
+    preserved_count = sum(1 for item in processed if item.get("action") == "preserved_existing_after_regeneration_failure")
+    regenerated_count = len(processed) - preserved_count
     message = (
-        f"Score ≥ {threshold} processing completed. {len(processed)} package(s) regenerated/rendered with fresh "
-        f"CV and cover-letter outputs; {blocked_or_already_handled} eligible record(s) were deferred/skipped by "
-        "Career Engine policy."
+        f"Score ≥ {threshold} processing completed. {regenerated_count} package(s) freshly regenerated/rendered with "
+        f"CV and cover-letter outputs; {preserved_count} existing validated package(s) were preserved and rerendered after "
+        f"bounded regeneration failure; {blocked_or_already_handled} eligible record(s) were deferred/skipped by Career "
+        "Engine policy."
     )
     if failures:
         message += f" {len(failures)} package(s) failed and remain unsent/unsubmitted for review."
