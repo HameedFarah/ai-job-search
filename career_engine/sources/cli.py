@@ -91,6 +91,9 @@ def build_adapter(
     elif adapter_id == "oracle_hcm":
         from .adapters.oracle_hcm import OracleHcmAdapter
         cls = OracleHcmAdapter
+    elif adapter_id == "dar_al_riyadh":
+        from .adapters.dar_al_riyadh import DarAlRiyadhAdapter
+        cls = DarAlRiyadhAdapter
     elif adapter_id == "workable":
         from .adapters.workable import WorkableAdapter
         cls = WorkableAdapter

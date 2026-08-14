@@ -1,0 +1,28 @@
+[
+  {
+    "Id": 2206,
+    "MRF_Ref": 2206,
+    "Position": "Sr. Landscape Architect",
+    "JobDescription": "<p>Review landscape and architectural works, coordinate disciplines, inspect construction and support handover.</p>",
+    "PositionCount": 1,
+    "TargetDate": "2026-09-10T00:00:00",
+    "JobLocation": "Tabouk",
+    "ExperienceFrom": 13,
+    "ExperienceTo": 0,
+    "PostedDate": "2026-08-09T22:30:00",
+    "Department": "NHC-PMC-Tabuk Valley & Hills Project"
+  },
+  {
+    "Id": 2202,
+    "MRF_Ref": 2202,
+    "Position": "Technical Project Coordinator/ Contract Specialist",
+    "JobDescription": "<p>Coordinate technical and contractual activities, contracts, project schedules, risks and management reporting.</p>",
+    "PositionCount": 1,
+    "TargetDate": "2026-08-04T00:00:00",
+    "JobLocation": "Riyadh",
+    "ExperienceFrom": 8,
+    "ExperienceTo": 0,
+    "PostedDate": "2026-08-04T09:46:00",
+    "Department": "KFSHRC PMO"
+  }
+]

@@ -31,7 +31,7 @@ def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> d
         try:
             adapter = build_adapter(adapter_id, offline=offline)
             jobs = adapter.search(company=adapter_company, location=row.get("location"), limit=max(1, min(limit, 100)), fetch_full=True, offline=offline)
-            source["jobs_fetched"] = len(jobs); source["verified_authoritative"] = all(bool(j.provenance and j.provenance.official) for j in jobs)
+            source["jobs_fetched"] = len(jobs); source["verified_authoritative"] = bool(jobs) and all(bool(j.provenance and j.provenance.official) for j in jobs)
             source["status"] = "ok" if jobs else ("parser-needed" if adapter_id == "jsonld" else "empty")
             for job in jobs:
                 key = job.dedupe_key()

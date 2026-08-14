@@ -27,16 +27,21 @@ class OracleHcmAdapter(SourceAdapter):
     def search(self, *, company: str, location: str | None = None, limit: int = 10,
                fetch_full: bool = False, offline: bool = False) -> list[DiscoveryJob]:
         host, site = parse_identifier(company)
-        finder = f"findReqs;siteNumber={site},limit={max(1, min(limit, 100))},sortBy=POSTING_DATES_DESC"
+        requested = max(1, min(limit, 100))
+        # Oracle applies the finder limit before client-side location filtering.
+        # Enumerate a bounded wider page so a small requested result count does
+        # not accidentally hide Saudi/GCC jobs behind global postings.
+        finder = f"findReqs;siteNumber={site},limit={max(100, requested)},sortBy=POSTING_DATES_DESC"
         url = (f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
                f"?onlyData=true&expand=requisitionList&finder={quote(finder, safe='')}")
         payload = self._load(url, "oracle-hcm-list.json", offline)
         items = (payload.get("items") or [{}])[0].get("requisitionList") or {}
         if isinstance(items, dict):
             items = items.get("items") or []
-        jobs = [self._map(item, host, site) for item in items[:limit]]
+        jobs = [self._map(item, host, site) for item in items]
         if location:
             jobs = [job for job in jobs if location.lower() in job.location.lower()]
+        jobs = jobs[:requested]
         if fetch_full:
             for job in jobs:
                 try:

@@ -89,6 +89,11 @@ class DiscoveryJob:
                 detail_url=self.detail_url,
                 raw_id=self.external_job_id,
             )
+        live_verified_at = ""
+        live_verification_source = ""
+        if live_status == "live" and provenance.official:
+            live_verified_at = provenance.fetched_at
+            live_verification_source = provenance.detail_url or provenance.source_name
         return {
             "company": self.company,
             "role": self.role,
@@ -99,8 +104,8 @@ class DiscoveryJob:
             "application_url": self.application_url,
             "full_job_description": (self.description_text or html_to_text(self.description_html)).strip(),
             "live_status": live_status,
-            "live_verified_at": "",
-            "live_verification_source": "",
+            "live_verified_at": live_verified_at,
+            "live_verification_source": live_verification_source,
             "posting_date": to_tracker_text(posted),
             "posting_date_precision": posted.precision,
             "posting_date_source": posted.source,

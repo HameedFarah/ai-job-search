@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import quote
 
 from .. import network
 from ..base import DiscoveryJob, SourceAdapter, SourceError, html_to_text
@@ -44,15 +45,31 @@ class SmartRecruitersAdapter(SourceAdapter):
         company_id = company.strip()
         if not company_id:
             raise SourceError("SmartRecruiters company id is required")
-        url = f"{COMPANY_TEMPLATE.format(company_id=company_id)}/postings?limit={max(1, min(limit, 100))}"
-        payload = self._load_list(url, offline)
-        content = payload.get("content", []) if isinstance(payload, dict) else []
+        requested = max(1, min(limit, 100))
+        query = f"&q={quote(location)}" if location else ""
         results: list[DiscoveryJob] = []
-        for item in content:
-            job = self._map_job(item, company_id)
-            if location and location.lower() not in job.location.lower():
-                continue
-            results.append(job)
+        offset = 0
+        page_size = min(100, max(20, requested))
+        while len(results) < requested and offset < 500:
+            url = (
+                f"{COMPANY_TEMPLATE.format(company_id=company_id)}/postings"
+                f"?limit={page_size}&offset={offset}{query}"
+            )
+            payload = self._load_list(url, offline)
+            content = payload.get("content", []) if isinstance(payload, dict) else []
+            if not content:
+                break
+            for item in content:
+                job = self._map_job(item, company_id)
+                if location and location.lower() not in job.location.lower():
+                    continue
+                results.append(job)
+                if len(results) >= requested:
+                    break
+            offset += len(content)
+            total = int(payload.get("totalFound") or 0) if isinstance(payload, dict) else 0
+            if offset >= total:
+                break
         if fetch_full:
             fetched: list[DiscoveryJob] = []
             for job in results[:limit]:
@@ -81,11 +98,12 @@ class SmartRecruitersAdapter(SourceAdapter):
     def _map_job(self, item: dict[str, Any], company_id: str) -> DiscoveryJob:
         name = str(item.get("name") or "").strip()
         location_obj = item.get("location") or {}
+        full_location = str(location_obj.get("fullLocation") or "").strip()
         location_parts = [str(location_obj.get("city") or ""), str(location_obj.get("region") or "")]
         country = str(location_obj.get("country") or "")
         if country and country.isalpha():
             location_parts.append(country.upper())
-        location = ", ".join(part for part in location_parts if part)
+        location = full_location or ", ".join(part for part in location_parts if part)
         external_id = str(item.get("uuid") or item.get("id") or "")
         ref = str(item.get("refNumber") or "")
         job_url = f"https://jobs.smartrecruiters.com/{company_id}/{external_id}"

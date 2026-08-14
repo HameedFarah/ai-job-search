@@ -43,6 +43,21 @@ _KIND_LABELS = {
 # official, status, blocked_reason, base_url, docs_url, notes, probe.
 _SOURCES: list[dict[str, Any]] = [
     {
+        "id": "dar_al_riyadh",
+        "name": "Dar Al Riyadh Public Careers API",
+        "kind": "employer_page",
+        "priority": 1,
+        "auth": "none",
+        "posting_date": "exact",
+        "official": True,
+        "status": STATUS_ACTIVE,
+        "blocked_reason": "",
+        "base_url": "https://careers.daralriyadh.com/Api/PublishedOpportnitiesAPI/GetPublishedOpportunities",
+        "docs_url": "https://careers.daralriyadh.com/",
+        "notes": "Public unauthenticated employer careers API used by the official Angular/Kendo careers application.",
+        "probe": {"verified": True, "companies": ["careers.daralriyadh.com"], "verified_at": "2026-08-14"},
+    },
+    {
         "id": "oracle_hcm",
         "name": "Oracle Cloud HCM Candidate Experience",
         "kind": "ats_api",

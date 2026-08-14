@@ -52,6 +52,19 @@ def test_lever_parses_fixture_and_ms_epoch_date() -> None:
     assert first.detail_url.startswith("https://jobs.example.lever.co/")
     assert first.has_description
 
+def test_dar_al_riyadh_parses_public_careers_api_fixture() -> None:
+    from career_engine.sources.cli import build_adapter
+    jobs = build_adapter("dar_al_riyadh", offline=True).search(
+        company="https://careers.daralriyadh.com/", limit=10, offline=True
+    )
+    assert len(jobs) == 2
+    assert jobs[0].company == "Dar Al Riyadh"
+    assert jobs[0].external_job_id == "2206"
+    assert jobs[0].posted.value == "2026-08-09"
+    assert jobs[0].provenance.official is True
+    assert jobs[0].has_description
+
+
 def test_workday_parses_official_cxs_fixture() -> None:
     from career_engine.sources.cli import build_adapter
     jobs = build_adapter("workday", offline=True).search(
@@ -59,8 +72,13 @@ def test_workday_parses_official_cxs_fixture() -> None:
     )
     assert len(jobs) == 1
     assert jobs[0].role == "Senior Project Manager"
+    assert jobs[0].location == "SA - Riyadh"
+    assert jobs[0].external_job_id == "R1001"
     assert jobs[0].provenance.official is True
     assert jobs[0].has_description
+    live = jobs[0].to_scanner_job(live_status="live")
+    assert live["live_verified_at"]
+    assert live["live_verification_source"]
 
 
 def test_ashby_parses_fixture_with_plain_and_html_description() -> None:

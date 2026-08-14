@@ -139,6 +139,21 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--scanner-id", choices=("hermes_scanner", "chatgpt_scanner"), default="hermes_scanner")
     scan.add_argument("--output", default="", help="Optional structured scan report path")
 
+    consultants_scan = sub.add_parser(
+        "consultants-scan",
+        help="Scan active Consultants bookmarks through their verified official ATS/page adapters",
+    )
+    add_common(consultants_scan)
+    consultants_scan.add_argument("--limit", type=int, default=25, help="Maximum jobs per source (1-100)")
+    consultants_scan.add_argument("--output", default="", help="Optional workspace-relative JSON report path")
+    consultants_scan.add_argument("--offline", action="store_true", help="Use adapter fixtures only")
+    consultants_scan.add_argument("--ingest", action="store_true", help="Ingest verified live jobs through the central scanner")
+    consultants_scan.add_argument(
+        "--scanner-id",
+        choices=("hermes_scanner", "chatgpt_scanner"),
+        default="hermes_scanner",
+    )
+
     template = sub.add_parser("template")
     add_common(template)
     template_sub = template.add_subparsers(dest="template_command", required=True)
@@ -437,6 +452,26 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_READY
         if args.command == "scan":
             result = scan(args.file, args.scanner_id, output=args.output)
+            emit(result, human=args.human)
+            return EXIT_READY
+        if args.command == "consultants-scan":
+            if not 1 <= int(args.limit) <= 100:
+                raise ValueError("consultants-scan --limit must be between 1 and 100")
+            from .sources.consultants import scan_consultants
+            config, paths = load_config()
+            result = scan_consultants(
+                root=paths.repo_root,
+                limit=int(args.limit),
+                offline=bool(args.offline),
+            )
+            report_path = Path(args.output) if args.output else paths.tracker_base / "runtime" / "consultants-scan.latest.json"
+            if args.output or args.ingest:
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            if args.ingest:
+                if args.offline:
+                    raise ValueError("offline consultant fixture results cannot be ingested")
+                result["ingest"] = run_scan(report_path, root=paths.repo_root, scanner_id=args.scanner_id)
             emit(result, human=args.human)
             return EXIT_READY
         if args.command == "template":
