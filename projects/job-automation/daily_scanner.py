@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from career_engine.scanner import SCANNER_ACTORS, run_scan, write_report
+from career_engine.scanner import SCANNER_ACTORS, add_path_scan_statistics, run_scan, write_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,13 +35,15 @@ def main(argv: list[str] | None = None) -> int:
         consultant_report = scan_consultants(root=REPO_ROOT)
         base = json.loads(source_path.read_text(encoding="utf-8"))
         jobs = base if isinstance(base, list) else base.get("jobs", [])
+        scan_paths = [] if isinstance(base, list) else base.get("paths", base.get("scan_paths", []))
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as handle:
-            json.dump({"jobs": jobs + consultant_report["jobs"]}, handle, ensure_ascii=False)
+            json.dump({"jobs": jobs + consultant_report["jobs"], "paths": scan_paths}, handle, ensure_ascii=False)
             source_path = Path(handle.name)
     report = run_scan(source_path, root=REPO_ROOT, scanner_id=args.scanner_id)
     if consultant_report is not None:
         report["consultant_sources"] = consultant_report["sources"]
         report["consultant_summary"] = consultant_report["summary"]
+        add_path_scan_statistics(report, consultant_report["sources"])
     print(write_report(report, Path(args.output) if args.output else None), end="")
     return 0
 
