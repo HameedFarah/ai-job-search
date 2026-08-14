@@ -86,3 +86,21 @@ def test_global_process_request_passes_score(monkeypatch, tmp_path):
     )
     assert answer == "batch complete"
     assert captured["min_score"] == 78
+
+
+def test_refresh_reuses_existing_running_hermes_scan(monkeypatch, tmp_path):
+    executable = tmp_path / "hermes"
+    executable.write_text("", encoding="utf-8")
+    statuses = iter([("run-1", "running"), ("run-1", "completed")])
+    refreshed = []
+    monkeypatch.setattr(assistant, "HERMES_EXECUTABLE", executable)
+    monkeypatch.setattr(assistant, "_latest_hermes_run", lambda repo: next(statuses))
+    monkeypatch.setattr(assistant.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(assistant, "_refresh_dashboard_site", lambda repo, website_root: refreshed.append((repo, website_root)))
+    monkeypatch.setattr(assistant.subprocess, "Popen", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("duplicate Hermes scan triggered")))
+
+    answer = assistant.run_refresh_jobs(repo=tmp_path, website_root=tmp_path / "site")
+
+    assert "run-1" in answer
+    assert "reused existing" in answer
+    assert refreshed == [(tmp_path, tmp_path / "site")]

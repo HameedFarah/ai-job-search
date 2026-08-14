@@ -370,23 +370,58 @@ def _refresh_dashboard_site(repo: Path, website_root: Path) -> None:
 
 
 def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
-    baseline_id, _ = _latest_hermes_run(repo)
+    baseline_id, baseline_status = _latest_hermes_run(repo)
     if not HERMES_EXECUTABLE.is_file():
         raise AssistantError(f"Hermes executable missing: {HERMES_EXECUTABLE}")
-    _run_command([str(HERMES_EXECUTABLE), "cron", "run", HERMES_CAREER_CRON_JOB], cwd=repo, timeout=30)
+
+    # `hermes cron run` is a blocking client while the scheduler owns the durable
+    # execution. Run the client as a supervised child and poll the scheduler's
+    # run record instead of treating the CLI process lifetime as the job state.
+    # If a Career scan is already running, reuse it rather than creating a
+    # duplicate owner-triggered scan.
+    trigger: subprocess.Popen[str] | None = None
+    seen_id = baseline_id if baseline_status == "running" else ""
+    if not seen_id:
+        trigger = subprocess.Popen(
+            [str(HERMES_EXECUTABLE), "cron", "run", HERMES_CAREER_CRON_JOB],
+            cwd=repo,
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
     deadline = time.monotonic() + 35 * 60
-    seen_id = ""
-    last_status = ""
-    while time.monotonic() < deadline:
-        time.sleep(10)
-        run_id, status = _latest_hermes_run(repo)
-        if run_id and run_id != baseline_id:
-            seen_id, last_status = run_id, status
-            if status == "completed":
+    last_status = baseline_status if seen_id else ""
+    try:
+        while time.monotonic() < deadline:
+            time.sleep(10)
+            run_id, status = _latest_hermes_run(repo)
+            if seen_id:
+                if run_id == seen_id:
+                    last_status = status
+            elif run_id and run_id != baseline_id:
+                seen_id, last_status = run_id, status
+
+            if seen_id and last_status == "completed":
                 _refresh_dashboard_site(repo, website_root)
-                return f"Hermes Career Engine refresh completed ({run_id}). Dashboard data was rebuilt and republished."
-            if status in {"failed", "cancelled", "timed_out", "unknown"}:
-                raise AssistantError(f"Hermes Career Engine refresh {run_id} ended with status {status}")
+                reused = "reused existing" if seen_id == baseline_id else "triggered"
+                return (
+                    f"Hermes Career Engine refresh completed ({seen_id}; {reused}). "
+                    "Dashboard data was rebuilt and republished."
+                )
+            if seen_id and last_status in {"failed", "cancelled", "timed_out", "unknown"}:
+                raise AssistantError(f"Hermes Career Engine refresh {seen_id} ended with status {last_status}")
+            if trigger is not None and trigger.poll() not in {None, 0} and not seen_id:
+                raise AssistantError(f"Hermes refresh trigger exited with status {trigger.returncode} before a durable run appeared")
+    finally:
+        if trigger is not None and trigger.poll() is None:
+            trigger.terminate()
+            try:
+                trigger.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                trigger.kill()
+                trigger.wait(timeout=5)
+
     if seen_id:
         raise AssistantError(f"Hermes Career Engine refresh {seen_id} did not finish within 35 minutes; last status {last_status}")
     raise AssistantError("Hermes Career Engine refresh did not create a new durable run within 35 minutes")
