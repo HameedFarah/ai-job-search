@@ -26,7 +26,10 @@ from ..provenance import provenance as make_provenance
 _TILE_RE = re.compile(r'<li class="job-tile job-id-(\d+)\b[\s\S]*?</li>', re.I)
 _URL_RE = re.compile(r'data-url="([^"]+)"', re.I)
 _TITLE_RE = re.compile(r'class="jobTitle-link[^"]*"[^>]*>([\s\S]*?)</a>', re.I)
-_DESC_RE = re.compile(r'<span class="jobdescription">([\s\S]*?)</span>\s*</span>', re.I)
+_DESC_RE = re.compile(
+    r'<span[^>]*class="[^"]*jobdescription[^"]*"[^>]*>([\s\S]*?)</span>',
+    re.I,
+)
 
 
 class SuccessFactorsAdapter(SourceAdapter):
