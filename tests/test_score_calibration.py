@@ -83,6 +83,9 @@ def _jd(role: str, responsibilities: str, requirements: str, preferred: str = ""
     ("Machine Learning Engineer", _jd("Machine Learning Engineer",
         "- Build production Python services and ML pipelines.",
         "- Expert knowledge of Python, Go and distributed systems.\n- Experience with Kubernetes and TensorFlow.")),
+    ("Account Manager II", _jd("Account Manager II",
+        "- Own commercial accounts, merchant relationships, renewals and revenue growth.\n- Manage client performance and sales targets.",
+        "- Account management experience.\n- Commercial negotiation and relationship-management skills.")),
 ])
 def test_mismatched_specialization_never_scores_80(engine_root: Path, role: str, jd: dict) -> None:
     score = _score(jd, engine_root)

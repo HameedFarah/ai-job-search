@@ -467,7 +467,7 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
 
     has_management = any(term in title for term in seniority_terms)
     has_design_lane = any(term in title for term in design_lane)
-    has_out_of_lane = any(term in title for term in out_of_lane)
+    has_out_of_lane = any(term in title for term in out_of_lane) or "account manager" in title
     has_production = any(term in title for term in production)
     has_junior = any(term in title for term in junior)
 

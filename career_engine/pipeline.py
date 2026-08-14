@@ -160,7 +160,7 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     score = score_fit(normalized, matches, bundle)
     path, cache = _write_stage(
         artifact_dir, "fit_score", score,
-        stable_hash({"matches": matches, "bundle": bundle["bundle_hash"], "stage": "score"}),
+        stable_hash({"matches": matches, "bundle": bundle["bundle_hash"], "stage": "score", "algorithm": 2}),
     )
     outputs["fit_score"] = str(path)
     reused["fit_score"] = cache
