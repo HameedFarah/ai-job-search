@@ -148,6 +148,42 @@ def test_process_jobs_regenerates_existing_packages_and_reports_progress(monkeyp
     assert "1 package(s) regenerated/rendered" in answer
 
 
+def test_workspace_write_candidate_survives_empty_completion_router_error(monkeypatch, tmp_path):
+    artifact_dir = tmp_path / "artifacts" / "abcdef1234567890"
+    artifact_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        assistant,
+        "load_job_context",
+        lambda repo, job_id: {"packet": {"job_id": job_id}, "application": {"headline": "Old"}, "artifact_dir": artifact_dir},
+    )
+
+    def fake_dispatcher(**kwargs):
+        output = kwargs["prompt"].split("OUTPUT PATH:\n", 1)[1].splitlines()[0]
+        Path(output).write_text("{}\n", encoding="utf-8")
+        raise assistant.AssistantError("model route failed after empty completion fallback")
+
+    monkeypatch.setattr(assistant, "run_dispatcher", fake_dispatcher)
+    monkeypatch.setattr(
+        assistant,
+        "_run_engine",
+        lambda repo, args, timeout: json.dumps({"valid": True}),
+    )
+
+    action = assistant._generate_application_package(
+        repo=tmp_path,
+        dispatcher=tmp_path / "dispatcher.py",
+        job_id="abcdef1234567890",
+        force_regenerate=True,
+    )
+    assert action == "generated_and_rendered"
+    assert not list(artifact_dir.glob("dashboard-batch-*.json"))
+
+
+def test_workspace_write_prompts_request_terminal_acknowledgement(tmp_path):
+    prompt = assistant.build_cv_edit_prompt(sample_context(), "Tighten headline", tmp_path / "candidate.json")
+    assert "reply exactly DONE" in prompt
+
+
 def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
     jobs = tmp_path / "jobs.json"
     jobs.write_text(json.dumps({"jobs": [{"id": assistant.HERMES_CAREER_CRON_JOB, "fire_claim": {"by": "host:99999999"}}]}), encoding="utf-8")
