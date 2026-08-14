@@ -15,11 +15,12 @@ def _canonical_url(url: str) -> str:
 def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> dict[str, Any]:
     path = root / "projects/job-automation/config/consultants-bookmarks.v1.json"
     rows = json.loads(path.read_text(encoding="utf-8"))["bookmarks"]
-    report: dict[str, Any] = {"schema_version": 1, "generated_at": utc_now_iso(), "adapter": "jsonld", "jobs": [], "sources": [], "duplicates_dropped": 0, "send_or_submit": False, "notes": ["Only official JobPosting JSON-LD jobs are emitted."]}
+    report: dict[str, Any] = {"schema_version": 1, "generated_at": utc_now_iso(), "adapter": "mixed_official", "jobs": [], "sources": [], "duplicates_dropped": 0, "send_or_submit": False, "notes": ["Only official employer/ATS jobs are emitted."]}
     seen_urls: set[str] = set(); seen_jobs: set[str] = set()
     for row in rows:
         if row.get("status") != "active" or row.get("scan") is not True: continue
-        source = {"source_id": row["id"], "source_name": row["label"], "attempted": False, "status": "skipped", "adapter": "jsonld", "route": "official_page_jsonld", "jobs_fetched": 0, "verified_authoritative": False, "error": ""}
+        adapter_id = str(row.get("adapter") or ("workday" if row.get("ats") == "workday" else "jsonld"))
+        source = {"source_id": row["id"], "source_name": row["label"], "attempted": False, "status": "skipped", "adapter": adapter_id, "route": "official_ats_api" if adapter_id != "jsonld" else "official_page_jsonld", "jobs_fetched": 0, "verified_authoritative": False, "error": ""}
         if row.get("duplicate_of"):
             source["error"] = f"duplicate_of:{row['duplicate_of']}"; report["duplicates_dropped"] += 1; report["sources"].append(source); continue
         canonical = _canonical_url(row["url"])
@@ -27,7 +28,7 @@ def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> d
             source["error"] = "duplicate canonical employer endpoint"; report["duplicates_dropped"] += 1; report["sources"].append(source); continue
         seen_urls.add(canonical); source["attempted"] = True; source["status"] = "empty"
         try:
-            adapter = build_adapter("jsonld", offline=offline)
+            adapter = build_adapter(adapter_id, offline=offline)
             jobs = adapter.search(company=row["url"], limit=max(1, min(limit, 100)), fetch_full=True, offline=offline)
             source["jobs_fetched"] = len(jobs); source["verified_authoritative"] = bool(jobs) and all(bool(j.provenance and j.provenance.official) for j in jobs); source["status"] = "ok" if jobs else "empty"
             for job in jobs:

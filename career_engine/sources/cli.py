@@ -85,6 +85,9 @@ def build_adapter(
     elif adapter_id == "smartrecruiters":
         from .adapters.smartrecruiters import SmartRecruitersAdapter
         cls = SmartRecruitersAdapter
+    elif adapter_id == "workday":
+        from .adapters.workday import WorkdayAdapter
+        cls = WorkdayAdapter
     elif adapter_id == "workable":
         from .adapters.workable import WorkableAdapter
         cls = WorkableAdapter

@@ -43,6 +43,21 @@ _KIND_LABELS = {
 # official, status, blocked_reason, base_url, docs_url, notes, probe.
 _SOURCES: list[dict[str, Any]] = [
     {
+        "id": "workday",
+        "name": "Workday public CXS jobs",
+        "kind": "ats_api",
+        "priority": 1,
+        "auth": "none",
+        "posting_date": "unknown",
+        "official": True,
+        "status": STATUS_ACTIVE,
+        "blocked_reason": "",
+        "base_url": "https://{tenant}.wd*.myworkdayjobs.com/{site}/wday/cxs/{tenant}/{site}/jobs",
+        "docs_url": "https://developer.workday.com/",
+        "notes": "Public unauthenticated CXS endpoint; tenant and site must come from an official employer URL.",
+        "probe": {"verified": True, "companies": ["kbr.wd1.myworkdayjobs.com/kbr_careers"], "verified_at": "2026-08-14"},
+    },
+    {
         "id": "greenhouse",
         "name": "Greenhouse Job Board API",
         "kind": "ats_api",

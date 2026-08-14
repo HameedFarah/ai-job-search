@@ -52,6 +52,16 @@ def test_lever_parses_fixture_and_ms_epoch_date() -> None:
     assert first.detail_url.startswith("https://jobs.example.lever.co/")
     assert first.has_description
 
+def test_workday_parses_official_cxs_fixture() -> None:
+    from career_engine.sources.cli import build_adapter
+    jobs = build_adapter("workday", offline=True).search(
+        company="https://kbr.wd1.myworkdayjobs.com/kbr_careers", limit=5, offline=True
+    )
+    assert len(jobs) == 1
+    assert jobs[0].role == "Senior Project Manager"
+    assert jobs[0].provenance.official is True
+    assert jobs[0].has_description
+
 
 def test_ashby_parses_fixture_with_plain_and_html_description() -> None:
     jobs = offline_adapter("ashby").search(company="ramp", limit=10, offline=OFFLINE)
