@@ -129,10 +129,13 @@ class WorkflowGuardTests(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(f"github.repository != '{UPSTREAM_SLUG}'", text)
 
-    def test_workflow_uses_builtin_token_only(self):
+    def test_workflow_is_read_only_and_does_not_require_issues(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("GH_TOKEN: ${{ github.token }}", text)
+        self.assertIn("contents: read", text)
+        self.assertNotIn("issues: write", text)
+        self.assertNotIn("gh issue", text)
         self.assertNotIn("secrets.", text)
+        self.assertIn("GITHUB_STEP_SUMMARY", text)
 
     def test_actions_are_sha_pinned(self):
         text = WORKFLOW.read_text(encoding="utf-8")
