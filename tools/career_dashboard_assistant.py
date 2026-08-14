@@ -35,6 +35,7 @@ DEFAULT_SITE_SLUG = "gilded-timber-xfj7"
 DEFAULT_WEBSITE_ROOT = Path("/home/hameedo/websites/career-review")
 HERMES_CAREER_CRON_JOB = "edc36e531637"
 HERMES_EXECUTABLE = Path("/home/hameedo/.hermes/hermes-agent/venv/bin/hermes")
+HERMES_REFRESH_TIMEOUT_SECONDS = 90 * 60
 GLOBAL_ROLE_KEY = "__career_engine__"
 RESPONSE_COMMENT_TYPE = "assistant_response"
 REQUEST_COLLECTION = "ai_requests"
@@ -390,7 +391,7 @@ def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
             stderr=subprocess.DEVNULL,
         )
 
-    deadline = time.monotonic() + 35 * 60
+    deadline = time.monotonic() + HERMES_REFRESH_TIMEOUT_SECONDS
     last_status = baseline_status if seen_id else ""
     try:
         while time.monotonic() < deadline:
@@ -422,9 +423,15 @@ def run_refresh_jobs(*, repo: Path, website_root: Path) -> str:
                 trigger.kill()
                 trigger.wait(timeout=5)
 
+    timeout_minutes = HERMES_REFRESH_TIMEOUT_SECONDS // 60
     if seen_id:
-        raise AssistantError(f"Hermes Career Engine refresh {seen_id} did not finish within 35 minutes; last status {last_status}")
-    raise AssistantError("Hermes Career Engine refresh did not create a new durable run within 35 minutes")
+        raise AssistantError(
+            f"Hermes Career Engine refresh {seen_id} did not finish within {timeout_minutes} minutes; "
+            f"last status {last_status}"
+        )
+    raise AssistantError(
+        f"Hermes Career Engine refresh did not create a new durable run within {timeout_minutes} minutes"
+    )
 
 
 def _generate_application_package(*, repo: Path, dispatcher: Path, job_id: str) -> str:
