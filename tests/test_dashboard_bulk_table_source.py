@@ -1,5 +1,7 @@
 """Source-level regressions for Career Engine bulk/table dashboard controls."""
 
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,18 @@ class DashboardBulkTableSourceTests(unittest.TestCase):
         self.assertIn('assets/bulk-table.css', html)
         self.assertIn('assets/bulk-table.js', html)
         self.assertLess(html.index('assets/app.js'), html.index('assets/bulk-table.js'))
+
+    def test_bulk_module_javascript_syntax(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js is unavailable on this test runner")
+        result = subprocess.run(
+            [node, "--check", str(SITE / "assets/bulk-table.js")],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_bulk_module_keeps_applied_confirmation_individual(self) -> None:
         source = (SITE / "assets/bulk-table.js").read_text(encoding="utf-8")
