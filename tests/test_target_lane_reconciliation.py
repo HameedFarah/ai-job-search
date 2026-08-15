@@ -79,6 +79,7 @@ class TargetLaneReconciliationTests(unittest.TestCase):
                 _row("accepted-civil", "Civil Engineer", "generation_ready"),
                 _row("applied-civil", "Civil Engineer", "manual_review_needed", "applied"),
                 _row("generated-civil", "Civil Engineer", "generated_content_valid"),
+                _row("stale-generated-civil", "Civil Engineer", "generation_ready"),
             ]
             records = {row["job_id"]: _record(row) for row in rows}
             records["accepted-civil"] = _record(rows[3], owner_decision="accepted")
@@ -92,6 +93,9 @@ class TargetLaneReconciliationTests(unittest.TestCase):
                 json.dumps({"input_hash": "x", "data": {"stage": "generation_ready"}}) + "\n",
                 encoding="utf-8",
             )
+            stale_generated_dir = base / "artifacts" / "stale-generated-civil"
+            stale_generated_dir.mkdir(parents=True)
+            (stale_generated_dir / "generated_application.json").write_text("{}\n", encoding="utf-8")
 
             result = reconcile_existing_non_target_jobs(tracker, TAXONOMY, actor="system")
 
@@ -104,7 +108,9 @@ class TargetLaneReconciliationTests(unittest.TestCase):
             self.assertEqual(records["accepted-civil"]["job"]["processing_status"], "generation_ready")
             self.assertEqual(records["applied-civil"]["job"]["processing_status"], "manual_review_needed")
             self.assertEqual(records["generated-civil"]["job"]["processing_status"], "generated_content_valid")
+            self.assertEqual(records["stale-generated-civil"]["job"]["processing_status"], "generation_ready")
             self.assertEqual(result["preserved_owner_decision_job_ids"], ["accepted-civil"])
+            self.assertEqual(result["preserved_generated_package_job_ids"], ["stale-generated-civil"])
             self.assertFalse((artifact_dir / "generation_packet.json").exists())
             self.assertFalse((artifact_dir / "generation_packet.stage.json").exists())
             pipeline = json.loads((artifact_dir / "pipeline_state.json").read_text(encoding="utf-8"))["data"]
