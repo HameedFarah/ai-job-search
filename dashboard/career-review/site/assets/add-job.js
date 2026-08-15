@@ -119,4 +119,24 @@ function setupAddJobIntake() {
   });
 }
 
+/* Canonical tracker submission state outranks stale persisted board workflow.
+   This keeps the Applied metric and lane aligned with owner-confirmed tracker
+   records after a dashboard rebuild/re-publish. Batch progress still wins while
+   an active processing run is rendering temporary status. */
+const CANONICAL_APPLIED_STATUS_VALUES = new Set([
+  'applied', 'submitted', 'sent', 'submitted_pending_response',
+  'application_submitted', 'email_sent'
+]);
+const baseStageFor = stageFor;
+stageFor = function canonicalStageFor(role) {
+  const batchOverride = state.batchStageOverrides?.get(role.key);
+  if (batchOverride) return batchOverride;
+  const processingStatus = normalizedStatus(role.processing_status);
+  const applicationStatus = normalizedStatus(role.application_status);
+  if (processingStatus === 'applied' || CANONICAL_APPLIED_STATUS_VALUES.has(applicationStatus)) {
+    return 'applied';
+  }
+  return baseStageFor(role);
+};
+
 document.addEventListener('DOMContentLoaded', setupAddJobIntake);
