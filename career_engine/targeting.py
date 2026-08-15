@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .core import _role_title_signals
+
 
 # Small explicit gap not represented by the existing scoring taxonomy. Most
 # non-target roles are handled by calibration.out_of_lane or by the production
@@ -46,3 +48,19 @@ def auto_skip_reason(normalized_job: dict[str, Any], score: dict[str, Any]) -> s
     if calibration.get("production") and not calibration.get("has_management"):
         return "non_target_production_individual_contributor"
     return ""
+
+
+def auto_skip_title_reason(role: str, taxonomy: dict[str, Any]) -> str:
+    """Classify a title before JD normalization.
+
+    This prevents an obviously non-target vacancy with an empty/truncated JD
+    from being promoted into Manual Review Needed merely because the JD is too
+    short to score. The same central title calibration is reused, so there is no
+    second specialization taxonomy to keep in sync.
+    """
+
+    title = str(role or "").strip()
+    if not title:
+        return ""
+    calibration = _role_title_signals(title, taxonomy)
+    return auto_skip_reason({"role": title}, {"calibration": calibration})
