@@ -11,7 +11,7 @@ The `site:` query templates in this file are the **WebSearch fallback** — for 
 ## Search Sites
 
 Primary:
-- **linkedin.com/jobs** - LinkedIn job listings (filter: Saudi Arabia / Riyadh / GCC); also covered by `linkedin-search` CLI
+- **linkedin.com/jobs** - LinkedIn job listings (filter: Saudi Arabia / Jordan / GCC); also covered by `linkedin-search` CLI
 - **freehire.me** - country-agnostic aggregator of ~50 ATS platforms; covered by `freehire-search` CLI
 - Company career pages for target employers: real-estate developers, engineering/architectural consultancies, major contractors, PMCs, development authorities, and institutional asset owners with meaningful in-house engineering / property / capital-project functions
 
@@ -29,7 +29,7 @@ Do not assume these employers will use specialist titles such as `Capital Projec
 
 ## Query Categories
 
-Queries are grouped by priority. Saudi Arabia is the primary market; UAE and Qatar are secondary GCC markets. Jordan is also an explicit target market and may include roles below the owner's current management seniority when the role is otherwise credible and relevant.
+Queries are grouped by priority. Saudi Arabia is the primary market. Jordan is also an explicit target market and may include roles below the owner's current management seniority when the role is otherwise credible and relevant. The entire GCC is in scope: Saudi Arabia, United Arab Emirates, Qatar, Kuwait, Bahrain and Oman.
 
 ### Priority 1: Design / Architecture Leadership
 
@@ -90,20 +90,30 @@ site:linkedin.com/jobs ("Facilities Manager" OR "Facility Manager" OR "Facilitie
 
 When using LinkedIn or another source with a structured location filter, use the **country location entity for Jordan**, not a free-text location that could resolve to Jordan, Pennsylvania.
 
-### Priority 6: Secondary GCC
+### Priority 6: GCC-Wide Secondary Coverage
+
+Run the senior built-environment search families across **all GCC countries**, not only UAE and Qatar. Saudi Arabia remains primary, but relevant roles in UAE, Qatar, Kuwait, Bahrain and Oman must be retained for scoring.
 
 ```
-site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Project Director" OR "Senior Project Manager" OR "Technical Director" OR "Development Manager") (architecture OR construction OR design OR "real estate" OR development) "United Arab Emirates"
-site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Project Director" OR "Senior Project Manager" OR "Technical Director" OR "Development Manager") (architecture OR construction OR design OR "real estate" OR development) Qatar
+site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Design Director" OR "Project Director" OR "Senior Project Manager" OR "Program Director" OR "Technical Director" OR "Development Manager" OR "Construction Director" OR "Engineering Project Manager") (architecture OR construction OR design OR "real estate" OR development OR infrastructure OR facilities) "United Arab Emirates"
+site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Design Director" OR "Project Director" OR "Senior Project Manager" OR "Program Director" OR "Technical Director" OR "Development Manager" OR "Construction Director" OR "Engineering Project Manager") (architecture OR construction OR design OR "real estate" OR development OR infrastructure OR facilities) Qatar
+site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Project Director" OR "Senior Project Manager" OR "Technical Director" OR "Development Manager" OR "Construction Director" OR "Engineering Project Manager") (architecture OR construction OR design OR "real estate" OR development OR infrastructure OR facilities) Kuwait
+site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Project Director" OR "Senior Project Manager" OR "Technical Director" OR "Development Manager" OR "Construction Director" OR "Engineering Project Manager") (architecture OR construction OR design OR "real estate" OR development OR infrastructure OR facilities) Bahrain
+site:linkedin.com/jobs ("Design Manager" OR "Senior Design Manager" OR "Project Director" OR "Senior Project Manager" OR "Technical Director" OR "Development Manager" OR "Construction Director" OR "Engineering Project Manager") (architecture OR construction OR design OR "real estate" OR development OR infrastructure OR facilities) Oman
 ```
+
+Institutional / asset-owner discovery also applies GCC-wide. Do not limit bank, aviation, healthcare, education, hospitality, retail, government/semi-government, industrial/corporate property or facilities-capital-project searches to Saudi Arabia when the source supports other GCC countries.
 
 ## Location Filter
 
 When evaluating results, verify the job location is within the target market. Define acceptable areas:
 - Saudi Arabia country-wide, with Riyadh and major development hubs included;
 - Jordan country-wide, including Amman, with broader acceptable title/seniority coverage;
-- UAE (especially Dubai / Abu Dhabi) as a secondary GCC market;
-- Qatar / Doha as a secondary GCC market;
+- United Arab Emirates country-wide, especially Dubai / Abu Dhabi;
+- Qatar country-wide, especially Doha;
+- Kuwait country-wide;
+- Bahrain country-wide;
+- Oman country-wide;
 - Remote roles only when legally/geographically feasible.
 
 ## Date Filter
