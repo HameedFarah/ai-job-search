@@ -510,14 +510,23 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
     out_of_lane = spec.get("out_of_lane_terms", [])
     production = spec.get("production_terms", [])
     junior = spec.get("junior_terms", [])
+    functional_out_of_lane = spec.get("functional_out_of_lane_terms", [])
+    mep_specialist_terms = spec.get("mep_specialist_terms", [])
     seniority_terms = taxonomy.get("seniority_terms", [])
 
-    has_management = any(term in title for term in seniority_terms)
-    has_design_lane = any(term in title for term in design_lane)
-    has_target_management = any(term in title for term in target_management)
-    has_out_of_lane = any(term in title for term in out_of_lane) or "account manager" in title
-    has_production = any(term in title for term in production)
-    has_junior = any(term in title for term in junior)
+    def phrase(term: str) -> bool:
+        return bool(re.search(r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])", title))
+    has_management = any(phrase(term) for term in seniority_terms)
+    has_design_lane = any(phrase(term) for term in design_lane)
+    has_target_management = any(phrase(term) for term in target_management)
+    has_out_of_lane = any(phrase(term) for term in out_of_lane) or phrase("account manager")
+    has_production = any(phrase(term) for term in production)
+    has_junior = any(phrase(term) for term in junior)
+    specialist_out = any(phrase(term) for term in functional_out_of_lane)
+    mep_specialist = any(phrase(term) for term in mep_specialist_terms)
+    has_out_of_lane = has_out_of_lane or specialist_out or mep_specialist
+    if mep_specialist and has_management:
+        has_target_management = False
 
     if has_junior:
         specialization_factor, seniority_factor, multiplier = 0.3, 0.2, 0.4
@@ -545,6 +554,7 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
         "target_management": bool(has_management and has_target_management),
         "generic_management": bool(has_management and not has_design_lane and not has_target_management and not has_out_of_lane),
         "out_of_lane": has_out_of_lane,
+        "functional_domain": "mep" if mep_specialist else "specialist" if specialist_out else "general",
         "production": has_production and not has_management,
         "junior": has_junior,
         "has_management": has_management,
@@ -613,7 +623,17 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         signals["jd_out_of_lane"] = "technology_infrastructure"
         signals["mismatch_multiplier"] = min(float(signals["mismatch_multiplier"]), 0.35)
         signals["specialization_factor"] = min(float(signals["specialization_factor"]), 0.3)
-    leadership = 1.0 if any(term in text for term in taxonomy.get("leadership_terms", [])) else 0.55
+    leadership_hits = sum(
+        1 for term in taxonomy.get("leadership_terms", [])
+        if re.search(r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])", text)
+    )
+    # Marketing boilerplate ("we lead", "industry-leading") is not role
+    # leadership evidence. Require multiple signals or explicit responsibility context.
+    responsibility_context = bool(re.search(
+        r"\b(manage|supervise|direct|mentor|team of|reports to|reports directly|lead a team|project delivery)\b",
+        text,
+    ))
+    leadership = 1.0 if leadership_hits >= 2 and responsibility_context else 0.55
     seniority = signals["seniority_factor"]
     geography = 1.0 if any(term in (normalized_job.get("location", "") + " " + text).lower() for term in taxonomy.get("gcc_locations", [])) else 0.45
     sector_terms = {term for claim in bundle.get("claims", []) for term in claim.get("tags", []) if term in text}

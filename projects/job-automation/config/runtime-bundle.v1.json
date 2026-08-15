@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "engine_version": "1.0.0",
-  "built_at": "2026-08-14T16:47:29+00:00",
-  "source_hash": "5ef2e73bd67625b437c0c20ed74ad7ceb0597e3098a62aa20d47c317af809f11",
+  "engine_version": "1.0.1",
+  "built_at": "2026-08-15T10:11:05+00:00",
+  "source_hash": "f505aff26e39eb6eb3429e77e4d7e0c7f1a1a8958a9de28f83c6acabe014e441",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "b60fa89a3dd8f40104a7c95f6d56304258d27a4fbee4d511c408efb9244591c4",
+      "sha256": "f176e9e854be3856593dfaf7449dde0f23afe48f482d0f351500feefbb71a79d",
       "size": 4245,
-      "modified_ns": 1786434305033779675
+      "modified_ns": 1786788641432750831
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "d6ea46f3b4ea34f9d87548b6d2f8327934c02f298a81912844089f6549b7cee6",
-      "size": 9181,
-      "modified_ns": 1786725833944422305
+      "sha256": "284fee03e260447aa237377a5bc925e083759032b7e8ea835710ecadeae9c79e",
+      "size": 9521,
+      "modified_ns": 1786788383484948231
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -36,9 +36,9 @@
     },
     {
       "path": "projects/job-automation/config/consultants-bookmarks.v1.json",
-      "sha256": "08c86e9c556c7ea456082476d981d8266fe1f527eea33cc2e69e308798a3867c",
-      "size": 10808,
-      "modified_ns": 1786726038016158999
+      "sha256": "57468e310e253483d62d3fedb4dac2850ef26d08780cf15082877058af620ca6",
+      "size": 13953,
+      "modified_ns": 1786786899733471101
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
@@ -73,7 +73,7 @@
   ],
   "config": {
     "schema_version": 1,
-    "engine_version": "1.0.0",
+    "engine_version": "1.0.1",
     "vault": {
       "root": "/home/hameedo/obsidian/HermesOpsVault",
       "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",
@@ -696,6 +696,7 @@
         "coordinator",
         "technician",
         "drafter",
+        "draftsperson",
         "consultant",
         "specialist",
         "associate",
@@ -709,6 +710,23 @@
         "entry-level",
         "entry level",
         "assistant"
+      ],
+      "functional_out_of_lane_terms": [
+        "fraud investigator",
+        "fraud investigation",
+        "fraud prevention",
+        "lighting sme",
+        "lighting engineer",
+        "lighting specialist",
+        "roadway lighting",
+        "highway lighting"
+      ],
+      "mep_specialist_terms": [
+        "construction manager mep",
+        "mep manager",
+        "mep lead",
+        "mep director",
+        "mep construction"
       ]
     }
   },
@@ -1498,6 +1516,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "cbe048921a8c066f374fd9bdf0b447e491629dc1deb87a2593d75ce863c280ef",
+  "bundle_hash": "214855856297dbe585954f96888ea69a2aaae6d3a77f44988e3ac3ac43bf8234",
   "cache_reused": false
 }

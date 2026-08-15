@@ -25,6 +25,35 @@ def normalize_key_text(value: str) -> str:
     return _WS_RE.sub(" ", (value or "").strip().lower())
 
 
+_REQ_RE = re.compile(r"(?:job|requisition|req(?:uisition)?)[/_-]?([a-z]?\d{4,})|(?<![A-Z0-9])(R\d{4,})(?![A-Z0-9])", re.I)
+_OFFICIAL_REQ_HOSTS = ("myworkdayjobs.com", "oraclecloud.com", "successfactors.com", "taleo.net")
+_EMPLOYER_ALIASES = {
+    "wsp in africa": "wsp",
+    "wsp africa": "wsp",
+    "parsons corporation": "parsons",
+}
+
+
+def employer_family(value: str) -> str:
+    normalized = normalize_key_text(value)
+    return _EMPLOYER_ALIASES.get(normalized, normalized)
+
+
+def stable_vacancy_identity(*, company: str, role: str = "", external_job_id: str = "", source_url: str = "") -> str:
+    """Cross-source identity for a stable official ATS requisition."""
+    normalized_url = normalize_key_text(source_url)
+    official_surface = any(host in normalized_url for host in _OFFICIAL_REQ_HOSTS)
+    match = _REQ_RE.search(normalized_url) if official_surface else None
+    stable_id = ((match.group(1) or match.group(2)) if match else "").lower()
+    if not stable_id and official_surface:
+        candidate = normalize_key_text(external_job_id)
+        if candidate and not candidate.startswith("synthetic"):
+            stable_id = candidate
+    if stable_id and not stable_id.startswith("synthetic"):
+        return f"{employer_family(company)}|{stable_id}"
+    return ""
+
+
 def dedupe_key(
     *,
     source_id: str,
@@ -39,6 +68,9 @@ def dedupe_key(
     When both ``external_job_id`` and ``source_url`` are present the URL is
     included so different boards under the same adapter never collide.
     """
+    stable = stable_vacancy_identity(company=company, role=role, external_job_id=external_job_id, source_url=source_url)
+    if stable:
+        return hashlib.sha256(("vacancy|" + stable).encode("utf-8")).hexdigest()
     parts = [normalize_key_text(source_id)]
     external = normalize_key_text(external_job_id)
     url = normalize_key_text(source_url)
