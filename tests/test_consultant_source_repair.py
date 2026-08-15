@@ -89,35 +89,87 @@ class OfficialHtmlRepairTests(unittest.TestCase):
 
 
 class StructuredRepairTests(unittest.TestCase):
-    @patch("career_engine.sources.adapters.eightfold_neom.network.fetch_json")
-    def test_neom_eightfold_true_empty_requires_successful_api(self, fetch_json) -> None:
-        fetch_json.return_value = {"positions": [], "count": 0, "domain": "neom.com"}
-        jobs = NeomEightfoldAdapter().search(
-            company="NEOM|https://careers.neom.com/careers?domain=neom.com",
-            location="Saudi Arabia",
-        )
+    def test_neom_eightfold_zero_uses_official_career_fair_positions(self) -> None:
+        fair_html = """
+        <section><h4>Open positions:</h4><ul>
+          <li>Audit &amp; Compliance Senior Manager</li>
+          <li>Project Manager</li>
+          <li>Business Partner</li>
+          <li>Associate Software Engineer</li>
+          <li>Senior Software Engineer</li>
+          <li>Mechanical Engineer</li>
+          <li>Senior Architect</li>
+        </ul></section>
+        <h2>Sponsors</h2>
+        """
+        with patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_json",
+            return_value={"positions": [], "count": 0, "domain": "neom.com"},
+        ), patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_text",
+            return_value=fair_html,
+        ) as fetch_text:
+            jobs = NeomEightfoldAdapter().search(
+                company="NEOM|https://careers.neom.com/careers?domain=neom.com",
+                location="Saudi Arabia",
+                limit=25,
+            )
+        self.assertEqual(len(jobs), 7)
+        self.assertEqual(jobs[-1].role, "Senior Architect")
+        self.assertTrue(all(job.provenance.official for job in jobs))
+        self.assertTrue(all(job.extra["career_fair_fallback"] for job in jobs))
+        self.assertTrue(all(job.has_description is False for job in jobs))
+        fetch_text.assert_called_once_with("https://candidatejourney.neom.com/", max_bytes=4 * 1024 * 1024)
+
+    def test_neom_is_true_empty_only_when_both_official_surfaces_are_empty(self) -> None:
+        with patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_json",
+            return_value={"positions": [], "count": 0, "domain": "neom.com"},
+        ), patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_text",
+            return_value="<h4>Open positions:</h4><h2>Sponsors</h2>",
+        ):
+            jobs = NeomEightfoldAdapter().search(
+                company="NEOM|https://careers.neom.com/careers?domain=neom.com",
+                location="Saudi Arabia",
+            )
         self.assertEqual(jobs, [])
 
-    @patch("career_engine.sources.adapters.eightfold_neom.network.fetch_json")
-    def test_neom_eightfold_maps_official_position(self, fetch_json) -> None:
-        fetch_json.return_value = {
-            "positions": [{
-                "id": "563087400000001",
-                "name": "Senior Architect",
-                "location": "NEOM, Saudi Arabia",
-                "department": "Design",
-                "t_create": 1786500000,
-                "canonicalPositionUrl": "https://careers.neom.com/careers?domain=neom.com&pid=563087400000001",
-            }],
-            "count": 1,
-        }
-        jobs = NeomEightfoldAdapter().search(
-            company="NEOM|https://careers.neom.com/careers?domain=neom.com",
-            location="Saudi Arabia",
-        )
+    def test_neom_eightfold_maps_official_position_without_career_fair_fallback(self) -> None:
+        with patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_json",
+            return_value={
+                "positions": [{
+                    "id": "563087400000001",
+                    "name": "Senior Architect",
+                    "location": "NEOM, Saudi Arabia",
+                    "department": "Design",
+                    "t_create": 1786500000,
+                    "canonicalPositionUrl": "https://careers.neom.com/careers?domain=neom.com&pid=563087400000001",
+                }],
+                "count": 1,
+            },
+        ), patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_text"
+        ) as fetch_text:
+            jobs = NeomEightfoldAdapter().search(
+                company="NEOM|https://careers.neom.com/careers?domain=neom.com",
+                location="Saudi Arabia",
+            )
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0].role, "Senior Architect")
         self.assertTrue(jobs[0].provenance.official)
+        fetch_text.assert_not_called()
+
+    def test_neom_missing_explicit_api_count_fails_closed(self) -> None:
+        with patch(
+            "career_engine.sources.adapters.eightfold_neom.network.fetch_json",
+            return_value={"positions": []},
+        ), self.assertRaises(SourceError):
+            NeomEightfoldAdapter().search(
+                company="NEOM|https://careers.neom.com/careers?domain=neom.com",
+                location="Saudi Arabia",
+            )
 
     @patch("career_engine.sources.adapters.phenom.network.request_json")
     def test_phenom_filters_bechtel_to_saudi(self, request_json) -> None:
@@ -151,11 +203,14 @@ class ConsultantRegistryRepairTests(unittest.TestCase):
         self.rows = {row["id"]: row for row in self.payload["bookmarks"]}
 
     def test_target_routes_are_explicit_and_no_bypass_is_enabled(self) -> None:
+        self.assertEqual(len(self.payload["bookmarks"]), 37)
         self.assertEqual(self.rows["saudconsult"]["adapter"], "official_html")
         self.assertEqual(self.rows["al-othaim-investment"]["url"], "https://www.alothaiminvestment.com/careers")
         self.assertEqual(self.rows["omrania"]["duplicate_of"], "egis")
         self.assertEqual(self.rows["dar-al-handasah-apply"]["adapter"], "official_html")
         self.assertEqual(self.rows["neom"]["adapter"], "eightfold_neom")
+        self.assertIn("https://candidatejourney.neom.com/", self.rows["neom"]["aliases"])
+        self.assertNotIn("neom-virtual-career-fair", self.rows)
         self.assertEqual(self.rows["bechtel-saudi-jobs"]["adapter"], "phenom")
         self.assertEqual(self.rows["buro-happold"]["adapter"], "official_html")
         self.assertEqual(self.rows["meinhardt"]["url"], "https://mjobs.meinhardtgroup.com/")
@@ -163,8 +218,6 @@ class ConsultantRegistryRepairTests(unittest.TestCase):
         self.assertFalse(self.rows["wsp"]["scan"])
         self.assertEqual(self.rows["dar-al-omran"]["status"], "manual")
         self.assertFalse(self.rows["dar-al-omran"]["scan"])
-        self.assertEqual(self.rows["neom-virtual-career-fair"]["status"], "manual")
-        self.assertFalse(self.rows["neom-virtual-career-fair"]["scan"])
 
     def test_offline_registry_summary_matches_repaired_states(self) -> None:
         report = scan_consultants(root=self.root, offline=True, limit=3)
