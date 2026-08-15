@@ -18,7 +18,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from career_engine.bundle import load_bundle
+from career_engine.config import load_config
+from career_engine.pipeline import _load_tracker
 from career_engine.scanner import SCANNER_ACTORS, add_path_scan_statistics, run_scan, write_report
+from career_engine.targeting import reconcile_existing_non_target_jobs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,7 +43,16 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as handle:
             json.dump({"jobs": jobs + consultant_report["jobs"], "paths": scan_paths}, handle, ensure_ascii=False)
             source_path = Path(handle.name)
+
+    bundle = load_bundle(REPO_ROOT)
+    _, paths = load_config(REPO_ROOT)
+    target_lane_reconciliation = reconcile_existing_non_target_jobs(
+        _load_tracker(paths),
+        bundle.get("taxonomy", {}),
+        actor=SCANNER_ACTORS[args.scanner_id],
+    )
     report = run_scan(source_path, root=REPO_ROOT, scanner_id=args.scanner_id)
+    report["target_lane_reconciliation"] = target_lane_reconciliation
     if consultant_report is not None:
         report["consultant_sources"] = consultant_report["sources"]
         report["consultant_summary"] = consultant_report["summary"]
