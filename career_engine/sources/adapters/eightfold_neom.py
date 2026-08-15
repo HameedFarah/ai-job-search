@@ -33,7 +33,7 @@ _CAREER_FAIR_HOST = "candidatejourney.neom.com"
 _CAREER_FAIR_URL = f"https://{_CAREER_FAIR_HOST}/"
 _PAGE_SIZE = 10
 _MAX_PAGES = 200
-_OPEN_POSITIONS_RE = re.compile(r"open\s+positions\s*:? ?", re.I)
+_OPEN_POSITIONS_RE = re.compile(r"open\s+positions\s*:?", re.I)
 _SECTION_END_RE = re.compile(r"(?:#?\s*sponsors\b|frequently\s+asked\s+questions?)", re.I)
 _LI_RE = re.compile(r"<li\b[^>]*>([\s\S]*?)</li>", re.I)
 _ROLE_SAFE_RE = re.compile(r"^[A-Za-z0-9&/()+,.\-'–— ]{3,120}$")
@@ -62,6 +62,7 @@ class NeomEightfoldAdapter(SourceAdapter):
         out: list[DiscoveryJob] = []
         seen: set[str] = set()
         total: int | None = None
+        mapped_count = 0
         for page in range(_MAX_PAGES):
             start = page * _PAGE_SIZE
             params = {"start": str(start), "num": str(_PAGE_SIZE)}
@@ -86,9 +87,13 @@ class NeomEightfoldAdapter(SourceAdapter):
                 if not isinstance(item, dict):
                     continue
                 job = self._map(item, name=name, domain=domain)
-                if job is None or job.dedupe_key() in seen:
+                if job is None:
                     continue
-                seen.add(job.dedupe_key())
+                mapped_count += 1
+                key = job.dedupe_key()
+                if key in seen:
+                    continue
+                seen.add(key)
                 if location and not self._location_matches(location, job.location):
                     continue
                 out.append(job)
@@ -102,13 +107,18 @@ class NeomEightfoldAdapter(SourceAdapter):
 
         if out:
             return out
-        if total != 0:
-            # The canonical API claimed jobs existed but none could be mapped or
-            # matched. Never silently turn that state into a verified empty board.
-            raise SourceError(
-                f"NEOM Eightfold reported {total} positions but no verified jobs were emitted"
-            )
-        return self._career_fair_jobs(name=name, location=location, limit=requested)
+        if total == 0:
+            return self._career_fair_jobs(name=name, location=location, limit=requested)
+        if mapped_count:
+            # A populated canonical board with no Saudi match is a legitimate
+            # filtered-empty result. Do not fall back to the event surface and
+            # risk duplicating canonical corporate vacancies.
+            return []
+        # The API claimed positions existed but none could be mapped. Never
+        # silently turn a parser/schema failure into an empty source.
+        raise SourceError(
+            f"NEOM Eightfold reported {total} positions but none could be mapped"
+        )
 
     @staticmethod
     def _spec(value: str) -> tuple[str, str | None]:
@@ -198,7 +208,7 @@ class NeomEightfoldAdapter(SourceAdapter):
         seen: set[str] = set()
         blocked = {
             "open positions", "apply for jobs", "previous", "next", "login", "register",
-            "platinum", "gold", "silver", "sponsors",
+            "platinum", "gold", "silver", "sponsors", "banner", "chicago",
         }
         for candidate in candidates:
             role = re.sub(r"\s+", " ", candidate).strip(" :-")
