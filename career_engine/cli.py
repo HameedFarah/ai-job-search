@@ -504,6 +504,8 @@ def main(argv: list[str] | None = None) -> int:
             }
             result = prepare(payload, actor=args.actor, force_weak=args.force_weak)
             emit(result, human=args.human)
+            if result.get("stage") == "rejected" and result.get("skip_reason"):
+                return EXIT_WEAK_FIT
             if any(item.startswith("weak_fit:") or item.startswith("below_generation_threshold:") for item in result["blockers"]):
                 return EXIT_WEAK_FIT
             if any(item.startswith("route_unresolved:") for item in result["blockers"]):

@@ -41,6 +41,12 @@ class DashboardBulkTableSourceTests(unittest.TestCase):
         self.assertIn("refreshRoleSurfaces(role)", mutation)
         self.assertIn("stageWriteQueues", mutation)
 
+    def test_targeted_status_refresh_pauses_board_observer(self) -> None:
+        source = (SITE / "assets/bulk-table.js").read_text(encoding="utf-8")
+        refresh = source.split("function refreshRoleCard", 1)[1].split("function refreshTableRow", 1)[0]
+        self.assertIn("boardMutationObserver.disconnect()", refresh)
+        self.assertIn("boardMutationObserver.observe(board", refresh)
+
     def test_table_and_card_multiselect_are_present(self) -> None:
         source = (SITE / "assets/bulk-table.js").read_text(encoding="utf-8")
         self.assertIn("role-bulk-checkbox", source)

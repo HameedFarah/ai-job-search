@@ -10,6 +10,7 @@ let stageMutationCounter = 0;
 let bulkUpdating = false;
 let tableViewMode = localStorage.getItem(BULK_VIEW_KEY) === 'table' ? 'table' : 'kanban';
 let boardRefreshQueued = false;
+let boardMutationObserver = null;
 
 /* Engine-side rejected roles are terminal non-target roles and belong in the
    existing Closed / inactive lane rather than Manual Review Needed. */
@@ -122,13 +123,21 @@ function refreshRoleCard(role) {
   const selector = safeSelectorValue(role.key);
   const oldCard = $(`.role-card[data-role-key="${selector}"]`);
   if (!oldCard) return;
-  const fragment = renderRole(role);
-  const newCard = $('.role-card', fragment);
-  oldCard.replaceWith(fragment);
-  const targetList = $(`.kanban-column[data-stage="${stageFor(role)}"] .column-list`);
-  if (targetList && newCard) targetList.append(newCard);
-  decorateCards();
-  updateColumnCountsAndEmptyStates();
+  const board = $('#board');
+  if (boardMutationObserver) boardMutationObserver.disconnect();
+  try {
+    const fragment = renderRole(role);
+    const newCard = $('.role-card', fragment);
+    oldCard.replaceWith(fragment);
+    const targetList = $(`.kanban-column[data-stage="${stageFor(role)}"] .column-list`);
+    if (targetList && newCard) targetList.append(newCard);
+    decorateCards();
+    updateColumnCountsAndEmptyStates();
+  } finally {
+    if (boardMutationObserver && board) {
+      boardMutationObserver.observe(board, { childList: true, subtree: true });
+    }
+  }
 }
 
 function refreshTableRow(role) {
@@ -529,7 +538,10 @@ function scheduleBoardDecoration() {
 function initializeBulkTable() {
   ensureBulkUi();
   const board = $('#board');
-  if (board) new MutationObserver(scheduleBoardDecoration).observe(board, { childList: true, subtree: true });
+  if (board) {
+    boardMutationObserver = new MutationObserver(scheduleBoardDecoration);
+    boardMutationObserver.observe(board, { childList: true, subtree: true });
+  }
   const overlay = $('#overlay-content');
   if (overlay) new MutationObserver(() => queueMicrotask(ensureOverlayStageSelect)).observe(overlay, { childList: true, subtree: true });
   scheduleBoardDecoration();

@@ -347,8 +347,9 @@ def test_live_verified_high_priority_is_generation_ready(engine_root: Path) -> N
     assert "generation_packet" in state["outputs"]
 
 
-def test_credible_score_without_80_is_blocked_below_threshold(engine_root: Path) -> None:
-    # A credible but sub-80 JD (weaker requirement match) must not generate.
+def test_production_design_coordinator_is_rejected_before_threshold_generation(engine_root: Path) -> None:
+    # A production-oriented individual-contributor design role is outside the
+    # target lane and must terminate before threshold-based generation.
     payload = _jd("Design Coordinator",
                   "- Support design reviews and coordinate documentation.\n- Assist BIM coordination.",
                   "- Bachelor degree in Architecture.\n- Basic design management awareness.")
@@ -356,8 +357,9 @@ def test_credible_score_without_80_is_blocked_below_threshold(engine_root: Path)
     payload["live_verified_at"] = "2026-08-03T10:00:00+00:00"
     payload["live_verification_source"] = "official employer careers page"
     state = prepare(payload, root=engine_root, actor="system")
-    assert state["stage"] == "blocked"
-    assert any(item.startswith("below_generation_threshold:") for item in state["blockers"])
+    assert state["stage"] == "rejected"
+    assert state["skip_reason"] == "non_target_production_individual_contributor"
+    assert state["blockers"] == []
     assert "generation_packet" not in state["outputs"]
 
 
