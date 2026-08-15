@@ -74,15 +74,20 @@ class CareerDashboardAddJobTests(unittest.TestCase):
         self.assertIn("84/100", message)
         self.assertIn("Nothing was sent or submitted", message)
 
-    def test_blocked_job_is_kept_without_forced_generation(self):
+    def test_owner_pasted_job_forces_preparation_without_fit_gating(self):
         prepared = {
             "job_id": "abcdef1234567890",
             "fit_score": {"total": 42},
-            "blockers": ["below_generation_threshold:42"],
+            "blockers": [],
         }
+        captured = {}
         generated = []
-        refreshed = []
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(add_job, "_run_prepare", return_value=prepared):
+
+        def fake_prepare(repo, args):
+            captured["args"] = args
+            return prepared
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(add_job, "_run_prepare", side_effect=fake_prepare):
             root = Path(temp_dir)
             job_id, message = add_job.run_add_job(
                 repo=root,
@@ -93,14 +98,15 @@ class CareerDashboardAddJobTests(unittest.TestCase):
                     "company": "Example Company",
                     "role": "Fraud Investigator",
                 },
-                generate_package=lambda **kwargs: generated.append(kwargs),
-                refresh_dashboard=lambda repo, site: refreshed.append((repo, site)),
+                generate_package=lambda **kwargs: generated.append(kwargs) or "generated_and_rendered",
+                refresh_dashboard=lambda repo, site: None,
             )
         self.assertTrue(job_id)
-        self.assertFalse(generated)
-        self.assertTrue(refreshed)
-        self.assertIn("was not forced", message)
-        self.assertIn("below_generation_threshold:42", message)
+        self.assertIn("--force-weak", captured["args"])
+        self.assertIn("Supplied directly by owner", captured["args"])
+        self.assertTrue(generated)
+        self.assertIn("42/100", message)
+        self.assertIn("Nothing was sent or submitted", message)
 
     def test_url_metadata_fills_missing_fields(self):
         structured = {
@@ -131,6 +137,7 @@ class CareerDashboardAddJobTests(unittest.TestCase):
         self.assertEqual(job_id, "12345678abcdef00")
         self.assertIn("REQ-999", captured["args"])
         self.assertIn("https://example.com/jobs/999", captured["args"])
+        self.assertNotIn("--force-weak", captured["args"])
 
 
 if __name__ == "__main__":

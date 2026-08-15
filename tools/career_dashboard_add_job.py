@@ -211,6 +211,7 @@ def run_add_job(
     """Add one owner-supplied job and return ``(job_id, status_message)``."""
     url = _valid_public_url(str(data.get("job_url", "")))
     description = str(data.get("job_description", "") or "").strip()
+    owner_pasted_description = bool(description)
     company = str(data.get("company", "") or "").strip()
     role = str(data.get("role", "") or "").strip()
     location = str(data.get("location", "") or "").strip()
@@ -249,14 +250,21 @@ def run_add_job(
         handle.write(description)
         jd_path = Path(handle.name)
     try:
+        source = "owner_dashboard" if url else "Supplied directly by owner"
         args = [
             "--jd-file", str(jd_path),
             "--company", company,
             "--role", role,
-            "--source", "owner_dashboard",
+            "--source", source,
             "--external-job-id", external_job_id,
             "--actor", "owner",
         ]
+        if owner_pasted_description:
+            # Owner-pasted vacancies use the accelerated preparation path. Fit
+            # scoring is still retained for analytics, but weak-fit/target-lane
+            # gating must not delay package creation. Evidence validation and
+            # no-send/no-submit controls remain fully enforced downstream.
+            args.append("--force-weak")
         if url:
             args.extend(["--source-url", url, "--application-url", url])
         if location:
