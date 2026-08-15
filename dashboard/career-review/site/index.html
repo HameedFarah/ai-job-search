@@ -7,6 +7,7 @@
   <meta name="description" content="Private Career Engine application workflow for Abdelhamid Farah">
   <title>Career Application Board</title>
   <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/add-job.css">
 </head>
 <body>
   <header class="topbar board-topbar">
@@ -108,7 +109,12 @@
         <label for="process-score" class="sr-only">Minimum score to process</label>
         <input id="process-score" type="number" min="0" max="100" step="1" value="70" aria-label="Minimum score to process">
       </div>
+      <button id="add-job-open" class="toolbar-button add-job-button" type="button" title="Add a job link or paste a job description">
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+        <span class="toolbar-label">Add job</span>
+      </button>
       <span id="operation-status" class="operation-status" aria-live="polite"></span>
+      <span id="add-job-status" class="add-job-status" aria-live="polite"></span>
     </section>
 
     <section id="board" class="kanban" aria-label="Career application Kanban board"></section>
@@ -117,6 +123,7 @@
       <summary>Workflow, data and Gmail notes</summary>
       <div class="help-grid">
         <p><strong>Open a job:</strong> click anywhere on a card (not on buttons, selects or links) to open its detail overlay. The overlay shows score, dates, the selected resume template, cover letter, email text, stage controls, comments and the AI-request queue — all inside the dashboard, no page navigation. <kbd>Esc</kbd> closes it.</p>
+        <p><strong>Add your own job:</strong> use <strong>Add job</strong> to paste a public vacancy link, paste the full job description, or both. Link metadata is extracted when available. The vacancy is deduplicated and scored through the normal Career Engine; eligible jobs are packaged immediately, while blocked jobs stay visible for review. Nothing is sent or submitted.</p>
         <p><strong>Move cards:</strong> drag between columns or use the stage select / action button on each card. <strong>Mark processing</strong> is manual workflow tracking only; use <strong>Process all ≥ N</strong> for actual Career Engine package processing. Stage, resume template, comments, AI requests and design preference are saved to the private site data and survive re-publishes.</p>
         <p><strong>Gmail:</strong> the main action opens Gmail compose (email routes) or the official application portal (portal routes) only in a new tab. If the popup is blocked, the page shows a copyable link and never replaces this tab.</p>
         <p><strong>External gate:</strong> Ready for review is the final internal pre-submission state. You still submit or send manually, then confirm it here.</p>
@@ -124,6 +131,42 @@
       </div>
     </details>
   </main>
+
+  <dialog id="add-job-dialog" class="add-job-dialog" aria-labelledby="add-job-title">
+    <form id="add-job-form" class="add-job-form" method="dialog">
+      <div class="add-job-header">
+        <div>
+          <h2 id="add-job-title">Add a job</h2>
+          <p>Paste a public job link, the full job description, or both. Career Engine will dedupe, score and generate the package immediately when eligible.</p>
+        </div>
+        <button id="add-job-close" class="add-job-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="add-job-fields">
+        <label class="add-job-field">Job link
+          <input id="add-job-url" type="url" inputmode="url" placeholder="https://company.com/careers/job/..." autocomplete="url">
+        </label>
+        <div class="add-job-or"><span>or / and</span></div>
+        <label class="add-job-field">Job description
+          <textarea id="add-job-description" placeholder="Paste the full job description here…"></textarea>
+        </label>
+        <div class="add-job-meta-grid">
+          <label class="add-job-field">Company <small>(optional when link provides it)</small>
+            <input id="add-job-company" type="text" autocomplete="organization">
+          </label>
+          <label class="add-job-field">Role <small>(optional when link provides it)</small>
+            <input id="add-job-role" type="text" autocomplete="off">
+          </label>
+        </div>
+        <label class="add-job-field">Location <small>(optional)</small>
+          <input id="add-job-location" type="text" autocomplete="off">
+        </label>
+      </div>
+      <div class="add-job-actions">
+        <span>Packages stay internal until you explicitly apply or send.</span>
+        <button id="add-job-submit" class="toolbar-button primary" type="submit">Add &amp; process</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="job-overlay" class="overlay" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="ov-role">
     <div class="overlay-backdrop" data-overlay-close></div>
@@ -157,5 +200,6 @@
 
   <script src="assets/shared.js" defer></script>
   <script src="assets/app.js" defer></script>
+  <script src="assets/add-job.js" defer></script>
 </body>
 </html>

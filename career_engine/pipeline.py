@@ -199,7 +199,16 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     if score["total"] < threshold and not force_weak:
         blockers.append(f"below_generation_threshold:{score['total']}")
     if route["route"] == "unresolved":
-        blockers.append("route_unresolved:" + route.get("blocker", ""))
+        route_message = "route_unresolved:" + route.get("blocker", "")
+        if normalized.get("source") == "owner_dashboard":
+            # Owner-pasted JDs are allowed to produce an internal review package
+            # before an employer route is known. The unresolved route remains a
+            # warning and the rendered package still carries
+            # external_action_allowed=False; nothing can be sent/submitted from
+            # this preparation-only path.
+            warnings.append("preparation_only_" + route_message)
+        else:
+            blockers.append(route_message)
 
     status = "blocked" if blockers else "generation_ready"
     if not blockers:

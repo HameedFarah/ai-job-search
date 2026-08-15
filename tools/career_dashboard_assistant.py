@@ -41,6 +41,7 @@ HERMES_EXECUTABLE = Path("/home/hameedo/.hermes/hermes-agent/venv/bin/hermes")
 HERMES_CRON_JOBS = Path("/home/hameedo/.hermes/cron/jobs.json")
 HERMES_REFRESH_TIMEOUT_SECONDS = 90 * 60
 GLOBAL_ROLE_KEY = "__career_engine__"
+ADD_JOB_ROLE_KEY = "__career_engine_add_job__"
 RESPONSE_COMMENT_TYPE = "assistant_response"
 REQUEST_COLLECTION = "ai_requests"
 COMMENT_COLLECTION = "comments"
@@ -1046,6 +1047,23 @@ def answer_request(
     role_key = str(data.get("role_key", ""))
     request_type = str(data.get("request_type", "questions")).strip().lower().replace("-", "_").replace(" ", "_")
     prompt = str(data.get("prompt", "")).strip()
+    if role_key == ADD_JOB_ROLE_KEY:
+        if request_type != "add_job":
+            raise AssistantError(f"unsupported add-job request type: {request_type}")
+        try:
+            from tools.career_dashboard_add_job import run_add_job
+        except ImportError:
+            from career_dashboard_add_job import run_add_job
+        job_id, answer = run_add_job(
+            repo=repo,
+            dispatcher=dispatcher,
+            website_root=website_root,
+            data=data,
+            generate_package=_generate_application_package,
+            refresh_dashboard=_refresh_dashboard_site,
+            progress_callback=progress_callback,
+        )
+        return f"tracker-{job_id}", answer, {"validation_status": "success", "owner_input_needed": False}
     if role_key == GLOBAL_ROLE_KEY:
         if request_type == "refresh_jobs":
             answer = run_refresh_jobs(repo=repo, website_root=website_root)
