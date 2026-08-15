@@ -235,6 +235,40 @@ def test_adjacent_design_management_with_strong_evidence_scores_80(engine_root: 
     assert score["recommendation"] == "high_priority"
 
 
+@pytest.mark.parametrize("role", [
+    "CAD Support (Saudi National)", "GIS Expert", "Technical Manager - Traffic & Mobility",
+])
+def test_specialist_delivery_titles_do_not_bypass_target_lane(engine_root: Path, role: str) -> None:
+    responsibilities = "- Lead specialist technical work, analysis and domain deliverables."
+    requirements = "- 10+ years of domain-specific experience and specialist software knowledge."
+    if "Traffic" in role:
+        responsibilities += "\n- Apply traffic engineering, HCM methodologies and geometric design."
+        requirements += "\n- 20+ years specifically in Traffic/Mobility Engineering."
+    score = _score(_jd(role, responsibilities, requirements), engine_root)
+    assert score["total"] < 70, score
+    assert score["calibration"]["out_of_lane"] is True
+
+
+def test_corporate_governance_is_not_design_governance(engine_root: Path) -> None:
+    score = _score(_jd("Governance Manager",
+        "- Maintain corporate governance, regulatory compliance, risk controls and board records.",
+        "- Experience in fintech, compliance, AML and financial-services regulation."), engine_root)
+    assert score["total"] < 70, score
+    assert score["calibration"]["functional_domain"] == "corporate_governance"
+
+
+@pytest.mark.parametrize("role", [
+    "Project Manager - Infrastructure & Utilities Operations",
+    "Design Manager - Infrastructure",
+    "Senior Project Manager - Utility Compounds",
+    "Construction Manager - Road, Civil & Structures",
+    "Project Manager", "Construction Manager", "Design Manager",
+])
+def test_general_delivery_titles_are_not_blocked_by_broad_domain_words(engine_root: Path, role: str) -> None:
+    score = _score(_jd(role, DESIGN_MANAGEMENT_JD, DESIGN_MANAGEMENT_JD), engine_root)
+    assert score["calibration"]["out_of_lane"] is False, score
+
+
 # ---------------------------------------------------------------------------
 # Raw score + human override preservation
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "engine_version": "1.0.1",
+  "engine_version": "1.0.2",
   "vault": {
     "root": "/home/hameedo/obsidian/HermesOpsVault",
     "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",

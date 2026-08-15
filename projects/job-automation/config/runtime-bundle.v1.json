@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "engine_version": "1.0.1",
-  "built_at": "2026-08-15T10:11:05+00:00",
-  "source_hash": "f505aff26e39eb6eb3429e77e4d7e0c7f1a1a8958a9de28f83c6acabe014e441",
+  "engine_version": "1.0.2",
+  "built_at": "2026-08-15T10:41:26+00:00",
+  "source_hash": "b9236fee4aa4e0936d8d31a1ed8d1ebdac0e5278b1a25c204607c2367f2e5c1b",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "f176e9e854be3856593dfaf7449dde0f23afe48f482d0f351500feefbb71a79d",
+      "sha256": "96d1425eb1ffcff3a27d925166ad9f12f4ccf9675387fd54b392b5c2c5c97b01",
       "size": 4245,
-      "modified_ns": 1786788641432750831
+      "modified_ns": 1786790050557618687
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "284fee03e260447aa237377a5bc925e083759032b7e8ea835710ecadeae9c79e",
-      "size": 9521,
-      "modified_ns": 1786788383484948231
+      "sha256": "ef68f7e7d99b75abe997031fdc6023c980401844ccac8dcbb2d156b50a0f29b1",
+      "size": 9974,
+      "modified_ns": 1786790449929511167
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -73,7 +73,7 @@
   ],
   "config": {
     "schema_version": 1,
-    "engine_version": "1.0.1",
+    "engine_version": "1.0.2",
     "vault": {
       "root": "/home/hameedo/obsidian/HermesOpsVault",
       "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",
@@ -719,7 +719,31 @@
         "lighting engineer",
         "lighting specialist",
         "roadway lighting",
-        "highway lighting"
+        "highway lighting",
+        "cad support",
+        "cad production support",
+        "gis expert",
+        "gis specialist"
+      ],
+      "specialist_domain_rules": [
+        {
+          "title_terms": [
+            "traffic manager",
+            "traffic technical manager",
+            "traffic engineering manager",
+            "mobility manager",
+            "mobility technical manager",
+            "technical manager traffic mobility",
+            "traffic and mobility"
+          ],
+          "jd_terms": [
+            "traffic engineering",
+            "mobility engineering",
+            "hcm methodologies",
+            "geometric design"
+          ],
+          "minimum_jd_terms": 2
+        }
       ],
       "mep_specialist_terms": [
         "construction manager mep",
@@ -1516,6 +1540,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "214855856297dbe585954f96888ea69a2aaae6d3a77f44988e3ac3ac43bf8234",
+  "bundle_hash": "fe13e6e5a4690b4842479accf64bc3fe7c1d65ca584bff570e3e90fcac3fa88a",
   "cache_reused": false
 }

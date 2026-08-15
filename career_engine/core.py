@@ -607,6 +607,46 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
     text = normalized_job["full_job_description"].lower()
     taxonomy = bundle.get("taxonomy", {})
     signals = _role_title_signals(normalized_job["role"], taxonomy)
+    title_lower = normalized_job["role"].lower()
+    normalized_title = re.sub(r"[^a-z0-9]+", " ", title_lower).strip()
+    specialist_rules = taxonomy.get("specialization", {}).get("specialist_domain_rules", [])
+    specialist_domain = any(
+        any(re.search(r"(?<![a-z0-9])" + re.escape(re.sub(r"[^a-z0-9]+", " ", title_term.lower()).strip()) + r"(?![a-z0-9])", normalized_title)
+            for title_term in rule.get("title_terms", []))
+        and sum(term.lower() in text for term in rule.get("jd_terms", [])) >= int(rule.get("minimum_jd_terms", 2))
+        for rule in specialist_rules
+    )
+    # Bounded taxonomy terms cover production-support/specialist titles;
+    # contextual rules above cover technical traffic/mobility management.
+    if specialist_domain:
+        signals = dict(signals)
+        signals.update({
+            "out_of_lane": True,
+            "functional_domain": "specialist",
+            "jd_out_of_lane": "specialist_delivery_domain",
+            "mismatch_multiplier": min(float(signals["mismatch_multiplier"]), 0.35),
+            "specialization_factor": min(float(signals["specialization_factor"]), 0.3),
+        })
+    # Governance is only a target lane when the JD is about design/project
+    # governance. Corporate, regulatory, compliance, risk and fintech
+    # governance are materially different functions.
+    governance_context = any(term in text for term in (
+        "regulatory", "compliance", "fintech", "financial services", "aml",
+        "risk management", "corporate governance", "board governance",
+    ))
+    delivery_context = any(term in text for term in (
+        "design governance", "project governance", "construction governance",
+        "delivery governance", "architectural governance",
+    ))
+    if "governance" in title_lower and governance_context and not delivery_context:
+        signals = dict(signals)
+        signals.update({
+            "out_of_lane": True,
+            "functional_domain": "corporate_governance",
+            "jd_out_of_lane": "corporate_governance",
+            "mismatch_multiplier": min(float(signals["mismatch_multiplier"]), 0.35),
+            "specialization_factor": min(float(signals["specialization_factor"]), 0.3),
+        })
     # Some generic built-environment-sounding titles are actually technology
     # roles (for example "Asset Infrastructure Design"). When the JD carries
     # multiple unmistakable IT-domain signals, apply the same specialization
