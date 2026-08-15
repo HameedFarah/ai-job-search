@@ -1,28 +1,15 @@
 """Bounded first-party HTML career-page adapter.
 
-This adapter is intentionally small and preset-driven.  It is used only for
-employer-owned career pages whose public HTML is the authoritative listing
-surface and where a maintained ATS API is not a better fit.
-
-Supported presets:
-
-- ``saudconsult``: SaudConsult's current careers page;
-- ``othaim``: Abdullah Al Othaim Investment careers page/sentinel;
-- ``applytojob``: employer-owned ApplyToJob boards;
-- ``tribepad``: Tribepad public vacancy pages (Buro Happold);
-- ``wpjm``: WordPress Job Manager listing pages (Meinhardt).
-
-The adapter never treats an unrecognised page as an empty board: if no vacancy
-records are parsed and no preset-specific empty marker is present, it fails
-closed with ``SourceError``.  Detail hydration happens only after location
-filtering and limiting so a global board cannot fan out into unbounded detail
-requests.
+Preset-driven parsing is used only for employer-owned career surfaces where a
+maintained structured ATS API is not a better fit. Unknown page shapes fail
+closed; a source is empty only when parsing succeeds or a verified empty marker
+is present.
 """
 from __future__ import annotations
 
 import re
 from html import unescape
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 from .. import network
 from ..base import DiscoveryJob, SourceAdapter, SourceError, html_to_text
@@ -35,9 +22,14 @@ _LOCATION_CLASS_RE = re.compile(
     r'<(?:div|span|li)\b[^>]*class=["\'][^"\']*(?:location|job-location)[^"\']*["\'][^>]*>([\s\S]*?)</(?:div|span|li)>',
     re.I,
 )
-_JOB_LI_RE = re.compile(r'<li\b[^>]*class=["\'][^"\']*\bjob_listing\b[^"\']*["\'][^>]*>([\s\S]*?)</li>', re.I)
 _MAIN_RE = re.compile(r'<(?:main|article)\b[^>]*>([\s\S]*?)</(?:main|article)>', re.I)
 _ID_RE = re.compile(r'(?<!\d)(\d{2,})(?!\d)')
+_WPJM_OPEN_RE = re.compile(r'<li\b[^>]*class=["\']([^"\']*\bjob_listing\b[^"\']*)["\'][^>]*>', re.I)
+_WPJM_POST_RE = re.compile(r'\bpost-(\d+)\b', re.I)
+_TRIBEPAD_TITLE_RE = re.compile(r'class=["\'][^"\']*\bjob-list-title\b[^"\']*["\'][^>]*>([\s\S]*?)</span>', re.I)
+_TRIBEPAD_ADDRESS_RE = re.compile(r'itemprop=["\']address["\'][^>]*>([\s\S]*?)</span>', re.I)
+_TRIBEPAD_NEXT_RE = re.compile(r'(?:Next results page|Page number\s+\d+)', re.I)
+_MAX_TRIBEPAD_PAGES = 20
 
 _EMPTY_MARKERS = {
     "saudconsult": (
@@ -81,8 +73,6 @@ def _context_location(block: str) -> str:
     if match:
         return _clean(match.group(1))
     text = _clean(block)
-    # Prefer an explicit Saudi location when present; this keeps the parser
-    # deterministic without fabricating a location from the requested filter.
     match = re.search(
         r'((?:Riyadh|Jeddah|Dammam|Khobar|Jubail|Dhahran|Tabuk|Dhalm|NEOM)(?:\s*,[^\n|]{0,45})?(?:Saudi Arabia|KSA)?)',
         text,
@@ -96,13 +86,6 @@ def _context_location(block: str) -> str:
 
 
 def _anchor_context(html: str, start: int, end: int) -> str:
-    """Return the smallest plausible listing container around one job link.
-
-    A broad character window can leak a neighbouring card's Saudi location into
-    a global vacancy. Prefer the nearest enclosing list/article/section/div
-    block; use a deliberately small fallback window only when the page has no
-    useful container markup.
-    """
     candidates: list[tuple[int, str]] = []
     for tag in ("li", "article", "section", "div"):
         opener = html.rfind(f"<{tag}", 0, start)
@@ -131,25 +114,38 @@ class OfficialHtmlAdapter(SourceAdapter):
         offline: bool = False,
     ) -> list[DiscoveryJob]:
         name, base, preset = self._spec(company)
-        if offline:
-            # Offline consultant-registry tests exercise routing, not these live
-            # sites. Return a deterministic empty page only for known presets;
-            # parser behaviour itself is covered with mocked live HTML tests.
-            html = self._offline_html(preset)
-        else:
-            html = network.fetch_text(base, max_bytes=4 * 1024 * 1024)
-        rows = self._parse(base, html, preset)
-        if not rows:
-            lowered = _clean(html).lower()
-            if not any(marker in lowered for marker in _EMPTY_MARKERS[preset]):
-                raise SourceError(
-                    f"{name} careers page matched no {preset} vacancies and no verified empty-state marker"
-                )
-            return []
-
         requested = max(1, min(int(limit), 100))
+
+        if offline:
+            pages = [(base, self._offline_html(preset))]
+        elif preset == "tribepad":
+            pages = self._fetch_tribepad_pages(base)
+        else:
+            pages = [(base, network.fetch_text(base, max_bytes=4 * 1024 * 1024))]
+
+        rows: list[tuple[str, str, str, str]] = []
+        saw_parseable_page = False
+        for page_url, html in pages:
+            page_rows = self._parse(page_url, html, preset)
+            if page_rows:
+                saw_parseable_page = True
+                rows.extend(page_rows)
+                continue
+            lowered = _clean(html).lower()
+            if any(marker in lowered for marker in _EMPTY_MARKERS[preset]):
+                saw_parseable_page = True
+
+        if not rows and not saw_parseable_page:
+            raise SourceError(
+                f"{name} careers page matched no {preset} vacancies and no verified empty-state marker"
+            )
+
         jobs: list[DiscoveryJob] = []
+        seen_urls: set[str] = set()
         for raw_id, role, loc, detail_url in rows:
+            if detail_url in seen_urls:
+                continue
+            seen_urls.add(detail_url)
             if not _location_matches(location, loc):
                 continue
             jobs.append(self._job(name, raw_id, role, loc, detail_url))
@@ -179,6 +175,25 @@ class OfficialHtmlAdapter(SourceAdapter):
             raise SourceError(f"unsupported official_html preset: {preset}")
         return name, base, preset
 
+    def _fetch_tribepad_pages(self, base: str) -> list[tuple[str, str]]:
+        pages: list[tuple[str, str]] = []
+        root = base.rstrip("/")
+        previous_urls: set[str] = set()
+        for page in range(1, _MAX_TRIBEPAD_PAGES + 1):
+            url = base if page == 1 else f"{root}/{page}"
+            html = network.fetch_text(url, max_bytes=4 * 1024 * 1024)
+            pages.append((url, html))
+            rows = self._parse(url, html, "tribepad")
+            urls = {row[3] for row in rows}
+            if not rows:
+                break
+            if urls and urls == previous_urls:
+                break
+            previous_urls = urls
+            if not _TRIBEPAD_NEXT_RE.search(_clean(html)):
+                break
+        return pages
+
     def _parse(self, base: str, html: str, preset: str) -> list[tuple[str, str, str, str]]:
         if preset == "wpjm":
             rows = self._parse_wpjm(base, html)
@@ -195,32 +210,49 @@ class OfficialHtmlAdapter(SourceAdapter):
 
     def _parse_wpjm(self, base: str, html: str) -> list[tuple[str, str, str, str]]:
         out: list[tuple[str, str, str, str]] = []
-        for match in _JOB_LI_RE.finditer(html or ""):
-            block = match.group(1)
+        for match in _WPJM_OPEN_RE.finditer(html or ""):
+            classes = match.group(1)
+            # WP Job Manager retains expired listings in the public archive.
+            # They are evidence of history, not live vacancies.
+            if "status-expired" in classes.lower():
+                continue
+            end = html.find("</a></li>", match.end())
+            block = html[match.start() : end + 9] if end >= 0 else html[match.start() : match.start() + 6000]
             href_match = _A_RE.search(block)
             title_match = _H3_RE.search(block)
             if not href_match or not title_match:
                 continue
             url = urljoin(base, unescape(href_match.group(1)))
-            if "/job/" not in urlsplit(url).path.lower():
+            parsed = urlsplit(url)
+            query = parse_qs(parsed.query)
+            if "/job/" not in parsed.path.lower() and query.get("post_type") != ["job_listing"]:
                 continue
             role = _clean(title_match.group(1))
             loc = _context_location(block)
-            slug = urlsplit(url).path.rstrip("/").split("/")[-1]
-            out.append((slug, role, loc, url))
+            post_match = _WPJM_POST_RE.search(classes)
+            raw_id = post_match.group(1) if post_match else (query.get("p") or [parsed.path.rstrip("/").split("/")[-1]])[0]
+            out.append((raw_id, role, loc, url))
         return out
 
     def _parse_anchors(self, base: str, html: str, preset: str) -> list[tuple[str, str, str, str]]:
         out: list[tuple[str, str, str, str]] = []
         for match in _A_RE.finditer(html or ""):
             href = unescape(match.group(1)).strip()
-            role = _clean(match.group(2))
+            inner = match.group(2)
+            role = _clean(inner)
             if not href or not role:
                 continue
             url = urljoin(base, href)
             path = urlsplit(url).path.lower()
-            if preset == "tribepad" and "/jobs/job/" not in path:
-                continue
+            if preset == "tribepad":
+                if "/jobs/job/" not in path:
+                    continue
+                title_match = _TRIBEPAD_TITLE_RE.search(inner)
+                role = _clean(title_match.group(1)) if title_match else role
+                address_match = _TRIBEPAD_ADDRESS_RE.search(inner)
+                loc = _clean(address_match.group(1)) if address_match else _context_location(inner)
+            else:
+                loc = ""
             if preset == "applytojob" and "/apply/" not in path:
                 continue
             if preset == "applytojob" and path.rstrip("/").endswith("/apply"):
@@ -229,11 +261,11 @@ class OfficialHtmlAdapter(SourceAdapter):
                 continue
             if preset == "othaim" and not any(token in path for token in ("job", "career", "vacanc")):
                 continue
-            # Ignore generic navigation labels rather than promoting them as jobs.
             if role.lower() in {"jobs", "careers", "career", "apply", "apply now", "view jobs", "show more jobs"}:
                 continue
-            block = _anchor_context(html, match.start(), match.end())
-            loc = _context_location(block)
+            if preset != "tribepad":
+                block = _anchor_context(html, match.start(), match.end())
+                loc = _context_location(block)
             id_match = _ID_RE.search(urlsplit(url).path)
             raw_id = id_match.group(1) if id_match else urlsplit(url).path.rstrip("/").split("/")[-1]
             out.append((raw_id, role, loc, url))
