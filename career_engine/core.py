@@ -13,6 +13,16 @@ CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 BULLET_RE = re.compile(r"^\s*(?:[-*•▪◦]|\d+[.)])\s+")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 NUMBER_RE = re.compile(r"(?<![A-Za-z])(?:SAR\s*)?\d[\d,.]*(?:\s*(?:%|M|B|K|\+|million|billion))?", re.IGNORECASE)
+NATIONALITY_MANDATE_RE = re.compile(
+    r"\b(?P<nationality>[A-Za-z][A-Za-z -]{1,24}?)\s+"
+    r"(?:national(?:s)?|citizen(?:s)?)\b|"
+    r"\b(?P<required>[A-Za-z][A-Za-z -]{1,40}?)\s+citizenship\s+required\b",
+    re.IGNORECASE,
+)
+NATIONALITY_HARD_SIGNAL_RE = re.compile(
+    r"\b(?:only|must\s+be|require[sd]?|required|mandatory|eligib(?:le|ility))\b",
+    re.IGNORECASE,
+)
 
 LIVE_STATUS_VALUES = ("live", "closed", "unverified")
 THIRD_PARTY_APPLICATION_HOSTS = (
@@ -41,6 +51,45 @@ def normalize_text(text: str) -> str:
         output.append(line)
         blank = False
     return "\n".join(output).strip()
+
+
+def nationality_requirement_gate(text: str) -> str | None:
+    """Return an explicitly mandated nationality, without treating geography as one.
+
+    Deliberately requires a hard eligibility signal for prose requirements; title
+    forms such as ``(Saudi National)`` and ``Saudi National`` are explicit by
+    their parenthetical/title construction.
+    """
+    normalized = normalize_text(text)
+    explicit_patterns = (
+        re.compile(r"\bmust\s+be\s+(?:a|an)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\s+national", re.IGNORECASE),
+        re.compile(r"\b([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\s+nationals?\s+only\b", re.IGNORECASE),
+        re.compile(r"\(([^)]{1,40})\s+(?:national|citizen)\s*\)", re.IGNORECASE),
+    )
+    for pattern in explicit_patterns:
+        match = pattern.search(normalized)
+        if match:
+            value = re.sub(r"^(?:a|an|the)\s+", "", match.group(1), flags=re.IGNORECASE)
+            return re.sub(r"\s+", " ", value).strip(" -")
+    for match in NATIONALITY_MANDATE_RE.finditer(normalized):
+        nationality = (match.group("nationality") or match.group("required") or "").strip(" -")
+        nationality = re.sub(r"^(?:a|an|the)\s+", "", nationality, flags=re.IGNORECASE)
+        if not nationality or nationality.lower() in {"a", "an", "the"}:
+            continue
+        clause = normalized[max(0, match.start() - 50): min(len(normalized), match.end() + 50)]
+        title_form = bool(re.search(r"\([^)]*\b(?:national|citizen)", clause, re.IGNORECASE))
+        if title_form or NATIONALITY_HARD_SIGNAL_RE.search(clause):
+            return re.sub(r"\s+", " ", nationality).strip()
+    return None
+
+
+def nationality_matches(required: str, nationalities: list[Any]) -> bool:
+    required_tokens = set(re.findall(r"[a-z]+", required.lower())) - {"national", "citizen", "citizenship"}
+    for candidate in nationalities:
+        candidate_tokens = set(re.findall(r"[a-z]+", str(candidate).lower()))
+        if required_tokens and (required_tokens <= candidate_tokens or candidate_tokens <= required_tokens):
+            return True
+    return False
 
 
 def slug(value: str) -> str:
@@ -605,6 +654,14 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         return sum(points.get(m["status"], 0.0) for m in relevant) / len(relevant)
 
     text = normalized_job["full_job_description"].lower()
+    nationality_requirement = nationality_requirement_gate(
+        f"{normalized_job.get('role', '')}\n{normalized_job.get('full_job_description', '')}"
+    )
+    candidate_nationalities = list(bundle.get("identity", {}).get("nationalities") or [])
+    nationality_mismatch = bool(
+        nationality_requirement
+        and not nationality_matches(nationality_requirement, candidate_nationalities)
+    )
     taxonomy = bundle.get("taxonomy", {})
     signals = _role_title_signals(normalized_job["role"], taxonomy)
     title_lower = normalized_job["role"].lower()
@@ -700,6 +757,8 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         )
         is not None
     ]
+    if nationality_mismatch:
+        raw_total = min(raw_total, thresholds["high_priority"] - 1)
     # A candidate cannot be high priority while an explicit mandatory sector
     # requirement remains unsupported. Preserve the underlying subscores for
     # transparency, but cap the total immediately below the high-priority
@@ -722,12 +781,20 @@ def score_fit(normalized_job: dict[str, Any], matches: list[dict[str, Any]], bun
         recommendation = "weak"
     strengths = [req_by_id[m["requirement_id"]]["text"] for m in matches if m["status"] == "matched"][:8]
     gaps = [req_by_id[m["requirement_id"]]["text"] for m in matches if m["status"] == "gap"][:8]
+    calibration = dict(signals)
+    if nationality_mismatch:
+        calibration.update({
+            "mandatory_nationality_mismatch": True,
+            "mandatory_nationality": nationality_requirement,
+            "eligibility_blocker": "mandatory_nationality_mismatch",
+        })
+        gaps = ([f"mandatory_nationality_mismatch: {nationality_requirement}"] + gaps)[:8]
     return to_data(FitScore(
         total=total, recommendation=recommendation, subscores=subscores,
         strengths=strengths, gaps=gaps,
         adjustment_ceiling=config["scoring"]["llm_adjustment_ceiling"],
         raw_total=raw_total,
-        calibration=signals,
+        calibration=calibration,
     ))
 
 

@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "engine_version": "1.0.2",
-  "built_at": "2026-08-15T10:41:26+00:00",
-  "source_hash": "b9236fee4aa4e0936d8d31a1ed8d1ebdac0e5278b1a25c204607c2367f2e5c1b",
+  "engine_version": "1.0.3",
+  "built_at": "2026-08-15T10:53:38+00:00",
+  "source_hash": "251db60498fef522f3568ff113c18fe9cbf47b6c509165ef3cd3bc756c7b0766",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "96d1425eb1ffcff3a27d925166ad9f12f4ccf9675387fd54b392b5c2c5c97b01",
+      "sha256": "7936f6100642b4048f37ace3cd92dfb2d6b954835baef2c63c1f938cb87cae7a",
       "size": 4245,
-      "modified_ns": 1786790050557618687
+      "modified_ns": 1786791169337241848
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
@@ -73,7 +73,7 @@
   ],
   "config": {
     "schema_version": 1,
-    "engine_version": "1.0.2",
+    "engine_version": "1.0.3",
     "vault": {
       "root": "/home/hameedo/obsidian/HermesOpsVault",
       "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",
@@ -1540,6 +1540,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "fe13e6e5a4690b4842479accf64bc3fe7c1d65ca584bff570e3e90fcac3fa88a",
+  "bundle_hash": "dcf3f33073c2cb2076d9de237c66c1575fcd83f8eba2b1ac03e3519f0e649d00",
   "cache_reused": false
 }
