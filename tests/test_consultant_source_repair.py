@@ -13,6 +13,22 @@ from career_engine.sources.consultants import scan_consultants
 
 
 class OfficialHtmlRepairTests(unittest.TestCase):
+    def test_meinhardt_current_wpjm_card_shape_filters_same_site_job_urls(self) -> None:
+        fixture = Path(__file__).resolve().parents[1] / "career_engine/sources/fixtures/meinhardt-wpjm-current.html"
+        jobs = OfficialHtmlAdapter().search(
+            company="Meinhardt|https://mjobs.meinhardtgroup.com/|wpjm",
+            location="Saudi Arabia",
+            limit=25,
+            offline=True,
+        )
+        # The offline path is intentionally still the verified-empty sentinel;
+        # exercise the current board fixture directly through the parser.
+        rows = OfficialHtmlAdapter()._parse(
+            "https://mjobs.meinhardtgroup.com/", fixture.read_text(), "wpjm"
+        )
+        self.assertEqual([(row[1], row[2]) for row in rows], [("Mechanical Engineer", "Saudi Arabia"), ("Urban Planner / Designer", "Singapore")])
+        self.assertEqual(jobs, [])
+
     @patch("career_engine.sources.adapters.official_html.network.fetch_text")
     def test_saudconsult_verified_empty_marker_is_true_empty(self, fetch_text) -> None:
         fetch_text.return_value = "<main><h3>Latest Openings</h3><p>There are no openings in this category at the moment.</p></main>"

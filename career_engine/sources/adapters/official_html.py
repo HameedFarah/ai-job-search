@@ -36,6 +36,11 @@ _LOCATION_CLASS_RE = re.compile(
     re.I,
 )
 _JOB_LI_RE = re.compile(r'<li\b[^>]*class=["\'][^"\']*\bjob_listing\b[^"\']*["\'][^>]*>([\s\S]*?)</li>', re.I)
+_WPJM_CONTAINER_RE = re.compile(
+    r'<(?P<tag>li|article|div)\b[^>]*class=["\'][^"\']*\bjob[_-]listing\b[^"\']*["\'][^>]*>(?P<body>[\s\S]*?)</(?P=tag)>',
+    re.I,
+)
+_WPJM_TITLE_RE = re.compile(r'<(?:h2|h3|h4)\b[^>]*>([\s\S]*?)</(?:h2|h3|h4)>', re.I)
 _MAIN_RE = re.compile(r'<(?:main|article)\b[^>]*>([\s\S]*?)</(?:main|article)>', re.I)
 _ID_RE = re.compile(r'(?<!\d)(\d{2,})(?!\d)')
 
@@ -195,19 +200,53 @@ class OfficialHtmlAdapter(SourceAdapter):
 
     def _parse_wpjm(self, base: str, html: str) -> list[tuple[str, str, str, str]]:
         out: list[tuple[str, str, str, str]] = []
-        for match in _JOB_LI_RE.finditer(html or ""):
-            block = match.group(1)
+        parsed_spans: set[tuple[int, int]] = set()
+        containers = list(_WPJM_CONTAINER_RE.finditer(html or ""))
+        # Keep compatibility with the original narrow matcher if a malformed
+        # or unusually nested legacy card is not captured by the generic one.
+        containers.extend(_JOB_LI_RE.finditer(html or ""))
+        for match in containers:
+            span = match.span()
+            if span in parsed_spans:
+                continue
+            parsed_spans.add(span)
+            block = match.groupdict().get("body") or match.group(1)
             href_match = _A_RE.search(block)
-            title_match = _H3_RE.search(block)
+            title_match = _WPJM_TITLE_RE.search(block)
             if not href_match or not title_match:
                 continue
             url = urljoin(base, unescape(href_match.group(1)))
-            if "/job/" not in urlsplit(url).path.lower():
+            parsed_base = urlsplit(base)
+            parsed_url = urlsplit(url)
+            if (parsed_url.scheme, parsed_url.netloc) != (parsed_base.scheme, parsed_base.netloc):
+                continue
+            if not re.fullmatch(r"/job/[^/]+/?", parsed_url.path, re.I):
                 continue
             role = _clean(title_match.group(1))
             loc = _context_location(block)
             slug = urlsplit(url).path.rstrip("/").split("/")[-1]
             out.append((slug, role, loc, url))
+        if not out:
+            # Current themes may use nested div cards, which cannot be safely
+            # matched with a regex spanning balanced markup. The anchor is a
+            # bounded, role-specific unit and contains the title/location in
+            # WPJM's current card markup.
+            parsed_base = urlsplit(base)
+            for match in _A_RE.finditer(html or ""):
+                url = urljoin(base, unescape(match.group(1)))
+                parsed_url = urlsplit(url)
+                if (parsed_url.scheme, parsed_url.netloc) != (parsed_base.scheme, parsed_base.netloc):
+                    continue
+                if not re.fullmatch(r"/job/[^/]+/?", parsed_url.path, re.I):
+                    continue
+                block = match.group(0)
+                title_match = _WPJM_TITLE_RE.search(block)
+                if not title_match:
+                    continue
+                role = _clean(title_match.group(1))
+                loc = _context_location(block)
+                slug = parsed_url.path.rstrip("/").split("/")[-1]
+                out.append((slug, role, loc, url))
         return out
 
     def _parse_anchors(self, base: str, html: str, preset: str) -> list[tuple[str, str, str, str]]:
