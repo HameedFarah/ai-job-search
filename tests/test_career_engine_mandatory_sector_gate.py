@@ -157,6 +157,47 @@ def test_domain_requirement_gate_requires_both_domain_and_mandatory_signal(engin
     assert domain_requirement_gate("Lead design management for rail projects.", taxonomy) is None
 
 
+def test_atct_experience_is_a_mandatory_aviation_domain_gap(engine_root: Path) -> None:
+    taxonomy = build_bundle(engine_root)["taxonomy"]
+    text = "Special emphasis on design and construction management experience on ATCTs is required."
+    assert domain_requirement_gate(text, taxonomy) == "aviation"
+
+
+def test_deep_road_technical_requirement_is_a_mandatory_domain_gap(engine_root: Path) -> None:
+    taxonomy = build_bundle(engine_root)["taxonomy"]
+    text = (
+        "10+ years of construction management with a dedicated focus on large-scale road/highway infrastructure. "
+        "Deep technical knowledge of all aspects of road construction is required."
+    )
+    assert domain_requirement_gate(text, taxonomy) == "roads_transport_utilities"
+
+
+def test_generic_road_project_management_control_remains_eligible(engine_root: Path) -> None:
+    payload = {
+        "company": "Parsons", "role": "Senior Project Manager (Roads / Civils & Structures)",
+        "full_job_description": (
+            "Lead multidisciplinary project management and stakeholder coordination for infrastructure projects. "
+            "Roads and civils experience is preferably considered, alongside general delivery leadership."
+        ),
+    }
+    _, _, matches, score = evaluate(payload, engine_root)
+    assert not any("Mandatory domain" in match["note"] for match in matches)
+    assert score["total"] >= HIGH_PRIORITY - 10
+
+
+def test_generic_infrastructure_design_management_control_remains_eligible(engine_root: Path) -> None:
+    payload = {
+        "company": "Parsons", "role": "Design Manager - Infrastructure",
+        "full_job_description": (
+            "Manage multidisciplinary design delivery, design coordination, technical reviews and client interfaces "
+            "across infrastructure projects."
+        ),
+    }
+    _, _, matches, score = evaluate(payload, engine_root)
+    assert not any("Mandatory domain" in match["note"] for match in matches)
+    assert score["total"] >= HIGH_PRIORITY - 10
+
+
 def test_rams_role_is_out_of_lane_and_unsupported_requirements_are_gaps(engine_root: Path) -> None:
     payload = {
         "company": "EgisGroup", "role": "RAMS Lead", "location": "Riyadh",

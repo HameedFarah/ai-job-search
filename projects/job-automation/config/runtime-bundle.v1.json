@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "engine_version": "1.0.3",
-  "built_at": "2026-08-15T10:53:38+00:00",
-  "source_hash": "251db60498fef522f3568ff113c18fe9cbf47b6c509165ef3cd3bc756c7b0766",
+  "engine_version": "1.0.4",
+  "built_at": "2026-08-15T10:58:58+00:00",
+  "source_hash": "4ad35491ecb6b81502f85759234571c579b8e8de644f3294205698e9373488df",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "7936f6100642b4048f37ace3cd92dfb2d6b954835baef2c63c1f938cb87cae7a",
+      "sha256": "585a902b445ea79e0dfbfe757642c657e5f7648d9508e90eace11a1667c77d17",
       "size": 4245,
-      "modified_ns": 1786791169337241848
+      "modified_ns": 1786791479893113822
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "ef68f7e7d99b75abe997031fdc6023c980401844ccac8dcbb2d156b50a0f29b1",
-      "size": 9974,
-      "modified_ns": 1786790449929511167
+      "sha256": "2f91d66f4d3fd7160c7c0d1fea2042a117c472a3bc3117f20544876f63916408",
+      "size": 10210,
+      "modified_ns": 1786791534553090956
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
@@ -73,7 +73,7 @@
   ],
   "config": {
     "schema_version": 1,
-    "engine_version": "1.0.3",
+    "engine_version": "1.0.4",
     "vault": {
       "root": "/home/hameedo/obsidian/HermesOpsVault",
       "profile_bundle": "projects/job-automation/career-engine-profile.v1.json",
@@ -465,7 +465,11 @@
         "runway",
         "runways",
         "aircraft",
-        "aviation infrastructure"
+        "aviation infrastructure",
+        "atct",
+        "atcts",
+        "air traffic control tower",
+        "air traffic control towers"
       ],
       "healthcare": [
         "healthcare",
@@ -495,6 +499,9 @@
       ],
       "roads_transport_utilities": [
         "road infrastructure",
+        "road/highway",
+        "road construction",
+        "highway infrastructure",
         "roads",
         "highways",
         "transportation networks",
@@ -532,6 +539,8 @@
       "track record",
       "minimum",
       "with a focus on",
+      "dedicated focus on",
+      "with a dedicated focus on",
       "years of experience",
       "years of professional",
       "experience in",
@@ -548,7 +557,8 @@
       "demonstrated experience",
       "background in",
       "expertise in",
-      "deep understanding"
+      "deep understanding",
+      "deep technical knowledge"
     ],
     "specialization": {
       "design_lane_terms": [
@@ -1540,6 +1550,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "dcf3f33073c2cb2076d9de237c66c1575fcd83f8eba2b1ac03e3519f0e649d00",
+  "bundle_hash": "09c6792f0d23808bce5e9c1126f7c4f8d9e4e3c89243c3429985e7eac16e8bf4",
   "cache_reused": false
 }

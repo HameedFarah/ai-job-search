@@ -50,7 +50,8 @@
       "security/defense", "security/defence", "defense facility", "defence facility", "defense infrastructure"
     ],
     "aviation": [
-      "aviation", "airport", "airports", "aerodrome", "runway", "runways", "aircraft", "aviation infrastructure"
+      "aviation", "airport", "airports", "aerodrome", "runway", "runways", "aircraft", "aviation infrastructure",
+      "atct", "atcts", "air traffic control tower", "air traffic control towers"
     ],
     "healthcare": [
       "healthcare", "health care", "hospital", "hospitals", "clinic", "clinics", "medical facility", "medical facilities"
@@ -60,7 +61,7 @@
       "reliability block diagram", "rbd", "en 50126", "en 50129", "rail signalling", "rail signaling", "rolling stock"
     ],
     "roads_transport_utilities": [
-      "road infrastructure", "roads", "highways", "transportation networks", "transport infrastructure",
+      "road infrastructure", "road/highway", "road construction", "highway infrastructure", "roads", "highways", "transportation networks", "transport infrastructure",
       "utility projects", "utility corridors", "bridge maintenance", "bridge construction"
     ],
     "landscape_public_realm": [
@@ -82,6 +83,8 @@
     "track record",
     "minimum",
     "with a focus on",
+    "dedicated focus on",
+    "with a dedicated focus on",
     "years of experience",
     "years of professional",
     "experience in",
@@ -98,7 +101,8 @@
     "demonstrated experience",
     "background in",
     "expertise in",
-    "deep understanding"
+    "deep understanding",
+    "deep technical knowledge"
   ],
   "specialization": {
     "design_lane_terms": ["design", "architect", "architecture", "architectural", "technical", "station", "landscape", "public realm", "urban", "interior", "masterplan", "compliance", "governance"],
