@@ -9,9 +9,9 @@
   <meta http-equiv="Expires" content="0">
   <meta name="description" content="Private Career Engine application workflow for Abdelhamid Farah">
   <title>Career Application Board</title>
-  <link rel="stylesheet" href="assets/styles.css?v=20260815-0addb747">
-  <link rel="stylesheet" href="assets/add-job.css?v=20260815-0addb747">
-  <link rel="stylesheet" href="assets/bulk-table.css?v=20260815-0addb747">
+  <link rel="stylesheet" href="assets/styles.css?v=20260815-1ca8395c">
+  <link rel="stylesheet" href="assets/add-job.css?v=20260815-1ca8395c">
+  <link rel="stylesheet" href="assets/bulk-table.css?v=20260815-1ca8395c">
 </head>
 <body>
   <header class="topbar board-topbar">
@@ -104,7 +104,6 @@
         </div>
       </details>
 
-      <!-- Hermes refresh control is aligned with the scan status in the header. -->
       <div class="process-control" aria-label="Process jobs by score">
         <button id="process-jobs" class="toolbar-button process-jobs-button" type="button" title="Process all eligible live jobs at or above this score">
           <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18"></path><path d="m7 8 5-5 5 5"></path><path d="M5 14h14"></path></svg>
@@ -130,7 +129,7 @@
         <p><strong>Add your own job:</strong> use <strong>Add job</strong> to paste a public vacancy link, paste the full job description, or both. Link metadata is extracted when available. The vacancy is deduplicated and scored through the normal Career Engine; eligible jobs are packaged immediately, while blocked jobs stay visible for review. Nothing is sent or submitted.</p>
         <p><strong>Move cards:</strong> drag between columns or use the stage select / action button on each card. <strong>Mark processing</strong> is manual workflow tracking only; use <strong>Process all ≥ N</strong> for actual Career Engine package processing. Stage, resume template, comments, AI requests and design preference are saved to the private site data and survive re-publishes.</p>
         <p><strong>Bulk edit:</strong> select jobs with the card or table checkboxes, then use the bulk status bar. Applied / sent remains an individual confirmation because opening a portal is not submission evidence. Switch between Kanban and Table under Display.</p>
-        <p><strong>Gmail and application links:</strong> the main action opens Gmail compose (email routes) or the official application portal (portal routes) in a separate tab and leaves the Career Engine tab open.</p>
+        <p><strong>Gmail and application links:</strong> external actions open in separate tabs. A fresh Hermes scan also asks for a read-only reconciliation of replies and confirmations for jobs already marked applied/sent; nothing is sent automatically.</p>
         <p><strong>External gate:</strong> Ready for review is the final internal pre-submission state. You still submit or send manually, then confirm it here.</p>
         <p><strong>Recency tags:</strong> Fresh ≤2 days · Recent ≤7 days · Aging ≤30 days · Old &gt;30 days · Unknown when no date. <strong>Score tags:</strong> High ≥85 · Good 70–84 · Marginal 55–69 · Low &lt;55.</p>
       </div>
@@ -203,10 +202,10 @@
     </article>
   </template>
 
-  <script src="assets/shared.js?v=20260815-0addb747" defer></script>
-  <script src="assets/app.js?v=20260815-0addb747" defer></script>
-  <script src="assets/add-job.js?v=20260815-0addb747" defer></script>
-  <script src="assets/bulk-table.js?v=20260815-0addb747" defer></script>
-  <script src="assets/external-links.js?v=20260815-0addb747" defer></script>
+  <script src="assets/shared.js?v=20260815-1ca8395c" defer></script>
+  <script src="assets/app.js?v=20260815-1ca8395c" defer></script>
+  <script src="assets/add-job.js?v=20260815-1ca8395c" defer></script>
+  <script src="assets/bulk-table.js?v=20260815-1ca8395c" defer></script>
+  <script src="assets/external-links.js?v=20260815-1ca8395c" defer></script>
 </body>
 </html>
