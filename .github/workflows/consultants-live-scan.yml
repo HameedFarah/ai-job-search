@@ -7,6 +7,10 @@ on:
         description: Maximum jobs per source
         required: false
         default: "100"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/consultants-live-scan.yml"
 
 permissions:
   contents: read
