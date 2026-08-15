@@ -7,6 +7,12 @@ on:
         description: Maximum jobs per source
         required: false
         default: "100"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/consultants-live-scan.yml"
+      - "career_engine/sources/**"
+      - "projects/job-automation/config/consultants-bookmarks.v1.json"
 
 permissions:
   contents: read
@@ -24,7 +30,7 @@ jobs:
           LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
-          python3 -m career_engine.cli consultants-scan \
+          python3 -m career_engine.sources.cli consultants-scan \
             --limit "${LIMIT:-100}" \
             --output consultants-scan.json
 
