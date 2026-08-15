@@ -9,6 +9,7 @@ or submits anything.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -54,9 +55,6 @@ def _managed_provider(row: dict[str, Any]) -> str | None:
 def _adapter_for_row(row: dict[str, Any], *, offline: bool):
     """Prefer verified native adapters, then pinned managed providers, then JSON-LD."""
     explicit = str(row.get("adapter") or "").strip()
-    if explicit == "taleo":
-        from .adapters.taleo import TaleoAdapter
-        return TaleoAdapter(fixtures_dir=None), explicit, "official_ats_api", None
     if explicit:
         return build_adapter(explicit, offline=offline), explicit, "official_ats_api", None
     provider = _managed_provider(row)
@@ -83,6 +81,62 @@ def _company_spec(row: dict[str, Any], provider: str | None) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _source_shell(row: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    explicit = str(row.get("adapter") or "").strip()
+    provider = None if explicit else _managed_provider(row)
+    adapter_name = explicit or (f"managed_{provider}" if provider else "jsonld")
+    route = "official_ats_api" if explicit else ("official_managed_ats" if provider else "official_page_jsonld")
+    return ({
+        "source_id": row["id"],
+        "source_name": row["label"],
+        "attempted": False,
+        "status": "skipped",
+        "adapter": adapter_name,
+        "route": route,
+        "jobs_fetched": 0,
+        "verified_authoritative": False,
+        "error": "",
+    }, provider)
+
+
+def _probe_row(row: dict[str, Any], *, offline: bool, limit: int) -> tuple[dict[str, Any], list[Any]]:
+    source, _ = _source_shell(row)
+    source["attempted"] = True
+    source["status"] = "empty"
+    jobs: list[Any] = []
+    try:
+        adapter, adapter_name, route, selected_provider = _adapter_for_row(row, offline=offline)
+        source["adapter"] = adapter_name
+        source["route"] = route
+        company = _company_spec(row, selected_provider)
+        jobs = adapter.search(
+            company=company,
+            location=row.get("location"),
+            limit=max(1, min(limit, 100)),
+            # Registry discovery must stay bounded. The central scanner keeps
+            # source-only vacancies with insufficient JD in Manual Review
+            # Needed rather than fanning out detail requests for every global
+            # consultant board.
+            fetch_full=False,
+            offline=offline,
+        )
+        source["jobs_fetched"] = len(jobs)
+        source["verified_authoritative"] = bool(jobs) and all(
+            bool(j.provenance and j.provenance.official) for j in jobs
+        )
+        source["status"] = "ok" if jobs else ("parser-needed" if adapter_name == "jsonld" else "empty")
+    except SourceUnavailable as exc:
+        source["status"] = "unavailable"
+        source["error"] = str(exc)
+    except SourceError as exc:
+        source["status"] = "error"
+        source["error"] = str(exc)
+    except Exception as exc:  # fail one source closed without killing the registry scan
+        source["status"] = "error"
+        source["error"] = f"{type(exc).__name__}: {exc}"
+    return source, jobs
+
+
 def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> dict[str, Any]:
     path = root / "projects/job-automation/config/consultants-bookmarks.v1.json"
     rows = json.loads(path.read_text(encoding="utf-8"))["bookmarks"]
@@ -97,78 +151,64 @@ def scan_consultants(*, root: Path, limit: int = 25, offline: bool = False) -> d
         "notes": [
             "Official ATS integrations are preferred when explicitly configured; direct employer pages use JSON-LD fallback.",
             "Managed ATS code is pinned and fails closed when the reviewed external checkout is unavailable or moved.",
+            "Independent sources are probed concurrently with bounded per-source network timeouts; results are merged deterministically in registry order.",
         ],
     }
+
+    active = [r for r in rows if r.get("status") == "active" and r.get("scan") is True]
     seen_urls: set[str] = set()
-    seen_jobs: set[str] = set()
-    for row in rows:
-        if row.get("status") != "active" or row.get("scan") is not True:
-            continue
-        explicit = str(row.get("adapter") or "").strip()
-        provider = None if explicit else _managed_provider(row)
-        adapter_name = explicit or (f"managed_{provider}" if provider else "jsonld")
-        route = "official_ats_api" if explicit else ("official_managed_ats" if provider else "official_page_jsonld")
-        source = {
-            "source_id": row["id"],
-            "source_name": row["label"],
-            "attempted": False,
-            "status": "skipped",
-            "adapter": adapter_name,
-            "route": route,
-            "jobs_fetched": 0,
-            "verified_authoritative": False,
-            "error": "",
-        }
+    ordered: dict[int, tuple[dict[str, Any], list[Any], dict[str, Any]]] = {}
+    tasks: list[tuple[int, dict[str, Any]]] = []
+
+    for index, row in enumerate(active):
+        source, _ = _source_shell(row)
         if row.get("duplicate_of"):
             source["error"] = f"duplicate_of:{row['duplicate_of']}"
             report["duplicates_dropped"] += 1
-            report["sources"].append(source)
+            ordered[index] = (source, [], row)
             continue
         canonical = _canonical_url(row["url"])
         if canonical in seen_urls:
             source["error"] = "duplicate canonical employer endpoint"
             report["duplicates_dropped"] += 1
-            report["sources"].append(source)
+            ordered[index] = (source, [], row)
             continue
         seen_urls.add(canonical)
-        source["attempted"] = True
-        source["status"] = "empty"
-        try:
-            adapter, adapter_name, route, selected_provider = _adapter_for_row(row, offline=offline)
-            source["adapter"] = adapter_name
-            source["route"] = route
-            company = _company_spec(row, selected_provider)
-            jobs = adapter.search(
-                company=company,
-                location=row.get("location"),
-                limit=max(1, min(limit, 100)),
-                fetch_full=True,
-                offline=offline,
-            )
-            source["jobs_fetched"] = len(jobs)
-            source["verified_authoritative"] = bool(jobs) and all(
-                bool(j.provenance and j.provenance.official) for j in jobs
-            )
-            source["status"] = "ok" if jobs else ("parser-needed" if adapter_name == "jsonld" else "empty")
-            for job in jobs:
-                key = job.dedupe_key()
-                if key in seen_jobs:
-                    report["duplicates_dropped"] += 1
-                    continue
-                seen_jobs.add(key)
-                item = job.to_scanner_job(live_status="live")
-                item["consultant_source_id"] = row["id"]
-                item["consultant_source_name"] = row["label"]
-                report["jobs"].append(item)
-        except SourceUnavailable as exc:
-            source["status"] = "unavailable"
-            source["error"] = str(exc)
-        except SourceError as exc:
-            source["status"] = "error"
-            source["error"] = str(exc)
-        report["sources"].append(source)
+        tasks.append((index, row))
 
-    active = [r for r in rows if r.get("status") == "active" and r.get("scan") is True]
+    workers = max(1, min(6, len(tasks)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="consultant-source") as pool:
+        futures = {
+            pool.submit(_probe_row, row, offline=offline, limit=limit): (index, row)
+            for index, row in tasks
+        }
+        for future in as_completed(futures):
+            index, row = futures[future]
+            try:
+                source, jobs = future.result()
+            except Exception as exc:  # defensive: worker must still fail source closed
+                source, _ = _source_shell(row)
+                source["attempted"] = True
+                source["status"] = "error"
+                source["error"] = f"{type(exc).__name__}: {exc}"
+                jobs = []
+            ordered[index] = (source, jobs, row)
+
+    seen_jobs: set[str] = set()
+    for index in sorted(ordered):
+        source, jobs, row = ordered[index]
+        report["sources"].append(source)
+        for job in jobs:
+            key = job.dedupe_key()
+            if key in seen_jobs:
+                report["duplicates_dropped"] += 1
+                continue
+            seen_jobs.add(key)
+            item = job.to_scanner_job(live_status="live")
+            item["consultant_source_id"] = row["id"]
+            item["consultant_source_name"] = row["label"]
+            report["jobs"].append(item)
+
     report["summary"] = {
         "active_records": len(active),
         "sources_attempted": sum(bool(s["attempted"]) for s in report["sources"]),
