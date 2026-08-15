@@ -1,0 +1,147 @@
+.add-job-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: 36px;
+}
+
+.add-job-button .icon-svg {
+  width: 16px;
+  height: 16px;
+}
+
+.add-job-status {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: .78rem;
+  line-height: 1.25;
+  color: var(--muted, #64748b);
+}
+
+.add-job-status.error {
+  color: #b42318;
+}
+
+.add-job-dialog {
+  width: min(620px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 28px));
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: var(--surface, #fff);
+  color: var(--text, #172033);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+}
+
+.add-job-dialog::backdrop {
+  background: rgba(15, 23, 42, .45);
+  backdrop-filter: blur(3px);
+}
+
+.add-job-form {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.add-job-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.add-job-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+}
+
+.add-job-header p {
+  margin: 0;
+  color: var(--muted, #64748b);
+  font-size: .84rem;
+  line-height: 1.45;
+}
+
+.add-job-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.add-job-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.add-job-field {
+  display: grid;
+  gap: 6px;
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.add-job-field input,
+.add-job-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border, #d8dee8);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: inherit;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 450;
+}
+
+.add-job-field textarea {
+  min-height: 190px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.add-job-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted, #64748b);
+  font-size: .74rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.add-job-or::before,
+.add-job-or::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--border, #d8dee8);
+}
+
+.add-job-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.add-job-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.add-job-actions .primary {
+  min-height: 40px;
+  padding-inline: 18px;
+}
+
+@media (max-width: 640px) {
+  .add-job-meta-grid { grid-template-columns: 1fr; }
+  .add-job-form { padding: 18px; }
+  .add-job-button .toolbar-label { display: none; }
+  .add-job-status { flex-basis: 100%; order: 20; }
+}
