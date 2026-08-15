@@ -1271,6 +1271,26 @@ def _validate_generated_job(job_id: str, root: Path | None, bundle: dict[str, An
 TERMINAL_STATUSES = {"applied", "superseded", "rejected"}
 
 
+def _is_historical_non_generatable(row: dict[str, Any], record: dict[str, Any], config: dict[str, Any], item: dict[str, Any]) -> bool:
+    """Identify old artifacts attached to a currently non-generatable role.
+
+    This deliberately requires all canonical signals: blocked processing state,
+    a score below the current generation threshold, the persisted threshold
+    blocker, and no current generation packet. Other statuses remain strict.
+    """
+    if item.get("generation_packet_exists", False):
+        return False
+    if str(row.get("processing_status", "")) != "blocked":
+        return False
+    score = _effective_score(record, row.get("fit_score", ""))
+    threshold = int(config["scoring"]["thresholds"]["high_priority"])
+    if score >= threshold:
+        return False
+    state = record.get("processing_state") or {}
+    blockers = state.get("blockers") or []
+    return any(_is_stale_threshold_blocker(value) for value in blockers)
+
+
 def validate_all(root: Path | None = None, job_id: str = "") -> dict[str, Any]:
     """Per-job validation, or aggregate config/bundle/tracker and every existing
     generated application when no job id is supplied. Applications attached to
@@ -1288,13 +1308,22 @@ def validate_all(root: Path | None = None, job_id: str = "") -> dict[str, Any]:
         result["config"] = config_check
         return result
     tracker = _load_tracker_ops(root)
+    _, paths = load_config(root)
+    config, _ = load_config(root)
     results: list[dict[str, Any]] = []
     for row in tracker.list_rows():
         item = _validate_generated_job(row["job_id"], root, bundle)
+        record = tracker.get_job(row["job_id"])
+        artifact_dir = _artifact_dir(root, row["job_id"])
+        item["generation_packet_exists"] = (artifact_dir / "generation_packet.json").is_file()
         if row["processing_status"] in TERMINAL_STATUSES and item.get("present"):
             item["historical"] = True
             item["valid"] = True
             item["note"] = "artifact is historical; current-bundle validation is informational"
+        elif item.get("present") and _is_historical_non_generatable(row, record, config, item):
+            item["historical"] = True
+            item["valid"] = True
+            item["note"] = "artifact is historical; role is below the current generation threshold"
         results.append(item)
     generated = [item for item in results if item.get("present")]
     invalid = [item for item in results if not item.get("valid")]

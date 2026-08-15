@@ -10,6 +10,7 @@ from career_engine.bundle import build_bundle
 from career_engine.cli import EXIT_OWNER_INPUT, EXIT_POLICY, EXIT_READY, EXIT_SYSTEM, main
 from career_engine.config import load_config
 from career_engine.pipeline import _load_tracker, prepare
+from career_engine.ops import validate_all
 from tests.test_career_engine_reconcile import seed_job
 from tests.test_career_engine_v1 import engine_root, job_payload  # noqa: F401
 
@@ -91,6 +92,59 @@ def test_show_job_and_status_commands(cli_root: Path) -> None:
 
 def test_show_job_missing_returns_owner_input(cli_root: Path) -> None:
     assert main(["show-job", "--job-id", "0" * 20]) == EXIT_OWNER_INPUT
+
+
+def _write_application(cli_root: Path, job_id: str) -> Path:
+    artifact_dir = cli_root / "projects/job-automation/artifacts" / job_id
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    application = artifact_dir / "generated_application.json"
+    application.write_text("{}", encoding="utf-8")
+    return artifact_dir
+
+
+def test_validate_all_ignores_old_below_threshold_blocked_application(cli_root: Path) -> None:
+    job_id = "blocked-old-application"
+    seed_job(cli_root, job_id, company="Qiddiya", role="Associate Director Operational Readiness", score=60, status="blocked")
+    tracker = _load_tracker(load_config(cli_root)[1])
+    record = tracker.get_job(job_id)
+    record["processing_state"]["blockers"] = ["below_generation_threshold:60"]
+    tracker._save_job_and_row(record)
+    _write_application(cli_root, job_id)
+
+    result = validate_all(cli_root)
+
+    assert result["valid"] is True
+    assert job_id in result["historical_artifacts"]
+    assert job_id not in result["invalid_jobs"]
+
+
+@pytest.mark.parametrize("status", ["generation_ready", "generated_content_valid", "render_rejected", "awaiting_owner_approval", "owner_review_ready"])
+def test_validate_all_keeps_current_package_statuses_strict(cli_root: Path, status: str) -> None:
+    job_id = f"current-{status}"
+    seed_job(cli_root, job_id, company="Buro", role="Director", score=85, status="generation_ready")
+    artifact_dir = _write_application(cli_root, job_id)
+    if status != "generation_ready":
+        tracker = _load_tracker(load_config(cli_root)[1])
+        tracker.update_job(job_id, {"processing_status": status}, comment="test current package status")
+    if status != "generation_ready":
+        (artifact_dir / "generation_packet.json").unlink()
+
+    result = validate_all(cli_root)
+
+    assert result["valid"] is False
+    assert job_id in result["invalid_jobs"]
+
+
+@pytest.mark.parametrize("status", ["applied", "superseded", "rejected"])
+def test_validate_all_retains_terminal_historical_behavior(cli_root: Path, status: str) -> None:
+    job_id = f"terminal-{status}"
+    seed_job(cli_root, job_id, company="Legacy", role="Director", score=85, status=status)
+    _write_application(cli_root, job_id)
+
+    result = validate_all(cli_root)
+
+    assert result["valid"] is True
+    assert job_id in result["historical_artifacts"]
 
 
 def test_dashboard_readonly_and_sync(cli_root: Path) -> None:

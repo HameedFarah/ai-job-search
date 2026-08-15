@@ -606,15 +606,15 @@ function canonicalIdentity(role) {
 }
 
 function mergeUniqueRoles(prepared, tracker, reviewed) {
-  const preparedJobIds = new Set(prepared.map(role => role.job_id).filter(Boolean));
-  const preparedUrls = new Set(prepared.flatMap(role => [role.application_url, role.source_url]).filter(Boolean).map(url => String(url).replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase()));
-  const output = [...prepared];
-  const seen = new Set(prepared.map(canonicalIdentity));
-  for (const role of [...tracker, ...reviewed]) {
-    const cleanUrl = String(role.application_url || role.source_url || '').replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase();
-    if ((role.job_id && preparedJobIds.has(role.job_id)) || (cleanUrl && preparedUrls.has(cleanUrl))) continue;
+  // Tracker rows are canonical. Legacy prepared/manual rows are bounded
+  // fallbacks only for identities absent from the current tracker.
+  const output = [...tracker];
+  const seen = new Set(tracker.map(canonicalIdentity));
+  for (const role of [...prepared, ...reviewed]) {
     const identity = canonicalIdentity(role);
     if (seen.has(identity)) continue;
+    const cleanUrl = String(role.application_url || role.source_url || '').replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase();
+    if (cleanUrl && [...seen].some(value => value === `url:${cleanUrl}`)) continue;
     seen.add(identity);
     output.push(role);
   }
@@ -651,7 +651,11 @@ function main() {
   // caps a publish at 1,000 files, so use a small deterministic shard set instead.
   fs.rmSync(detailsDir, { recursive: true, force: true });
   ensureDir(detailsDir);
-  const detailKeys = ['full_job_description', 'email_body', 'email_subject', 'resume', 'resume_ats', 'recommended_resume', 'cover_letter'];
+  const detailKeys = [
+    'full_job_description', 'brief', 'strengths', 'gaps', 'notes', 'submission_package', 'submitted_package',
+    'email_body', 'email_subject', 'recipient', 'application_url', 'source_url',
+    'resume', 'resume_ats', 'resume_variants', 'recommended_resume', 'cover_letter'
+  ];
   const detailShardCount = 16;
   const detailShards = Array.from({ length: detailShardCount }, () => ({}));
   const detailShardFor = key => {
@@ -672,10 +676,20 @@ function main() {
       // portal packages with no email_body still show their generated letter.
       if (key !== 'cover_letter' && detail[key]?.text) delete detail[key].text;
     }
+    if (detail.resume_variants) detail.resume_variants = Object.fromEntries(Object.entries(detail.resume_variants).map(([id, files]) => {
+      const clean = { ...(files || {}) }; delete clean.text; return [id, clean];
+    }));
     const shard = detailShardFor(role.key);
     detailShards[shard][role.key] = detail;
-    const copy = { ...role, detail_shard: shard };
+    const cardKeys = ['key', 'role', 'company', 'location', 'score', 'decision', 'stage', 'route', 'found_at', 'scanned_at', 'posting_date', 'posting_date_precision', 'posting_date_source', 'kind', 'status', 'application_status', 'processing_status', 'tags', 'external_job_id', 'job_id'];
+    const copy = Object.fromEntries(cardKeys.filter(key => role[key] !== undefined).map(key => [key, role[key]]));
     for (const key of detailKeys) delete copy[key];
+    copy.brief = String(role.brief || '').slice(0, 180);
+    copy.manual_review_detail = String(role.manual_review_detail || '').slice(0, 180);
+    copy.card_resume_pdf = role.recommended_resume?.pdf || role.resume_ats?.pdf || role.resume?.pdf || '';
+    copy.card_cover_pdf = role.cover_letter?.pdf || '';
+    copy.card_application_url = role.application_url || role.source_url || '';
+    copy.detail_shard = shard;
     return copy;
   };
   const slimApplications = applications.map(slim);
@@ -700,7 +714,10 @@ function main() {
     reviewed: reviewed.length,
     missing_prepared_documents: missingPrepared
   }, null, 2));
-  if (prepared.length !== 5 || missingPrepared.length) process.exitCode = 2;
+  // Legacy packages are optional fallback data; stale or incomplete packages
+  // must never make a canonical tracker build fail.
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { canonicalIdentity, mergeUniqueRoles, itemsFromManifest };
