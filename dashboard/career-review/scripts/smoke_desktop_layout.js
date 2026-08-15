@@ -15,7 +15,7 @@ async function main() {
   const page = await context.newPage();
   await page.goto(`${BASE}/index.html`, { waitUntil: 'networkidle' });
 
-  assert(await page.locator('.summary-filter').count() === 5, 'Desktop summary must show five stat cards');
+  assert(await page.locator('.summary-filter').count() === 4, 'Desktop summary must show four stat cards after removing Processing');
   assert(await page.locator('.compact-brand .subtitle').isVisible(), 'Desktop header includes the workflow subtitle');
   const searchBox = await page.locator('.desktop-search-control').boundingBox();
   assert(searchBox && searchBox.width >= 280, 'Desktop search is a wide direct input', JSON.stringify(searchBox));
@@ -65,7 +65,7 @@ async function main() {
 
   console.log(JSON.stringify({
     valid: true,
-    summaryCards: 5,
+    summaryCards: await page.locator('.summary-filter').count(),
     activeLaneWidth: Math.round(activeBox.width),
     inactiveRailWidth: Math.round(inactiveBox.width),
     overlayRadius,

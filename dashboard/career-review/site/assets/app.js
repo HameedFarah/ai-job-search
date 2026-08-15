@@ -18,6 +18,7 @@ const state = {
   overlayOpen: false,
   overlayKey: '',
   overlayReturnKey: '',
+  overlayHydrationPromise: null,
   aiPollTimer: null,
   operationPollTimer: null,
   commentsFull: new Set(),
@@ -535,9 +536,8 @@ function applyBatchProgress(progress, requestState) {
     for (const key of state.batchProgress.completed_role_keys || []) {
       state.batchStageOverrides.set(key, 'ready_review');
     }
-    if (state.batchProgress.current_role_key) {
-      state.batchStageOverrides.set(state.batchProgress.current_role_key, 'processing');
-    }
+    // The active batch job stays in its canonical workflow lane. Background
+    // processing is shown through the progress/status UI, not a workflow stage.
   }
   if (previous !== JSON.stringify(state.batchProgress || {})) renderBoard();
 }
@@ -740,7 +740,7 @@ function openOverlay(key, syncUrl = true) {
   }
   renderOverlayContent(role);
   loadRoleDetails(role);
-  if (aiRequestsForRole(key).some(record => ['pending', 'processing'].includes(dataOf(record).state || 'pending'))) setupAiPolling(role);
+  ensureOverlayData(role).catch(error => console.warn('overlay data unavailable', error));
   const overlay = $('#job-overlay');
   overlay.hidden = false;
   overlay.setAttribute('aria-hidden', 'false');
@@ -1649,6 +1649,26 @@ function setupAiPolling(role) {
   }, 3000);
 }
 
+async function ensureOverlayData(role) {
+  if (!state.overlayHydrationPromise) {
+    state.overlayHydrationPromise = Promise.all([
+      loadComments(),
+      loadHistory(),
+      loadAiRequests(),
+      loadTemplates()
+    ]).finally(() => {
+      // Keep loaded state in memory but allow a future overlay session to
+      // refresh dynamic Site Data if the owner or assistant changed it.
+      state.overlayHydrationPromise = null;
+    });
+  }
+  await state.overlayHydrationPromise;
+  renderOverlayIfOpen();
+  if (role && aiRequestsForRole(role.key).some(record => ['pending', 'processing'].includes(dataOf(record).state || 'pending'))) {
+    setupAiPolling(role);
+  }
+}
+
 function setTextSafe(id, value) {
   const node = $(`#${id}`);
   if (node) node.textContent = value == null || value === '' ? '—' : value;
@@ -1668,15 +1688,17 @@ async function init() {
     setupGlobalOperationPolling();
     setupOverlay();
     setInterval(updateScanClock, 60000);
-    // Site Data and detail-only assets must not block the first board paint.
-    const hydrate = async () => {
+    // Only owner workflow/preferences hydrate after first paint. Comments,
+    // history, AI requests and ATS design options stay fully lazy until a job
+    // detail is opened, keeping them out of the initial network waterfall.
+    const hydrateBoardState = async () => {
       await Promise.all([loadWorkflow(), loadPreferences()]);
+      const savedTheme = state.preferences.get(THEME_PREF_KEY)?.value;
+      if (savedTheme) applyTheme(savedTheme);
       renderBoard();
-      await Promise.all([loadComments(), loadHistory(), loadAiRequests(), loadTemplates()]);
-      renderOverlayIfOpen();
     };
-    const idle = window.requestIdleCallback || (callback => setTimeout(callback, 0));
-    idle(() => hydrate().catch(error => console.warn('deferred dashboard hydration unavailable', error)));
+    const idle = window.requestIdleCallback || (callback => setTimeout(callback, 50));
+    idle(() => hydrateBoardState().catch(error => console.warn('deferred board state unavailable', error)));
     const deepLink = new URLSearchParams(window.location.search).get('job');
     if (deepLink) openOverlay(deepLink, false);
   } catch (error) {

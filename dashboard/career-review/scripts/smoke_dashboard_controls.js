@@ -50,7 +50,11 @@ async function main() {
   const progressText = await page.locator('#operation-status').innerText();
   assert(progressText.includes('2 done') && progressText.includes('3 remaining') && progressText.includes('(5 total)') && progressText.includes('ETA ~3 min'), 'Batch progress shows done, remaining, total and ETA', progressText);
   assert(await page.locator('.kanban-column[data-stage="processing"]').count() === 0, 'Processing workflow lane is removed');
-  assert(await page.locator(`.role-card[data-role-key="${batchRoleKey}"]`).count() === 1, 'Current batch job remains visible in its canonical workflow lane');
+  const currentBatchStage = await page.evaluate(roleKey => {
+    const role = state.roles.find(item => item.key === roleKey);
+    return role ? stageFor(role) : '';
+  }, batchRoleKey);
+  assert(currentBatchStage && currentBatchStage !== 'processing', 'Current batch job remains in a canonical non-processing workflow stage', currentBatchStage);
   await page.evaluate(() => {
     state.aiRequests = state.aiRequests.filter(item => item.id !== 'fake-batch-progress');
     state.batchProgress = null;
@@ -61,6 +65,41 @@ async function main() {
 
   await page.locator('.role-card').first().click();
   await page.locator('#job-overlay:not([hidden])').waitFor();
+  const ctaContrast = await page.evaluate(() => {
+    const parse = value => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const luminance = rgb => {
+      const channels = rgb.map(value => {
+        const c = value / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    };
+    const ratio = element => {
+      const style = getComputedStyle(element);
+      const a = luminance(parse(style.color));
+      const b = luminance(parse(style.backgroundColor));
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const button = document.querySelector('#ov-main-action');
+    const originalClass = button.className;
+    const originalDisabled = button.disabled;
+    const results = [];
+    for (const theme of THEMES) {
+      applyTheme(theme.id);
+      button.className = originalClass.replace(/\sdisabled\b/g, '');
+      button.disabled = false;
+      const normal = ratio(button);
+      button.classList.add('disabled');
+      button.disabled = true;
+      const disabled = ratio(button);
+      results.push({ theme: theme.id, normal, disabled });
+    }
+    button.className = originalClass;
+    button.disabled = originalDisabled;
+    applyTheme('executive-navy');
+    return results;
+  });
+  assert(ctaContrast.every(item => item.normal >= 4.5 && item.disabled >= 4.5), 'Primary CTA meets 4.5:1 contrast in every theme and disabled state', JSON.stringify(ctaContrast));
   assert(await page.locator('.detail-utility > .overlay-assistant-top').count() === 1, 'Assistant is the first utility in the job detail workspace');
   const assistantIsFirstUtility = await page.evaluate(() => {
     const utility = document.querySelector('.detail-utility');

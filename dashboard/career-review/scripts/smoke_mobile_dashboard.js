@@ -36,7 +36,7 @@ async function main() {
   assert(scanFits, 'Last scan timing is not visually cropped');
 
   const summary = page.locator('#summary .summary-filter');
-  assert(await summary.count() === 5, 'Five compact status chips are present', String(await summary.count()));
+  assert(await summary.count() === 4, 'Four compact status chips are present after removing Processing', String(await summary.count()));
   assert(await page.locator('.kanban-column[data-stage="inactive"]').count() === 1, 'Closed / inactive Kanban column is present');
   assert(await page.locator('#summary .priority-filter').isVisible(), 'Awaiting Action chip is visible');
   const chipHeight = await page.locator('#summary .summary-filter').first().evaluate(el => el.getBoundingClientRect().height);

@@ -402,6 +402,21 @@ function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
+function refreshAssetFingerprints() {
+  const pages = ['index.html', 'detail.html', 'resume-designs.html'];
+  for (const pageName of pages) {
+    const pagePath = path.join(SITE, pageName);
+    if (!fs.existsSync(pagePath)) continue;
+    const before = fs.readFileSync(pagePath, 'utf8');
+    const after = before.replace(/assets\/([A-Za-z0-9._-]+\.(?:js|css))(?:\?v=[^"']*)?/g, (match, fileName) => {
+      const assetPath = path.join(SITE, 'assets', fileName);
+      if (!fs.existsSync(assetPath)) return match;
+      return `assets/${fileName}?v=${sha256(assetPath).slice(0, 12)}`;
+    });
+    if (after !== before) fs.writeFileSync(pagePath, after);
+  }
+}
+
 function extractPdfText(file) {
   if (!file || !fs.existsSync(file) || path.extname(file).toLowerCase() !== '.pdf') return '';
   try {
@@ -705,6 +720,7 @@ function main() {
     applications: slimApplications,
     reviewed: slimReviewed
   }));
+  refreshAssetFingerprints();
   const missingPrepared = prepared.filter(r => !r.resume.pdf || !r.cover_letter.pdf).map(r => r.key);
   console.log(JSON.stringify({
     prepared_packages: prepared.length,

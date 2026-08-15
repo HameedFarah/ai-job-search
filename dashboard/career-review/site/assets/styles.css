@@ -1668,20 +1668,22 @@ main {
 .overlay-action-bar .primary-next-action:hover { background: #f7f9ff; }
 .overlay-action-bar .primary-next-action,
 .overlay-action-bar .compact-secondary-actions .card-button {
-  color: #102044;
+  color: #102044 !important;
   background: #f7f9ff;
   border: 2px solid #102044;
   font-weight: 800;
 }
 .overlay-action-bar .primary-next-action:hover,
 .overlay-action-bar .compact-secondary-actions .card-button:hover {
-  color: #fff;
+  color: #fff !important;
   background: #102044;
 }
-.overlay-action-bar .primary-next-action.disabled {
-  color: #a5abc0;
-  background: #f3f4f8;
-  border-color: #f3f4f8;
+.overlay-action-bar .primary-next-action.disabled,
+.overlay-action-bar .primary-next-action:disabled {
+  color: #26344d !important;
+  background: #d7deea !important;
+  border-color: #8290a8 !important;
+  opacity: 1;
 }
 .overlay-action-bar .compact-secondary-actions .card-button {
   color: rgba(255,255,255,.9);
@@ -2162,8 +2164,7 @@ html:not([data-theme="high-contrast"]) .compact-brand .subtitle {
 /* Primary blue controls must always retain readable white text. */
 .card-button.primary,
 .quick-files .card-button.primary,
-.stage-actions .card-button.primary,
-.primary-next-action {
+.stage-actions .card-button.primary {
   color: #fff !important;
 }
 
@@ -2405,4 +2406,26 @@ html:not([data-theme="high-contrast"]) .compact-brand .subtitle {
   .cover-box-head { align-items: flex-start; }
   .cover-box-actions { flex-wrap: wrap; justify-content: flex-end; }
   .submission-record-grid > div { grid-template-columns: 78px minmax(0, 1fr); }
+}
+
+/* Final CTA contrast guard. Keep this after all theme/mobile overrides so the
+   job-detail primary action never falls back to white text on a pale surface. */
+.overlay-action-bar .card-button.primary.primary-next-action {
+  color: #102044 !important;
+  background: #f7f9ff !important;
+  border-color: #102044 !important;
+  opacity: 1;
+}
+.overlay-action-bar .card-button.primary.primary-next-action:hover,
+.overlay-action-bar .card-button.primary.primary-next-action:focus-visible {
+  color: #fff !important;
+  background: #102044 !important;
+  border-color: #102044 !important;
+}
+.overlay-action-bar .card-button.primary.primary-next-action.disabled,
+.overlay-action-bar .card-button.primary.primary-next-action:disabled {
+  color: #26344d !important;
+  background: #d7deea !important;
+  border-color: #8290a8 !important;
+  opacity: 1;
 }

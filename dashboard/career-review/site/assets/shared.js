@@ -169,22 +169,30 @@ function roleFoundTime(role, fallback = '') {
 
 /* ---- Site Data (here.now) ---- */
 
-async function loadCollection(name, limit = 300) {
-  const cacheKey = `${name}:${limit}`;
-  window.__careerCollectionPromises ||= new Map();
-  if (window.__careerCollectionPromises.has(cacheKey)) return window.__careerCollectionPromises.get(cacheKey);
-  const request = (async () => {
-  try {
-    const response = await fetch(`./.herenow/data/${name}?limit=${limit}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${name} unavailable (${response.status})`);
-    const payload = await response.json();
-    return Array.isArray(payload.records) ? payload.records : [];
-  } catch (error) {
-    console.warn(`loadCollection(${name})`, error);
-    return [];
+const COLLECTION_CACHE = new Map();
+
+function invalidateCollectionCache(name) {
+  for (const key of COLLECTION_CACHE.keys()) {
+    if (key.startsWith(`${name}:`)) COLLECTION_CACHE.delete(key);
   }
+}
+
+async function loadCollection(name, limit = 300, fresh = false) {
+  const cacheKey = `${name}:${limit}`;
+  const cacheable = !fresh && name !== 'ai_requests';
+  if (cacheable && COLLECTION_CACHE.has(cacheKey)) return COLLECTION_CACHE.get(cacheKey);
+  const request = (async () => {
+    try {
+      const response = await fetch(`./.herenow/data/${name}?limit=${limit}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`${name} unavailable (${response.status})`);
+      const payload = await response.json();
+      return Array.isArray(payload.records) ? payload.records : [];
+    } catch (error) {
+      console.warn(`loadCollection(${name})`, error);
+      return [];
+    }
   })();
-  window.__careerCollectionPromises.set(cacheKey, request);
+  if (cacheable) COLLECTION_CACHE.set(cacheKey, request);
   return request;
 }
 
@@ -196,6 +204,7 @@ async function createRecord(collection, payload, idempotencyKey) {
   });
   if (!response.ok) throw new Error(await responseError(response, `Save to ${collection} failed`));
   const result = await response.json();
+  invalidateCollectionCache(collection);
   return result.record || result;
 }
 
@@ -207,6 +216,7 @@ async function patchRecord(collection, recordId, fields) {
   });
   if (!response.ok) throw new Error(await responseError(response, `Update ${collection} failed`));
   const result = await response.json();
+  invalidateCollectionCache(collection);
   return result.record || result;
 }
 
