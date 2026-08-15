@@ -140,6 +140,7 @@ def reconcile_existing_non_target_jobs(
 
     changed: list[dict[str, Any]] = []
     preserved_owner_decisions: list[str] = []
+    preserved_generated_packages: list[str] = []
     base_dir = Path(tracker.base_dir)
 
     for row in tracker.list_rows():
@@ -159,6 +160,14 @@ def reconcile_existing_non_target_jobs(
         owner_decision = processing_state.get("owner_decision") or {}
         if str(owner_decision.get("decision") or "").strip().lower() in _PROTECTED_OWNER_DECISIONS:
             preserved_owner_decisions.append(job_id)
+            continue
+
+        # Status can occasionally lag artifact state after an interrupted run.
+        # A concrete generated application is stronger evidence than the CSV
+        # label, so preserve it rather than treating it as pending generation.
+        generated_application = base_dir / "artifacts" / job_id / "generated_application.json"
+        if generated_application.is_file():
+            preserved_generated_packages.append(job_id)
             continue
 
         role = str(job.get("role") or row.get("role") or "").strip()
@@ -211,5 +220,6 @@ def reconcile_existing_non_target_jobs(
         "changed_jobs": changed,
         "counts_by_reason": dict(Counter(item["reason"] for item in changed)),
         "preserved_owner_decision_job_ids": preserved_owner_decisions,
+        "preserved_generated_package_job_ids": preserved_generated_packages,
         "send_or_submit": False,
     }
