@@ -103,6 +103,18 @@ def build_adapter(
     elif adapter_id == "workable":
         from .adapters.workable import WorkableAdapter
         cls = WorkableAdapter
+    elif adapter_id == "taleo":
+        from .adapters.taleo import TaleoAdapter
+        cls = TaleoAdapter
+    elif adapter_id == "official_html":
+        from .adapters.official_html import OfficialHtmlAdapter
+        cls = OfficialHtmlAdapter
+    elif adapter_id == "eightfold_neom":
+        from .adapters.eightfold_neom import NeomEightfoldAdapter
+        cls = NeomEightfoldAdapter
+    elif adapter_id == "phenom":
+        from .adapters.phenom import PhenomAdapter
+        cls = PhenomAdapter
     elif adapter_id == "jsonld":
         from .adapters.jsonld import JsonLdAdapter
         cls = JsonLdAdapter
@@ -126,6 +138,7 @@ def build_adapter(
             + _describe_blocked(adapter_id)
         )
     return cls(**kwargs)
+
 
 def _describe_blocked(adapter_id: str) -> str:
     try:
@@ -335,7 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="hermes_scanner",
     )
     ingest.add_argument("--output", default="")
-    consultants = sub.add_parser("consultants-scan", help="Probe active consultant bookmarks via official JSON-LD")
+    consultants = sub.add_parser("consultants-scan", help="Probe active consultant bookmarks via official sources")
     consultants.add_argument("--root", default="")
     consultants.add_argument("--limit", type=int, default=25)
     consultants.add_argument("--offline", action="store_true")
@@ -394,7 +407,9 @@ def main(argv: list[str] | None = None) -> int:
             from ..config import repo_root
             result = scan_consultants(root=Path(args.root) if args.root else repo_root(), limit=args.limit, offline=args.offline)
             if args.output:
-                out = Path(args.output); out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                out = Path(args.output)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             emit(result)
             return 0
         raise AssertionError(args.command)
