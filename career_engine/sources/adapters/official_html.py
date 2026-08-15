@@ -95,6 +95,26 @@ def _context_location(block: str) -> str:
     return ""
 
 
+def _anchor_context(html: str, start: int, end: int) -> str:
+    """Return the smallest plausible listing container around one job link.
+
+    A broad character window can leak a neighbouring card's Saudi location into
+    a global vacancy. Prefer the nearest enclosing list/article/section/div
+    block; use a deliberately small fallback window only when the page has no
+    useful container markup.
+    """
+    candidates: list[tuple[int, str]] = []
+    for tag in ("li", "article", "section", "div"):
+        opener = html.rfind(f"<{tag}", 0, start)
+        if opener >= 0:
+            candidates.append((opener, tag))
+    for opener, tag in sorted(candidates, reverse=True):
+        closer = html.find(f"</{tag}>", end)
+        if closer >= end:
+            return html[opener : closer + len(tag) + 3]
+    return html[max(0, start - 240) : min(len(html), end + 240)]
+
+
 class OfficialHtmlAdapter(SourceAdapter):
     source_id = "official_html"
     source_name = "First-party employer careers HTML"
@@ -113,7 +133,7 @@ class OfficialHtmlAdapter(SourceAdapter):
         name, base, preset = self._spec(company)
         if offline:
             # Offline consultant-registry tests exercise routing, not these live
-            # sites.  Return a deterministic empty page only for known presets;
+            # sites. Return a deterministic empty page only for known presets;
             # parser behaviour itself is covered with mocked live HTML tests.
             html = self._offline_html(preset)
         else:
@@ -212,9 +232,7 @@ class OfficialHtmlAdapter(SourceAdapter):
             # Ignore generic navigation labels rather than promoting them as jobs.
             if role.lower() in {"jobs", "careers", "career", "apply", "apply now", "view jobs", "show more jobs"}:
                 continue
-            left = max(0, match.start() - 900)
-            right = min(len(html), match.end() + 900)
-            block = html[left:right]
+            block = _anchor_context(html, match.start(), match.end())
             loc = _context_location(block)
             id_match = _ID_RE.search(urlsplit(url).path)
             raw_id = id_match.group(1) if id_match else urlsplit(url).path.rstrip("/").split("/")[-1]
