@@ -22,7 +22,7 @@ from ..managed_providers import DEFAULT_CHECKOUT, PROVIDERS, UPSTREAM_REF, UPSTR
 from ..provenance import provenance as make_provenance
 
 _MAX_STDOUT = 8 * 1024 * 1024
-_RUNNER_TIMEOUT = 75
+_RUNNER_TIMEOUT = 20
 
 
 class ManagedCareerOpsAdapter(SourceAdapter):

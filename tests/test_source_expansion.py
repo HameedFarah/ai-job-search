@@ -29,12 +29,12 @@ class SourceExpansionTests(unittest.TestCase):
     def test_consultant_scan_preserves_policy_and_outcomes(self) -> None:
         root = Path(__file__).resolve().parents[1]
         report = scan_consultants(root=root, offline=True, limit=3)
-        # K&A and Worley are now active verified ATS sources; the stale
-        # unidentified abdullahal record was deleted. Five active duplicate
-        # bookmark records remain intentionally skipped, leaving 21 attempts.
-        self.assertEqual(report["summary"]["active_records"], 26)
-        self.assertEqual(report["summary"]["sources_skipped"], 5)
-        self.assertEqual(report["summary"]["sources_attempted"], 21)
+        # WSP and Dar Al Omran remain manual because their authoritative pages
+        # block the bounded client; Omrania is an explicit Egis duplicate. Six
+        # active duplicate records are skipped, leaving 18 attempted sources.
+        self.assertEqual(report["summary"]["active_records"], 24)
+        self.assertEqual(report["summary"]["sources_skipped"], 6)
+        self.assertEqual(report["summary"]["sources_attempted"], 18)
         self.assertFalse(report["send_or_submit"])
         self.assertGreaterEqual(len(report["jobs"]), 1)
         self.assertIn("workday", {job["adapter"] for job in report["jobs"]})
