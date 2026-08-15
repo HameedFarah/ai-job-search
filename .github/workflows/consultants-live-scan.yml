@@ -23,6 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Capture bounded parser diagnostics
+        run: |
+          python3 - <<'PY'
+          from career_engine.sources import network
+          for name, url in {
+              'buro-page1.html': 'https://vacancies.burohappold.com/jobs/search/-1/',
+              'buro-page2.html': 'https://vacancies.burohappold.com/jobs/search/-1/2',
+              'meinhardt.html': 'https://mjobs.meinhardtgroup.com/',
+          }.items():
+              text = network.fetch_text(url, max_bytes=4 * 1024 * 1024)
+              open(name, 'w', encoding='utf-8').write(text)
+          PY
+
       - name: Run bounded live scan
         env:
           LIMIT: ${{ inputs.limit }}
@@ -37,46 +50,29 @@ jobs:
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from collections import Counter
-
           data = json.load(open("consultants-scan.json", encoding="utf-8"))
           sources = data.get("sources", [])
           jobs = data.get("jobs", [])
           statuses = Counter(str(s.get("status") or "unknown") for s in sources)
-          adapters = Counter(str(s.get("adapter") or "unknown") for s in sources if s.get("attempted"))
-
           print("# Consultants live scan")
-          print()
           print(f"- active records: **{data.get('summary', {}).get('active_records', 0)}**")
           print(f"- sources attempted: **{data.get('summary', {}).get('sources_attempted', 0)}**")
           print(f"- jobs emitted after cross-source dedupe: **{len(jobs)}**")
           print(f"- duplicates dropped: **{data.get('duplicates_dropped', 0)}**")
           print(f"- send or submit: **{data.get('send_or_submit')}**")
-          print()
-          print("## Source status")
-          print()
-          print("| status | sources |")
-          print("|---|---:|")
-          for key, value in sorted(statuses.items()):
-              print(f"| {key} | {value} |")
-          print()
-          print("## Attempted adapters")
-          print()
-          print("| adapter | sources |")
-          print("|---|---:|")
-          for key, value in sorted(adapters.items()):
-              print(f"| {key} | {value} |")
-          print()
-          print("## Per-source counts")
-          print()
-          print("| source | adapter | status | jobs |")
-          print("|---|---|---|---:|")
-          for s in sources:
-              print(f"| {s.get('source_name','')} | {s.get('adapter','')} | {s.get('status','')} | {s.get('jobs_fetched',0)} |")
+          print("\n## Source status\n\n| status | sources |\n|---|---:|")
+          for key, value in sorted(statuses.items()): print(f"| {key} | {value} |")
+          print("\n## Per-source counts\n\n| source | adapter | status | jobs |\n|---|---|---|---:|")
+          for s in sources: print(f"| {s.get('source_name','')} | {s.get('adapter','')} | {s.get('status','')} | {s.get('jobs_fetched',0)} |")
           PY
 
-      - name: Upload raw report
+      - name: Upload raw report and parser diagnostics
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: consultants-live-scan
-          path: consultants-scan.json
-          retention-days: 7
+          path: |
+            consultants-scan.json
+            buro-page1.html
+            buro-page2.html
+            meinhardt.html
+          retention-days: 1
