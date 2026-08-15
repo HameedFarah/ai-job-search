@@ -1,33 +1,48 @@
-"""Host-pinned public Eightfold adapter for NEOM.
+"""Host-pinned official career adapter for NEOM.
 
-The maintained generic Eightfold implementation deliberately accepts only
-``*.eightfold.ai`` hosts.  NEOM fronts the same zero-auth jobs API on the
-branded ``careers.neom.com`` hostname, so Career Engine uses this deliberately
-narrow adapter rather than weakening the generic host trust rule.
+NEOM's canonical careers surface fronts Eightfold on ``careers.neom.com``.
+When that API successfully reports zero positions, NEOM also has a separate
+first-party Virtual Career Fair at ``candidatejourney.neom.com`` whose public
+page explicitly labels current role names as ``Open positions`` and says
+candidates can apply directly to available jobs.
 
-Public endpoint:
-    GET https://careers.neom.com/api/apply/v2/jobs?domain=neom.com&start=N&num=10
+The adapter therefore uses this order:
 
-No login, cookie, token, application or external mutation is used.
+1. query the canonical branded Eightfold API;
+2. if it returns positions, use only those positions;
+3. only if the API explicitly returns ``count: 0``, query the public NEOM
+   Career Fair and emit its listed open-position titles;
+4. fail closed if either authoritative surface changes shape or is unavailable.
+
+This keeps one NEOM source identity, avoids duplicate counting when Eightfold is
+populated, and never logs in, registers, submits, bypasses access controls or
+uses a non-NEOM discovery source.
 """
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from .. import network
-from ..base import DiscoveryJob, SourceAdapter, SourceError
+from ..base import DiscoveryJob, SourceAdapter, SourceError, html_to_text
 from ..dates import parse_ms_epoch, unknown
 from ..provenance import provenance as make_provenance
 
 _HOST = "careers.neom.com"
+_CAREER_FAIR_HOST = "candidatejourney.neom.com"
+_CAREER_FAIR_URL = f"https://{_CAREER_FAIR_HOST}/"
 _PAGE_SIZE = 10
 _MAX_PAGES = 200
+_OPEN_POSITIONS_RE = re.compile(r"open\s+positions\s*:?", re.I)
+_SECTION_END_RE = re.compile(r"(?:#?\s*sponsors\b|frequently\s+asked\s+questions?)", re.I)
+_LI_RE = re.compile(r"<li\b[^>]*>([\s\S]*?)</li>", re.I)
+_ROLE_SAFE_RE = re.compile(r"^[A-Za-z0-9&/()+,.\-'–— ]{3,120}$")
 
 
 class NeomEightfoldAdapter(SourceAdapter):
     source_id = "eightfold_neom"
-    source_name = "NEOM branded Eightfold public jobs API"
-    source_kind = "ats_api"
+    source_name = "NEOM official careers surfaces"
+    source_kind = "official_career_surface"
     official = True
 
     def search(
@@ -47,6 +62,7 @@ class NeomEightfoldAdapter(SourceAdapter):
         out: list[DiscoveryJob] = []
         seen: set[str] = set()
         total: int | None = None
+        mapped_count = 0
         for page in range(_MAX_PAGES):
             start = page * _PAGE_SIZE
             params = {"start": str(start), "num": str(_PAGE_SIZE)}
@@ -61,16 +77,23 @@ class NeomEightfoldAdapter(SourceAdapter):
                 positions = payload.get("jobs")
             if not isinstance(positions, list):
                 raise SourceError("NEOM Eightfold API did not expose a positions list")
-            if total is None and isinstance(payload.get("count"), int):
-                total = int(payload["count"])
+            if total is None:
+                count_value = payload.get("count")
+                if not isinstance(count_value, int):
+                    raise SourceError("NEOM Eightfold API did not expose an explicit position count")
+                total = int(count_value)
 
             for item in positions:
                 if not isinstance(item, dict):
                     continue
                 job = self._map(item, name=name, domain=domain)
-                if job is None or job.detail_url in seen:
+                if job is None:
                     continue
-                seen.add(job.detail_url)
+                mapped_count += 1
+                key = job.dedupe_key()
+                if key in seen:
+                    continue
+                seen.add(key)
                 if location and not self._location_matches(location, job.location):
                     continue
                 out.append(job)
@@ -81,7 +104,21 @@ class NeomEightfoldAdapter(SourceAdapter):
                 break
             if total is not None and start + _PAGE_SIZE >= total:
                 break
-        return out
+
+        if out:
+            return out
+        if total == 0:
+            return self._career_fair_jobs(name=name, location=location, limit=requested)
+        if mapped_count:
+            # A populated canonical board with no Saudi match is a legitimate
+            # filtered-empty result. Do not fall back to the event surface and
+            # risk duplicating canonical corporate vacancies.
+            return []
+        # The API claimed positions existed but none could be mapped. Never
+        # silently turn a parser/schema failure into an empty source.
+        raise SourceError(
+            f"NEOM Eightfold reported {total} positions but none could be mapped"
+        )
 
     @staticmethod
     def _spec(value: str) -> tuple[str, str | None]:
@@ -94,6 +131,97 @@ class NeomEightfoldAdapter(SourceAdapter):
             raise SourceError("NEOM Eightfold adapter is pinned to https://careers.neom.com")
         domain = (parse_qs(parsed.query).get("domain") or [None])[0]
         return name or "NEOM", domain
+
+    def _career_fair_jobs(
+        self,
+        *,
+        name: str,
+        location: str | None,
+        limit: int,
+    ) -> list[DiscoveryJob]:
+        html = network.fetch_text(_CAREER_FAIR_URL, max_bytes=4 * 1024 * 1024)
+        roles = self._parse_career_fair_roles(html)
+        jobs: list[DiscoveryJob] = []
+        for role in roles:
+            job_location = "NEOM"
+            if location and not self._location_matches(location, job_location):
+                continue
+            raw_id = "career-fair:" + re.sub(r"[^a-z0-9]+", "-", role.lower()).strip("-")
+            jobs.append(
+                DiscoveryJob(
+                    adapter_id=self.source_id,
+                    company=name,
+                    role=role,
+                    location=job_location,
+                    external_job_id=raw_id,
+                    detail_url=_CAREER_FAIR_URL,
+                    application_url=_CAREER_FAIR_URL,
+                    posted=unknown("NEOM Virtual Career Fair open-positions page"),
+                    found_date=self._today(),
+                    # The public page proves the title is open but does not expose
+                    # a full JD without event registration. Leave the description
+                    # empty so the central scanner retains Manual Review Needed.
+                    description_text="",
+                    provenance=make_provenance(
+                        source_id=self.source_id,
+                        source_name="NEOM Virtual Career Fair",
+                        source_kind="employer_event_page",
+                        official=True,
+                        extracted_from="public NEOM Virtual Career Fair Open positions list",
+                        detail_url=_CAREER_FAIR_URL,
+                        raw_id=raw_id,
+                    ),
+                    extra={
+                        "canonical_eightfold_count": 0,
+                        "career_fair_fallback": True,
+                        "full_jd_publicly_available": False,
+                    },
+                )
+            )
+            if len(jobs) >= limit:
+                break
+        return jobs
+
+    @staticmethod
+    def _parse_career_fair_roles(html: str) -> list[str]:
+        marker = _OPEN_POSITIONS_RE.search(html or "")
+        if marker is None:
+            # Some front ends place the heading text in nested tags. Plain-text
+            # extraction is a second, still deterministic, shape check.
+            text = html_to_text(html)
+            text_marker = _OPEN_POSITIONS_RE.search(text)
+            if text_marker is None:
+                raise SourceError("NEOM Career Fair did not expose an Open positions section")
+            tail = text[text_marker.end():]
+            end_match = _SECTION_END_RE.search(tail)
+            segment = tail[: end_match.start()] if end_match else tail[:5000]
+            candidates = [line.strip(" •\t") for line in segment.splitlines()]
+        else:
+            tail = html[marker.end():]
+            end_match = _SECTION_END_RE.search(tail)
+            section = tail[: end_match.start()] if end_match else tail[:20000]
+            candidates = [html_to_text(value).strip() for value in _LI_RE.findall(section)]
+            if not candidates:
+                candidates = [line.strip(" •\t") for line in html_to_text(section).splitlines()]
+
+        roles: list[str] = []
+        seen: set[str] = set()
+        blocked = {
+            "open positions", "apply for jobs", "previous", "next", "login", "register",
+            "platinum", "gold", "silver", "sponsors", "banner", "chicago",
+        }
+        for candidate in candidates:
+            role = re.sub(r"\s+", " ", candidate).strip(" :-")
+            if not role or role.lower() in blocked:
+                continue
+            if not _ROLE_SAFE_RE.fullmatch(role):
+                continue
+            key = role.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            roles.append(role)
+        return roles
 
     def _map(self, item: dict, *, name: str, domain: str | None) -> DiscoveryJob | None:
         role = str(item.get("name") or item.get("posting_name") or "").strip()
@@ -144,8 +272,8 @@ class NeomEightfoldAdapter(SourceAdapter):
             description_text=snippet,
             provenance=make_provenance(
                 source_id=self.source_id,
-                source_name=self.source_name,
-                source_kind=self.source_kind,
+                source_name="NEOM branded Eightfold public jobs API",
+                source_kind="ats_api",
                 official=True,
                 extracted_from="NEOM branded Eightfold public jobs API",
                 detail_url=detail_url,
