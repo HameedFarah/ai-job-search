@@ -330,6 +330,9 @@ html[data-theme="high-contrast"] .card-button.email { background: #2b2410; borde
 .card-button.success { background: var(--good); border-color: var(--good); color: white; }
 .card-button.quiet { background: transparent; border-color: transparent; color: var(--muted); font-weight: 700; }
 .card-button.quiet:hover { color: var(--ink); border-color: var(--line); }
+.card-button:disabled,
+.card-button.disabled,
+.card-button.primary:disabled { background: #d7deea !important; border-color: #aeb9ca !important; color: #26344d !important; opacity: 1; cursor: not-allowed; }
 
 /* ---------- Help ---------- */
 .workflow-help { margin-top: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }

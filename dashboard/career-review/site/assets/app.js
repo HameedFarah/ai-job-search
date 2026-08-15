@@ -47,7 +47,7 @@ async function loadWorkflow() {
   for (const record of records) {
     const data = dataOf(record);
     const stage = data.stage === 'approved' ? 'ready_review' : data.stage;
-    if (data.role_key && STAGES.some(item => item.id === stage)) {
+    if (data.role_key && (STAGES.some(item => item.id === stage) || stage === 'processing')) {
       state.workflow.set(data.role_key, { id: record.id, ...data, stage, createdAt: record.createdAt, updatedAt: record.updatedAt });
     }
   }
@@ -351,7 +351,6 @@ function renderSummary() {
   const metrics = [
     [state.roles.length, 'Tracked', '', 'tracked'],
     [counts.found, 'Found', 'found', 'found'],
-    [counts.processing, 'Processing', 'processing', 'processing'],
     [counts.ready_review, 'Awaiting action', 'ready_review', 'ready_review'],
     [counts.applied, 'Applied', 'applied', 'applied']
   ];
@@ -1253,8 +1252,8 @@ function renderOverlayActions(role) {
   if (message) {
     message.textContent = currentStage === 'ready_review'
       ? 'Your application package is ready for review. Open the verified route when you are satisfied.'
-      : currentStage === 'processing'
-        ? 'This role is being prepared or tracked as processing. Review the package and evidence before moving it forward.'
+      : currentStage === 'manual_review_needed'
+        ? 'This role needs owner review before the package can move to Ready for review.'
         : currentStage === 'applied'
           ? 'This application is recorded as sent or submitted. Reopen review if you need to revise the package.'
           : currentStage === 'inactive'
@@ -1657,31 +1656,27 @@ function setTextSafe(id, value) {
 
 async function init() {
   setupControls();
-  await initTheme();
-  await Promise.all([loadComments(), loadWorkflow(), loadHistory(), loadPreferences()]);
+  applyTheme(localStorage.getItem(THEME_PREF_KEY) || 'executive-navy');
   try {
     const response = await fetch('data/jobs.json', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Unable to load dashboard (${response.status})`);
     state.data = await response.json();
     state.lastScanAt = state.data.generated_at || new Date().toISOString();
     state.roles = mergeRoles(state.data);
-    state.aiRequests = (await loadCollection('ai_requests')).map(record => ({
-      id: record.id,
-      ...dataOf(record),
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
-    }));
-    try {
-      const templatesResponse = await fetch('data/ats-design-options.json', { cache: 'no-store' });
-      if (templatesResponse.ok) state.templatesData = await templatesResponse.json();
-    } catch (error) {
-      console.warn('ats-design-options unavailable', error);
-    }
     renderBoard();
     updateScanClock();
     setupGlobalOperationPolling();
     setupOverlay();
     setInterval(updateScanClock, 60000);
+    // Site Data and detail-only assets must not block the first board paint.
+    const hydrate = async () => {
+      await Promise.all([loadWorkflow(), loadPreferences()]);
+      renderBoard();
+      await Promise.all([loadComments(), loadHistory(), loadAiRequests(), loadTemplates()]);
+      renderOverlayIfOpen();
+    };
+    const idle = window.requestIdleCallback || (callback => setTimeout(callback, 0));
+    idle(() => hydrate().catch(error => console.warn('deferred dashboard hydration unavailable', error)));
     const deepLink = new URLSearchParams(window.location.search).get('job');
     if (deepLink) openOverlay(deepLink, false);
   } catch (error) {
@@ -1691,6 +1686,17 @@ async function init() {
     message.textContent = error.message;
     board.replaceChildren(message);
   }
+}
+
+async function loadAiRequests() {
+  state.aiRequests = (await loadCollection('ai_requests')).map(record => ({ id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt }));
+}
+
+async function loadTemplates() {
+  try {
+    const response = await fetch('data/ats-design-options.json', { cache: 'no-store' });
+    if (response.ok) state.templatesData = await response.json();
+  } catch (error) { console.warn('ats-design-options unavailable', error); }
 }
 
 init();

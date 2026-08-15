@@ -2,9 +2,8 @@
 'use strict';
 
 const STAGES = [
-  { id: 'found', label: 'Found jobs', next: 'processing', nextLabel: 'Mark processing' },
-  { id: 'manual_review_needed', label: 'Needs review', next: 'processing', nextLabel: 'Resume processing' },
-  { id: 'processing', label: 'Processing', next: 'ready_review', nextLabel: 'Package ready' },
+  { id: 'found', label: 'Found jobs', next: 'ready_review', nextLabel: 'Prepare for review' },
+  { id: 'manual_review_needed', label: 'Needs review', next: 'ready_review', nextLabel: 'Move to ready review' },
   { id: 'ready_review', label: 'Ready for review', next: 'applied', nextLabel: 'Confirm applied / sent' },
   { id: 'applied', label: 'Applied / sent', next: 'ready_review', nextLabel: 'Reopen review' },
   { id: 'inactive', label: 'Closed / inactive', next: 'found', nextLabel: 'Reopen' }
@@ -171,6 +170,10 @@ function roleFoundTime(role, fallback = '') {
 /* ---- Site Data (here.now) ---- */
 
 async function loadCollection(name, limit = 300) {
+  const cacheKey = `${name}:${limit}`;
+  window.__careerCollectionPromises ||= new Map();
+  if (window.__careerCollectionPromises.has(cacheKey)) return window.__careerCollectionPromises.get(cacheKey);
+  const request = (async () => {
   try {
     const response = await fetch(`./.herenow/data/${name}?limit=${limit}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`${name} unavailable (${response.status})`);
@@ -180,6 +183,9 @@ async function loadCollection(name, limit = 300) {
     console.warn(`loadCollection(${name})`, error);
     return [];
   }
+  })();
+  window.__careerCollectionPromises.set(cacheKey, request);
+  return request;
 }
 
 async function createRecord(collection, payload, idempotencyKey) {
@@ -602,9 +608,19 @@ function defaultStage(role) {
   return role.kind === 'application' ? 'ready_review' : 'found';
 }
 
+function normalizedWorkflowStage(stage, role) {
+  const value = normalizedStatus(stage);
+  if (value === 'approved') return 'ready_review';
+  if (value === 'processing') {
+    return role && (role.kind === 'application' || role.resume || role.cover_letter || role.submission_package)
+      ? 'ready_review' : 'found';
+  }
+  return STAGES.some(item => item.id === value) ? value : '';
+}
+
 function stageFor(role) {
   const batchOverride = state.batchStageOverrides?.get(role.key);
-  return batchOverride || state.workflow.get(role.key)?.stage || defaultStage(role);
+  return normalizedWorkflowStage(batchOverride, role) || normalizedWorkflowStage(state.workflow.get(role.key)?.stage, role) || defaultStage(role);
 }
 
 function activityTime(role) {

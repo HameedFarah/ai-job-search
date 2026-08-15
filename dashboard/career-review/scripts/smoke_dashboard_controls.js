@@ -49,7 +49,8 @@ async function main() {
   }, batchRoleKey);
   const progressText = await page.locator('#operation-status').innerText();
   assert(progressText.includes('2 done') && progressText.includes('3 remaining') && progressText.includes('(5 total)') && progressText.includes('ETA ~3 min'), 'Batch progress shows done, remaining, total and ETA', progressText);
-  assert(await page.locator(`.kanban-column[data-stage="processing"] .role-card[data-role-key="${batchRoleKey}"]`).count() === 1, 'Current batch job moves visually into Processing');
+  assert(await page.locator('.kanban-column[data-stage="processing"]').count() === 0, 'Processing workflow lane is removed');
+  assert(await page.locator(`.role-card[data-role-key="${batchRoleKey}"]`).count() === 1, 'Current batch job remains visible in its canonical workflow lane');
   await page.evaluate(() => {
     state.aiRequests = state.aiRequests.filter(item => item.id !== 'fake-batch-progress');
     state.batchProgress = null;
