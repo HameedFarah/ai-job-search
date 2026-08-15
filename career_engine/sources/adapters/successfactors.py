@@ -25,11 +25,17 @@ from ..provenance import provenance as make_provenance
 _TILE_RE = re.compile(r'<li class="job-tile job-id-(\d+)\b[\s\S]*?</li>', re.I)
 _URL_RE = re.compile(r'data-url="([^"]+)"', re.I)
 _TITLE_RE = re.compile(r'class="jobTitle-link[^"]*"[^>]*>([\s\S]*?)</a>', re.I)
-_BLOCK_TAGS = {"p", "li", "ul", "ol", "br", "div", "h1", "h2", "h3", "h4", "h5", "h6"}
+_BLOCK_TAGS = {"p", "li", "ul", "ol", "br", "div", "section", "article", "h1", "h2", "h3", "h4", "h5", "h6"}
 
 
 class _JobDescriptionTextParser(HTMLParser):
-    """Extract the complete nested SuccessFactors ``jobdescription`` element."""
+    """Extract the complete nested SuccessFactors ``jobdescription`` element.
+
+    SuccessFactors RMK tenants do not consistently use the same root element:
+    some emit ``span.jobdescription`` while others (including current Red Sea
+    Global pages) use a block element such as ``div.jobdescription``.  Match
+    the class rather than the tag so the central scanner retains the full JD.
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -43,8 +49,10 @@ class _JobDescriptionTextParser(HTMLParser):
                 classes = value or ""
                 break
         if self.depth == 0:
-            if tag.lower() == "span" and "jobdescription" in classes.split():
+            if "jobdescription" in classes.split():
                 self.depth = 1
+                if tag.lower() in _BLOCK_TAGS:
+                    self.parts.append("\n")
             return
         self.depth += 1
         if tag.lower() in _BLOCK_TAGS:
