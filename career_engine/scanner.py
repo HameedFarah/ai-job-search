@@ -9,6 +9,7 @@ from .bundle import load_bundle
 from .config import load_config
 from .pipeline import _load_tracker
 from .service import prepare_job
+from .targeting import auto_skip_title_reason
 
 SCANNER_ACTORS = {
     "hermes_scanner": "hermes",
@@ -117,6 +118,114 @@ def add_path_scan_statistics(report: dict[str, Any], sources: list[dict[str, Any
 
 INSUFFICIENT_DESCRIPTION_MESSAGE = "Job description is too short to evaluate"
 MANUAL_REVIEW_STATUS = "manual_review_needed"
+
+
+def _reject_non_target_title(
+    item: dict[str, Any],
+    *,
+    root: Path,
+    actor: str,
+    skip_reason: str,
+) -> dict[str, Any]:
+    """Persist an obvious non-target vacancy without creating review work.
+
+    Title classification happens before JD normalization so a missing/truncated
+    description cannot promote Civil Engineer, Site Inspector, Urban Designer,
+    finance, reception/front-desk or similar roles into Manual Review Needed.
+    The record and source provenance are retained for audit/deduplication.
+    """
+    _, paths = load_config(root)
+    tracker = _load_tracker(paths)
+    description = str(item.get("full_job_description") or item.get("job_description") or "").strip()
+    if not description:
+        description = "[Source provided no job description]"
+    source_url = str(item.get("source_url") or "").strip()
+    application_url = str(item.get("application_url") or "").strip()
+    reason = "The role title is clearly outside the owner target lane and was skipped before manual review or generation."
+    ingest = tracker.ingest(
+        {
+            "source": str(item.get("source") or "manual"),
+            "external_job_id": str(item.get("external_job_id") or item.get("reference") or ""),
+            "source_url": source_url,
+            "company": str(item.get("company") or "Unknown company"),
+            "role": str(item.get("role") or "Unknown role"),
+            "location": str(item.get("location") or ""),
+            "posting_date": str(item.get("posting_date") or ""),
+            "posting_date_precision": str(item.get("posting_date_precision") or ""),
+            "posting_date_source": str(item.get("posting_date_source") or ""),
+            "full_job_description": description,
+            "fit_score": "",
+            "priority": "rejected",
+            "processing_status": "rejected",
+            "next_action": "Skipped automatically as a non-target role",
+            "notes": f"Automatic target-lane skip: {skip_reason}.",
+            "provenance": item.get("provenance") if isinstance(item.get("provenance"), dict) else {},
+            "scoring": {
+                "total": None,
+                "recommendation": "rejected",
+                "reason_code": skip_reason,
+                "reason": reason,
+            },
+            "processing_state": {
+                "owner": actor,
+                "status": "rejected",
+                "reason_code": skip_reason,
+                "skip_reason": skip_reason,
+                "reason": reason,
+                "source_url": source_url,
+                "application_url": application_url,
+                "external_action_allowed": False,
+                "send_or_submit": False,
+            },
+        },
+        comment=f"Skipped non-target role before JD normalization: {skip_reason}",
+        actor=actor,
+        source_refs=[value for value in (source_url, application_url) if value],
+        confidence="high",
+    )
+    job_id = ingest["job_id"]
+    tracker.update_job(
+        job_id,
+        {
+            "fit_score": "",
+            "priority": "rejected",
+            "processing_status": "rejected",
+            "next_action": "Skipped automatically as a non-target role",
+            "scoring": {
+                "total": None,
+                "recommendation": "rejected",
+                "reason_code": skip_reason,
+                "reason": reason,
+            },
+            "processing_state": {
+                "owner": actor,
+                "status": "rejected",
+                "reason_code": skip_reason,
+                "skip_reason": skip_reason,
+                "reason": reason,
+                "source_url": source_url,
+                "application_url": application_url,
+                "external_action_allowed": False,
+                "send_or_submit": False,
+            },
+        },
+        comment=f"Classified title as a terminal non-target role: {skip_reason}",
+        actor=actor,
+        action="rejected",
+        source_refs=[value for value in (source_url, application_url) if value],
+        requires_owner_review=False,
+    )
+    return {
+        "job_id": job_id,
+        "live_status": str(item.get("live_status") or "unverified"),
+        "fit_score": {"total": None, "recommendation": "rejected"},
+        "route": {"route": "skipped", "application_url": application_url},
+        "blockers": [],
+        "warnings": [],
+        "outputs": {},
+        "stage": "rejected",
+        "skip_reason": skip_reason,
+    }
 
 
 def _manual_review_for_insufficient_description(
@@ -274,12 +383,16 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
         path_stats["jobs_discovered"] = max(
             path_stats["jobs_discovered"], path_stats["jobs_ingested"] + 1
         )
-        try:
-            state = prepare_job(item, root=root, actor=actor)
-        except ValueError as exc:
-            if str(exc) != INSUFFICIENT_DESCRIPTION_MESSAGE:
-                raise
-            state = _manual_review_for_insufficient_description(item, root=root, actor=actor)
+        skip_reason = auto_skip_title_reason(str(item.get("role") or ""), bundle.get("taxonomy", {}))
+        if skip_reason:
+            state = _reject_non_target_title(item, root=root, actor=actor, skip_reason=skip_reason)
+        else:
+            try:
+                state = prepare_job(item, root=root, actor=actor)
+            except ValueError as exc:
+                if str(exc) != INSUFFICIENT_DESCRIPTION_MESSAGE:
+                    raise
+                state = _manual_review_for_insufficient_description(item, root=root, actor=actor)
         is_new = state["job_id"] not in known_job_ids
         known_job_ids.add(state["job_id"])
         fit = state.get("fit_score") or {}
@@ -294,6 +407,7 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
             "generation_packet": state.get("outputs", {}).get("generation_packet", ""),
             "processing_status": state.get("stage", ""),
             "manual_review_reason": state.get("manual_review_reason", ""),
+            "skip_reason": state.get("skip_reason", ""),
             "source_path": logical_path,
             "is_new": is_new,
         }

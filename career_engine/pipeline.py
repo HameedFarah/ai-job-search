@@ -15,6 +15,7 @@ from .cover_letter import render_cover_letter_and_verify
 from .generation import create_generation_packet, export_packet, validate_generated_application
 from .renderer import render_and_verify, render_ats_and_verify
 from .safety import reject_fixture_payload
+from .targeting import auto_skip_reason
 
 
 def stable_hash(value: Any) -> str:
@@ -190,15 +191,23 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
     live_errors = [item["message"] for item in validate_live_status(normalized)]
     if live_errors:
         warnings.append("invalid_live_metadata:" + "; ".join(live_errors))
+
+    # Clearly non-target roles should not consume Manual Review Needed or
+    # generation attention. Reuse the central score calibration so management
+    # roles stay eligible while out-of-lane disciplines and production IC roles
+    # are terminally skipped. ``force_weak`` remains an explicit owner escape
+    # hatch for a deliberately chosen exception.
+    skip_reason = "" if force_weak or live_status == "closed" else auto_skip_reason(normalized, score)
+
     # Threshold 70 (high_priority) is the credible-generation threshold.
     # Verification affects confidence and later external-action checks, but it
     # is not required to score or prepare an application package. Roles known
     # to be closed remain blocked. Credible (65-69) and selective (50-64)
     # roles remain trackable unless the owner explicitly forces a package.
     threshold = config["scoring"]["thresholds"]["high_priority"]
-    if score["total"] < threshold and not force_weak:
+    if not skip_reason and score["total"] < threshold and not force_weak:
         blockers.append(f"below_generation_threshold:{score['total']}")
-    if route["route"] == "unresolved":
+    if not skip_reason and route["route"] == "unresolved":
         route_message = "route_unresolved:" + route.get("blocker", "")
         if normalized.get("source") == "owner_dashboard":
             # Owner-pasted JDs are allowed to produce an internal review package
@@ -210,8 +219,8 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
         else:
             blockers.append(route_message)
 
-    status = "blocked" if blockers else "generation_ready"
-    if not blockers:
+    status = "rejected" if skip_reason else ("blocked" if blockers else "generation_ready")
+    if status == "generation_ready":
         packet = create_generation_packet(
             job_id=job_id, normalized_job=normalized, matches=matches,
             score=score, route=route, bundle=bundle,
@@ -245,20 +254,30 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
                 "route": route,
                 "blockers": blockers,
                 "warnings": warnings,
+                "skip_reason": skip_reason,
             },
             "generated_artifacts": [
                 {"type": name, "path": path_value, "bundle_hash": bundle["bundle_hash"]}
                 for name, path_value in outputs.items()
             ],
             "next_action": (
-                "Generate one structured application draft; retain verification warning for owner review"
-                if not blockers and warnings
-                else ("Generate one structured application draft" if not blockers else "Resolve blockers before generation")
+                "Skipped automatically as a non-target role"
+                if skip_reason
+                else (
+                    "Generate one structured application draft; retain verification warning for owner review"
+                    if not blockers and warnings
+                    else ("Generate one structured application draft" if not blockers else "Resolve blockers before generation")
+                )
             ),
         },
-        comment="Prepared centralized evidence-grounded Career Engine packet",
+        comment=(
+            f"Skipped non-target role before generation: {skip_reason}"
+            if skip_reason
+            else "Prepared centralized evidence-grounded Career Engine packet"
+        ),
         actor=actor,
-        requires_owner_review=bool(blockers),
+        action="rejected" if skip_reason else "updated",
+        requires_owner_review=bool(blockers) and not bool(skip_reason),
     )
     state = {
         "schema_version": 1,
@@ -270,6 +289,7 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
         "route": route,
         "blockers": blockers,
         "warnings": warnings,
+        "skip_reason": skip_reason,
         "outputs": outputs,
         "cache_reused": reused,
     }
