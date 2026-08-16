@@ -81,7 +81,10 @@ function reconcileCanonicalTracker(slug) {
     cwd: REPO,
     env: process.env,
     stdio: 'inherit',
-    timeout: 180000
+    // Live Site Data reconciliation can legitimately exceed three minutes when
+    // many canonical workflow rows require PATCH confirmation. Keep the publish
+    // fail-closed, but allow the bounded reconciliation enough time to finish.
+    timeout: 600000
   });
   execFileSync('node', [BUILD], {
     cwd: REPO,
