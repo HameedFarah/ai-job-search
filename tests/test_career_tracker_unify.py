@@ -187,6 +187,25 @@ def test_dashboard_stage_change_is_written_back_to_tracker(runtime):
     assert tracker.get_job(job_id)["job"]["processing_status"] == "manual_review_needed"
 
 
+def test_direct_tracker_role_key_avoids_full_tracker_rescan(runtime, monkeypatch):
+    _, tracker = runtime
+    job_id = "9" * 20
+    seed_job(tracker, job_id)
+
+    def fail_scan(_tracker):
+        raise AssertionError("direct tracker role keys must not rescan every job JSON")
+
+    monkeypatch.setattr(unify, "tracker_records", fail_scan)
+    resolved = unify.resolve_site_role(
+        tracker,
+        {"company": "Example Co", "role": "Design Manager"},
+        f"tracker-{job_id}",
+        apply=True,
+    )
+
+    assert resolved == job_id
+
+
 def test_legacy_dashboard_seed_migrates_missing_job_and_dedupes_existing_url(runtime):
     repo, tracker = runtime
     existing_id = "4" * 20

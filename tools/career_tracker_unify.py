@@ -407,9 +407,13 @@ def job_id_from_role_key(role_key: str) -> str:
 
 def resolve_site_role(tracker: Any, data: dict[str, Any], role_key: str, *, apply: bool) -> str:
     direct = job_id_from_role_key(role_key)
+    if direct:
+        try:
+            tracker.get_job(direct)
+            return direct
+        except KeyError:
+            pass
     records = tracker_records(tracker)
-    if direct and direct in records:
-        return direct
     indexes = build_indexes(records)
     enriched = dict(data)
     enriched.setdefault("key", role_key)
