@@ -10,7 +10,7 @@ const REPO = path.resolve(ROOT, '../..');
 const SITE = path.join(ROOT, 'site');
 const STATE = path.join(ROOT, '.deploy.json');
 const API = 'https://here.now/api/v1';
-const UNIFIER = path.join(REPO, 'tools', 'career_tracker_unify.py');
+const UNIFIER = path.join(REPO, 'tools', 'career_tracker_unify_safe.py');
 const BUILD = path.join(ROOT, 'scripts', 'build_site.js');
 const CANONICAL_SUMMARY = path.join(REPO, 'projects', 'job-automation', 'runtime', 'canonical-tracker-summary.json');
 
