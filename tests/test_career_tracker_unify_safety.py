@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from tools import career_tracker_unify as base
@@ -59,3 +63,18 @@ def test_site_data_reader_fails_closed_at_safety_limit(monkeypatch):
     here = FullCollectionHere()
     with pytest.raises(RuntimeError, match="full reconciliation cannot be proven"):
         safe.complete_site_records(here, "history", 1000)
+
+
+def test_safe_unifier_supports_direct_script_execution():
+    repo = Path(__file__).resolve().parents[1]
+    script = repo / "tools" / "career_tracker_unify_safe.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Reconcile every Career Engine job/status surface" in result.stdout
