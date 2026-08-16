@@ -1,13 +1,18 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 // Resolve deployment inputs from this versioned dashboard checkout. The old
 // /home/hameedo/websites/career-review copy was intentionally retired.
 const ROOT = path.resolve(__dirname, '..');
+const REPO = path.resolve(ROOT, '../..');
 const SITE = path.join(ROOT, 'site');
 const STATE = path.join(ROOT, '.deploy.json');
 const API = 'https://here.now/api/v1';
+const UNIFIER = path.join(REPO, 'tools', 'career_tracker_unify.py');
+const BUILD = path.join(ROOT, 'scripts', 'build_site.js');
+const CANONICAL_SUMMARY = path.join(REPO, 'projects', 'job-automation', 'runtime', 'canonical-tracker-summary.json');
 
 function loadApiKey() {
   let raw = process.env.HERENOW_API_KEY || '';
@@ -67,7 +72,59 @@ async function discoverExistingSlug() {
   return match?.slug || '';
 }
 
+function reconcileCanonicalTracker(slug) {
+  if (!fs.existsSync(UNIFIER)) throw new Error(`Canonical tracker unifier missing: ${UNIFIER}`);
+  const args = [UNIFIER, '--repo', REPO, '--apply'];
+  if (slug) args.push('--site-slug', slug);
+  else args.push('--skip-site-data');
+  execFileSync('python3', args, {
+    cwd: REPO,
+    env: process.env,
+    stdio: 'inherit',
+    timeout: 180000
+  });
+  execFileSync('node', [BUILD], {
+    cwd: REPO,
+    env: process.env,
+    stdio: 'inherit',
+    timeout: 180000
+  });
+}
+
+function verifyCanonicalBuild() {
+  const jobsPath = path.join(SITE, 'data', 'jobs.json');
+  if (!fs.existsSync(jobsPath)) throw new Error('dashboard jobs.json is missing after canonical rebuild');
+  if (!fs.existsSync(CANONICAL_SUMMARY)) throw new Error('canonical tracker summary is missing after reconciliation');
+  const jobs = JSON.parse(fs.readFileSync(jobsPath, 'utf8'));
+  const summary = JSON.parse(fs.readFileSync(CANONICAL_SUMMARY, 'utf8'));
+  const roles = [...(jobs.applications || []), ...(jobs.reviewed || [])];
+  if (Number(jobs.total_roles) !== Number(jobs.tracker_records)) {
+    throw new Error(`Canonical dashboard invariant failed: total_roles=${jobs.total_roles} tracker_records=${jobs.tracker_records}. Legacy/non-tracker roles must be migrated before publish.`);
+  }
+  if (roles.length !== Number(jobs.tracker_records)) {
+    throw new Error(`Canonical dashboard invariant failed: rendered roles=${roles.length} tracker_records=${jobs.tracker_records}`);
+  }
+  const appliedValues = new Set(['applied', 'submitted', 'sent', 'application_submitted', 'email_sent', 'submitted_pending_response', 'email_sent_owner_confirmed']);
+  const normalized = value => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const applied = roles.filter(role => normalized(role.processing_status) === 'applied' || appliedValues.has(normalized(role.application_status))).length;
+  const canonicalApplied = Number(summary.counts?.applied_total || 0);
+  if (applied !== canonicalApplied) {
+    throw new Error(`Canonical dashboard invariant failed: dashboard applied=${applied} tracker applied=${canonicalApplied}`);
+  }
+  if (Number(summary.counts?.submitted_portal || 0) + Number(summary.counts?.sent_email || 0) !== canonicalApplied) {
+    throw new Error('Canonical application split invariant failed: submitted + sent must equal applied total');
+  }
+}
+
 async function main() {
+  const slug = await discoverExistingSlug();
+
+  // Site Data is a write queue/evidence surface, not a second status authority.
+  // Reconcile it into CareerTracker, migrate legacy-only jobs, rebuild the site,
+  // then fail closed if the published role/application counts diverge.
+  reconcileCanonicalTracker(slug);
+  verifyCanonicalBuild();
+
   const siteFiles = walk(SITE).map(file => {
     const buffer = fs.readFileSync(file.absolute);
     return {
@@ -83,7 +140,6 @@ async function main() {
   });
   if (!siteFiles.some(f => f.relative === 'index.html')) throw new Error('index.html is missing');
 
-  const slug = await discoverExistingSlug();
   const payload = {
     files: siteFiles.map(file => file.descriptor),
     ttlSeconds: null,
@@ -135,7 +191,7 @@ async function main() {
     try { previousState = JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { previousState = {}; }
   }
   fs.writeFileSync(STATE, `${JSON.stringify({ ...previousState, slug: finalSlug, siteUrl, updatedAt: new Date().toISOString() }, null, 2)}\n`);
-  console.log(JSON.stringify({ slug: finalSlug, siteUrl, files: siteFiles.length, access: access.access || access }, null, 2));
+  console.log(JSON.stringify({ slug: finalSlug, siteUrl, files: siteFiles.length, canonicalTracker: true, access: access.access || access }, null, 2));
 }
 
 main().catch(error => { console.error(error.message); process.exit(1); });
