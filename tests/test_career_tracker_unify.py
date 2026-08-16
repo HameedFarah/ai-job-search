@@ -226,6 +226,30 @@ def test_legacy_role_alias_resolves_only_to_existing_tracker_job(runtime, monkey
     assert resolved == job_id
 
 
+def test_legacy_site_stub_is_superseded_and_direct_key_follows_canonical(runtime):
+    _, tracker = runtime
+    canonical = "7" * 20
+    seed_job(tracker, canonical, company="Cenomi Centers", role="Senior Design Architect")
+    stub = unify.create_stub(
+        tracker,
+        {"key": "cenomi-senior-design-architect", "company": "Cenomi Centers", "role": "Senior Design Architect"},
+        source_label="dashboard_site_data",
+        comment="test temporary Site Data stub",
+    )
+
+    changes = unify.supersede_legacy_site_stubs(
+        tracker,
+        {"cenomi-senior-design-architect": canonical},
+        apply=True,
+    )
+
+    assert changes == [{"job_id": stub, "canonical_job_id": canonical, "legacy_key": "cenomi-senior-design-architect"}]
+    retired = tracker.get_job(stub)
+    assert retired["job"]["processing_status"] == "superseded"
+    assert retired["processing_state"]["canonical_job_id"] == canonical
+    assert unify.resolve_site_role(tracker, {}, f"tracker-{stub}", apply=True) == canonical
+
+
 def test_legacy_dashboard_seed_migrates_missing_job_and_dedupes_existing_url(runtime):
     repo, tracker = runtime
     existing_id = "4" * 20

@@ -254,6 +254,8 @@ def build_indexes(records: dict[str, dict[str, Any]]) -> dict[str, dict[str, str
     text: dict[str, str] = {}
     for job_id, record in records.items():
         job = record.get("job") or {}
+        if norm(job.get("processing_status")) == "superseded":
+            continue
         for candidate in (
             job.get("source_url"),
             (record.get("processing_state") or {}).get("route", {}).get("application_url"),
@@ -405,16 +407,69 @@ def job_id_from_role_key(role_key: str) -> str:
     return role_key[len("tracker-"):] if role_key.startswith("tracker-") else ""
 
 
-def legacy_role_aliases(repo: Path) -> dict[str, str]:
-    """Map historical dashboard keys to existing tracker ids without creating authority."""
-    manifest = read_json(repo / "projects/job-automation/artifacts/five-applications-2026-08-04.json", {}) or {}
+def legacy_role_aliases(tracker: Any, repo: Path) -> dict[str, str]:
+    """Map historical dashboard keys to existing active tracker ids only."""
+    records = tracker_records(tracker)
     aliases: dict[str, str] = {}
+
+    manifest = read_json(repo / "projects/job-automation/artifacts/five-applications-2026-08-04.json", {}) or {}
     for item in manifest.get("applications") or []:
         key = str(item.get("key") or "").strip()
         job_id = str(item.get("job_id") or "").strip()
+        record = records.get(job_id) or {}
+        if key and job_id and norm((record.get("job") or {}).get("processing_status")) != "superseded":
+            aliases[key] = job_id
+
+    indexes = build_indexes(records)
+    seed = read_json(repo / "dashboard/career-review/legacy-tracker-seed.json", []) or []
+    for item in seed:
+        key = str(item.get("key") or "").strip()
+        job_id = resolve_existing(indexes, item)
         if key and job_id:
             aliases[key] = job_id
     return aliases
+
+
+def supersede_legacy_site_stubs(tracker: Any, aliases: dict[str, str], *, apply: bool) -> list[dict[str, str]]:
+    """Retire temporary Site Data stubs once their legacy key resolves canonically."""
+    changes: list[dict[str, str]] = []
+    records = tracker_records(tracker)
+    for job_id, record in records.items():
+        job = record.get("job") or {}
+        provenance = record.get("provenance") or {}
+        if norm(job.get("processing_status")) == "superseded" or norm(job.get("source")) != "dashboard_site_data":
+            continue
+        legacy_key = str(provenance.get("legacy_key") or "").strip()
+        canonical = str(aliases.get(legacy_key) or "").strip()
+        if not canonical or canonical == job_id or canonical not in records:
+            continue
+        canonical_job = (records[canonical].get("job") or {})
+        if text_key(job.get("company")) != text_key(canonical_job.get("company")) or text_key(job.get("role")) != text_key(canonical_job.get("role")):
+            continue
+        changes.append({"job_id": job_id, "canonical_job_id": canonical, "legacy_key": legacy_key})
+        if not apply:
+            continue
+        notes = str(job.get("notes") or "").strip()
+        state = dict(record.get("processing_state") or {})
+        state.update({
+            "status": "superseded",
+            "canonical_job_id": canonical,
+            "external_action_allowed": False,
+            "superseded_at": utc_now(),
+            "reason": "temporary Site Data intake stub resolved to an existing canonical CareerTracker job",
+        })
+        tracker.update_job(
+            job_id,
+            {
+                "processing_status": "superseded",
+                "next_action": f"Use canonical job {canonical}",
+                "notes": f"{notes} Temporary Site Data stub superseded by canonical job {canonical}; history preserved.".strip(),
+                "processing_state": state,
+            },
+            comment=f"Canonical tracker reconciliation: temporary Site Data stub for legacy key {legacy_key} superseded by existing canonical job {canonical}; no job history deleted.",
+            actor="system", action="reviewed", confidence="high", requires_owner_review=False,
+        )
+    return changes
 
 
 def resolve_site_role(
@@ -428,7 +483,12 @@ def resolve_site_role(
     direct = job_id_from_role_key(role_key)
     if direct:
         try:
-            tracker.get_job(direct)
+            record = tracker.get_job(direct)
+            if norm((record.get("job") or {}).get("processing_status")) == "superseded":
+                canonical = str((record.get("processing_state") or {}).get("canonical_job_id") or "").strip()
+                if canonical:
+                    tracker.get_job(canonical)
+                    return canonical
             return direct
         except KeyError:
             pass
@@ -568,7 +628,7 @@ def supersede_exact_duplicates(tracker: Any, *, apply: bool) -> dict[str, Any]:
 def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool) -> dict[str, Any]:
     workflow_records = here.records("workflow", 1000)
     history_records = here.records("history", 1000)
-    aliases = legacy_role_aliases(repo)
+    aliases = legacy_role_aliases(tracker, repo)
     submission_events: dict[str, list[dict[str, Any]]] = defaultdict(list)
     promoted: list[str] = []
     unresolved: list[dict[str, str]] = []
@@ -765,6 +825,8 @@ def main(argv: list[str] | None = None) -> int:
         report["legacy_migration"] = migrate_seed(
             tracker, repo, repo / args.legacy_seed, apply=args.apply,
         )
+        aliases = legacy_role_aliases(tracker, repo)
+        report["legacy_site_stub_cleanup"] = supersede_legacy_site_stubs(tracker, aliases, apply=args.apply)
         report["submission_archives"] = reconcile_submission_archives(tracker, repo, apply=args.apply)
         report["dedupe"] = supersede_exact_duplicates(tracker, apply=args.apply)
         if args.skip_site_data:
