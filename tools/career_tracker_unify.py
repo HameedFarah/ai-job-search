@@ -675,16 +675,23 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
     workflow_blocked_applied: list[str] = []
     for role_key, record in latest_workflow.items():
         data = data_of(record)
+        direct_job_id = job_id_from_role_key(role_key)
         job_id = resolve_site_role(tracker, data, role_key, apply=apply, aliases=aliases)
         if not job_id:
             unresolved.append({"role_key": role_key, "reason": "workflow_job_unresolved"})
             continue
+        superseded_alias = bool(direct_job_id and direct_job_id != job_id)
         requested = norm(data.get("stage"))
         if requested == "approved":
             requested = "ready_review"
         current_record = tracker.get_job(job_id)
         current_stage = canonical_stage(current_record, repo)
-        if requested == "applied":
+        if superseded_alias:
+            # A workflow row keyed to a superseded duplicate is stale evidence.
+            # It may be re-keyed to the canonical job, but it must never mutate
+            # the canonical job's lifecycle state.
+            pass
+        elif requested == "applied":
             has_explicit = bool(submission_events.get(role_key)) or current_stage == "applied"
             if not has_explicit:
                 workflow_blocked_applied.append(role_key)

@@ -267,6 +267,25 @@ def test_superseded_direct_key_follows_legacy_next_action_without_reactivation(r
     assert tracker.get_job(duplicate)["job"]["processing_status"] == "superseded"
 
 
+def test_superseded_workflow_alias_cannot_overwrite_canonical_status(runtime):
+    repo, tracker = runtime
+    canonical = "6" * 20
+    duplicate = "5" * 20
+    seed_job(tracker, canonical, processing_status="blocked")
+    seed_job(tracker, duplicate)
+    tracker.update_job(
+        duplicate,
+        {"processing_status": "superseded", "next_action": f"Use canonical job {canonical}"},
+        comment="test historical duplicate workflow alias",
+    )
+    here = FakeHere(workflow=[wrap("wf-alias", {"role_key": f"tracker-{duplicate}", "stage": "inactive"})])
+
+    unify.reconcile_site_data(tracker, repo, here, apply=True)
+
+    assert tracker.get_job(canonical)["job"]["processing_status"] == "blocked"
+    assert here.patches == [("workflow", "wf-alias", {"stage": "found", "role_key": f"tracker-{canonical}"})]
+
+
 def test_legacy_dashboard_seed_migrates_missing_job_and_dedupes_existing_url(runtime):
     repo, tracker = runtime
     existing_id = "4" * 20
