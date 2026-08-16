@@ -174,7 +174,7 @@ def test_portal_open_does_not_become_application(runtime):
     assert ("workflow", "wf2", {"stage": "ready_review", "role_key": f"tracker-{job_id}"}) in here.patches
 
 
-def test_dashboard_stage_change_is_written_back_to_tracker(runtime):
+def test_dashboard_stage_is_projection_and_cannot_overwrite_tracker(runtime):
     repo, tracker = runtime
     job_id = "3" * 20
     seed_job(tracker, job_id, processing_status="ingested")
@@ -184,7 +184,8 @@ def test_dashboard_stage_change_is_written_back_to_tracker(runtime):
 
     unify.reconcile_site_data(tracker, repo, here, apply=True)
 
-    assert tracker.get_job(job_id)["job"]["processing_status"] == "manual_review_needed"
+    assert tracker.get_job(job_id)["job"]["processing_status"] == "ingested"
+    assert here.patches == [("workflow", "wf3", {"stage": "found", "role_key": f"tracker-{job_id}"})]
 
 
 def test_direct_tracker_role_key_avoids_full_tracker_rescan(runtime, monkeypatch):

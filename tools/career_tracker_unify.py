@@ -675,39 +675,23 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
     workflow_blocked_applied: list[str] = []
     for role_key, record in latest_workflow.items():
         data = data_of(record)
-        direct_job_id = job_id_from_role_key(role_key)
         job_id = resolve_site_role(tracker, data, role_key, apply=apply, aliases=aliases)
         if not job_id:
             unresolved.append({"role_key": role_key, "reason": "workflow_job_unresolved"})
             continue
-        superseded_alias = bool(direct_job_id and direct_job_id != job_id)
         requested = norm(data.get("stage"))
         if requested == "approved":
             requested = "ready_review"
         current_record = tracker.get_job(job_id)
         current_stage = canonical_stage(current_record, repo)
-        if superseded_alias:
-            # A workflow row keyed to a superseded duplicate is stale evidence.
-            # It may be re-keyed to the canonical job, but it must never mutate
-            # the canonical job's lifecycle state.
-            pass
-        elif requested == "applied":
-            has_explicit = bool(submission_events.get(role_key)) or current_stage == "applied"
+        if requested == "applied" and current_stage != "applied":
+            has_explicit = bool(submission_events.get(role_key)) or bool(submission_events.get(f"tracker-{job_id}"))
             if not has_explicit:
                 workflow_blocked_applied.append(role_key)
-            # Never infer an application from a workflow label alone.
-        elif requested in STAGE_TO_PROCESSING and current_stage != "applied":
-            target_processing = STAGE_TO_PROCESSING[requested]
-            if apply and norm((current_record.get("job") or {}).get("processing_status")) != target_processing:
-                tracker.update_job(
-                    job_id,
-                    {"processing_status": target_processing},
-                    comment=f"Canonical workflow reconciliation: owner dashboard stage '{requested}' written into the shared tracker.",
-                    actor="system", action="reviewed", confidence="high", requires_owner_review=False,
-                )
-                current_record = tracker.get_job(job_id)
-                current_stage = canonical_stage(current_record, repo)
-        canonical = canonical_stage(tracker.get_job(job_id), repo)
+        # CareerTracker is the sole lifecycle authority. here.now workflow rows
+        # are a projection/UI surface only: they may be re-keyed or patched to
+        # match the tracker, but they must never mutate tracker lifecycle state.
+        canonical = canonical_stage(current_record, repo)
         if canonical == "superseded":
             canonical = "inactive"
         canonical_role_key = f"tracker-{job_id}"
