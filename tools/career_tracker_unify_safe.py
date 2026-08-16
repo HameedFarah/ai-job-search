@@ -7,15 +7,19 @@ than silently truncating Site Data reconciliation.
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
+import sys
 from typing import Any
 
-if __package__:
-    from tools import career_tracker_unify as base
-else:
+if not __package__:
     # Support production execution as `python3 tools/career_tracker_unify_safe.py`.
-    # In direct-script mode Python places tools/ on sys.path rather than the
-    # repository root, so the sibling module must be imported without `tools.`.
-    import career_tracker_unify as base
+    # Direct-script mode otherwise places only tools/ on sys.path, which breaks
+    # both the tools package import and tracker.py's import of career_engine.
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+from tools import career_tracker_unify as base
 
 
 def safe_exact_duplicate_groups(records: dict[str, dict[str, Any]]) -> list[list[str]]:
