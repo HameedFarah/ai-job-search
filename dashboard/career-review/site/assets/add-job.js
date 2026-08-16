@@ -119,24 +119,42 @@ function setupAddJobIntake() {
   });
 }
 
-/* Canonical tracker submission state outranks stale persisted board workflow.
-   This keeps the Applied metric and lane aligned with owner-confirmed tracker
-   records after a dashboard rebuild/re-publish. Batch progress still wins while
-   an active processing run is rendering temporary status. */
+/* CareerTracker is the canonical status authority. Site Data workflow is only a
+   short-lived owner-write queue: a workflow change newer than the latest site
+   build is shown optimistically, then the next reconciliation writes it into
+   CareerTracker and patches Site Data back to the canonical stage. */
 const CANONICAL_APPLIED_STATUS_VALUES = new Set([
   'applied', 'submitted', 'sent', 'submitted_pending_response',
-  'application_submitted', 'email_sent'
+  'application_submitted', 'email_sent', 'email_sent_owner_confirmed'
+]);
+const CANONICAL_READY_STATUS_VALUES = new Set([
+  'awaiting_owner_approval', 'owner_review_ready', 'ready_for_review',
+  'generated_content_valid', 'rendered', 'render_complete', 'packaged'
 ]);
 const baseStageFor = stageFor;
-stageFor = function canonicalStageFor(role) {
-  const batchOverride = state.batchStageOverrides?.get(role.key);
-  if (batchOverride) return batchOverride;
+
+function canonicalTrackerStage(role) {
   const processingStatus = normalizedStatus(role.processing_status);
   const applicationStatus = normalizedStatus(role.application_status);
-  if (processingStatus === 'applied' || CANONICAL_APPLIED_STATUS_VALUES.has(applicationStatus)) {
-    return 'applied';
+  if (processingStatus === 'applied' || CANONICAL_APPLIED_STATUS_VALUES.has(applicationStatus)) return 'applied';
+  if (roleIsInactive(role)) return 'inactive';
+  if (processingStatus === 'manual_review_needed') return 'manual_review_needed';
+  if (CANONICAL_READY_STATUS_VALUES.has(processingStatus) || role.kind === 'application') return 'ready_review';
+  return 'found';
+}
+
+stageFor = function canonicalStageFor(role) {
+  const batchOverride = state.batchStageOverrides?.get(role.key);
+  if (batchOverride) return normalizedWorkflowStage(batchOverride, role) || canonicalTrackerStage(role);
+
+  const workflow = state.workflow.get(role.key);
+  const workflowStage = normalizedWorkflowStage(workflow?.stage, role);
+  const workflowUpdated = workflow?.updatedAt ? new Date(workflow.updatedAt).getTime() : 0;
+  const buildUpdated = state.data?.generated_at ? new Date(state.data.generated_at).getTime() : 0;
+  if (workflowStage && workflowUpdated && (!buildUpdated || workflowUpdated > buildUpdated)) {
+    return workflowStage;
   }
-  return baseStageFor(role);
+  return canonicalTrackerStage(role) || baseStageFor(role);
 };
 
 document.addEventListener('DOMContentLoaded', setupAddJobIntake);
