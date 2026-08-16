@@ -621,19 +621,12 @@ function canonicalIdentity(role) {
 }
 
 function mergeUniqueRoles(prepared, tracker, reviewed) {
-  // Tracker rows are canonical. Legacy prepared/manual rows are bounded
-  // fallbacks only for identities absent from the current tracker.
-  const output = [...tracker];
-  const seen = new Set(tracker.map(canonicalIdentity));
-  for (const role of [...prepared, ...reviewed]) {
-    const identity = canonicalIdentity(role);
-    if (seen.has(identity)) continue;
-    const cleanUrl = String(role.application_url || role.source_url || '').replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase();
-    if (cleanUrl && [...seen].some(value => value === `url:${cleanUrl}`)) continue;
-    seen.add(identity);
-    output.push(role);
-  }
-  return output;
+  // CareerTracker is the sole dashboard role authority. Legacy prepared/manual
+  // datasets may still supply artifacts during migration, but they must never
+  // create an additional rendered role or revive a superseded tracker record.
+  void prepared;
+  void reviewed;
+  return [...tracker];
 }
 
 function main() {

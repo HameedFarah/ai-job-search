@@ -9,7 +9,8 @@ const manualOnly = [{ key: 'manual-1', company: 'Manual Co', role: 'Manual role'
 
 const merged = mergeUniqueRoles(stalePrepared, tracker, manualOnly);
 assert.strictEqual(merged[0].company, 'Current Co', 'canonical tracker row must win over stale prepared data');
-assert.strictEqual(merged.length, 2, 'manual-only fallback rows remain available');
+assert.strictEqual(merged.length, 1, 'dashboard roles must come exclusively from CareerTracker');
 assert.strictEqual(merged.some(row => row.company === 'Stale Co'), false, 'stale duplicate must be suppressed');
+assert.strictEqual(merged.some(row => row.company === 'Manual Co'), false, 'legacy manual-only rows must not become dashboard authorities');
 
 console.log('dashboard build authority regression tests passed');
