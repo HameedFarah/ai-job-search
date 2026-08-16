@@ -250,6 +250,23 @@ def test_legacy_site_stub_is_superseded_and_direct_key_follows_canonical(runtime
     assert unify.resolve_site_role(tracker, {}, f"tracker-{stub}", apply=True) == canonical
 
 
+def test_superseded_direct_key_follows_legacy_next_action_without_reactivation(runtime):
+    _, tracker = runtime
+    canonical = "6" * 20
+    duplicate = "5" * 20
+    seed_job(tracker, canonical)
+    seed_job(tracker, duplicate)
+    tracker.update_job(
+        duplicate,
+        {"processing_status": "superseded", "next_action": f"Use canonical job {canonical}"},
+        comment="test historical duplicate without canonical_job_id in processing_state",
+    )
+
+    assert "canonical_job_id" not in tracker.get_job(duplicate)["processing_state"]
+    assert unify.resolve_site_role(tracker, {}, f"tracker-{duplicate}", apply=True) == canonical
+    assert tracker.get_job(duplicate)["job"]["processing_status"] == "superseded"
+
+
 def test_legacy_dashboard_seed_migrates_missing_job_and_dedupes_existing_url(runtime):
     repo, tracker = runtime
     existing_id = "4" * 20

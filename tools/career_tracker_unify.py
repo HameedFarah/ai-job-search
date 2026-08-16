@@ -407,6 +407,19 @@ def job_id_from_role_key(role_key: str) -> str:
     return role_key[len("tracker-"):] if role_key.startswith("tracker-") else ""
 
 
+def canonical_successor(record: dict[str, Any]) -> str:
+    state = record.get("processing_state") or {}
+    candidate = str(state.get("canonical_job_id") or "").strip()
+    if re.fullmatch(r"[0-9a-f]{20}", candidate):
+        return candidate
+    job = record.get("job") or {}
+    for text in (job.get("next_action"), job.get("notes")):
+        match = re.search(r"(?:use canonical job|superseded by canonical (?:job|record))\s+([0-9a-f]{20})", str(text or ""), flags=re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+    return ""
+
+
 def legacy_role_aliases(tracker: Any, repo: Path) -> dict[str, str]:
     """Map historical dashboard keys to existing active tracker ids only."""
     records = tracker_records(tracker)
@@ -485,7 +498,7 @@ def resolve_site_role(
         try:
             record = tracker.get_job(direct)
             if norm((record.get("job") or {}).get("processing_status")) == "superseded":
-                canonical = str((record.get("processing_state") or {}).get("canonical_job_id") or "").strip()
+                canonical = canonical_successor(record)
                 if canonical:
                     tracker.get_job(canonical)
                     return canonical
@@ -612,12 +625,21 @@ def supersede_exact_duplicates(tracker: Any, *, apply: bool) -> dict[str, Any]:
             job = record.get("job") or {}
             notes = str(job.get("notes") or "").strip()
             suffix = f"Superseded exact duplicate of canonical job {canonical}."
+            state = dict(record.get("processing_state") or {})
+            state.update({
+                "status": "superseded",
+                "canonical_job_id": canonical,
+                "external_action_allowed": False,
+                "superseded_at": utc_now(),
+                "reason": "exact canonical vacancy identity duplicate",
+            })
             tracker.update_job(
                 duplicate,
                 {
                     "processing_status": "superseded",
                     "next_action": f"Use canonical job {canonical}",
                     "notes": f"{notes} {suffix}".strip(),
+                    "processing_state": state,
                 },
                 comment=f"Canonical tracker dedupe: exact URL/external identity duplicate superseded by {canonical}; history and artifacts preserved.",
                 actor="system", action="reviewed", confidence="high", requires_owner_review=False,
