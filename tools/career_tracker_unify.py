@@ -405,12 +405,38 @@ def job_id_from_role_key(role_key: str) -> str:
     return role_key[len("tracker-"):] if role_key.startswith("tracker-") else ""
 
 
-def resolve_site_role(tracker: Any, data: dict[str, Any], role_key: str, *, apply: bool) -> str:
+def legacy_role_aliases(repo: Path) -> dict[str, str]:
+    """Map historical dashboard keys to existing tracker ids without creating authority."""
+    manifest = read_json(repo / "projects/job-automation/artifacts/five-applications-2026-08-04.json", {}) or {}
+    aliases: dict[str, str] = {}
+    for item in manifest.get("applications") or []:
+        key = str(item.get("key") or "").strip()
+        job_id = str(item.get("job_id") or "").strip()
+        if key and job_id:
+            aliases[key] = job_id
+    return aliases
+
+
+def resolve_site_role(
+    tracker: Any,
+    data: dict[str, Any],
+    role_key: str,
+    *,
+    apply: bool,
+    aliases: dict[str, str] | None = None,
+) -> str:
     direct = job_id_from_role_key(role_key)
     if direct:
         try:
             tracker.get_job(direct)
             return direct
+        except KeyError:
+            pass
+    alias_job_id = str((aliases or {}).get(role_key) or "").strip()
+    if alias_job_id:
+        try:
+            tracker.get_job(alias_job_id)
+            return alias_job_id
         except KeyError:
             pass
     records = tracker_records(tracker)
@@ -542,6 +568,7 @@ def supersede_exact_duplicates(tracker: Any, *, apply: bool) -> dict[str, Any]:
 def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool) -> dict[str, Any]:
     workflow_records = here.records("workflow", 1000)
     history_records = here.records("history", 1000)
+    aliases = legacy_role_aliases(repo)
     submission_events: dict[str, list[dict[str, Any]]] = defaultdict(list)
     promoted: list[str] = []
     unresolved: list[dict[str, str]] = []
@@ -552,11 +579,12 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
         if event not in SUBMISSION_EVENTS:
             continue
         role_key = str(data.get("role_key") or "")
-        job_id = resolve_site_role(tracker, data, role_key, apply=apply)
+        job_id = resolve_site_role(tracker, data, role_key, apply=apply, aliases=aliases)
         if not job_id:
             unresolved.append({"role_key": role_key, "reason": "submission_event_job_unresolved"})
             continue
         submission_events[role_key].append(record)
+        submission_events[f"tracker-{job_id}"].append(record)
         if apply and promote_submission(tracker, job_id, event=event, data=data, source="here.now explicit owner confirmation"):
             promoted.append(job_id)
 
@@ -565,7 +593,7 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
     workflow_blocked_applied: list[str] = []
     for role_key, record in latest_workflow.items():
         data = data_of(record)
-        job_id = resolve_site_role(tracker, data, role_key, apply=apply)
+        job_id = resolve_site_role(tracker, data, role_key, apply=apply, aliases=aliases)
         if not job_id:
             unresolved.append({"role_key": role_key, "reason": "workflow_job_unresolved"})
             continue
@@ -593,10 +621,11 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
         canonical = canonical_stage(tracker.get_job(job_id), repo)
         if canonical == "superseded":
             canonical = "inactive"
-        if requested != canonical:
+        canonical_role_key = f"tracker-{job_id}"
+        if requested != canonical or role_key != canonical_role_key:
             workflow_updates.append({"role_key": role_key, "from": requested, "to": canonical})
             if apply and record.get("id"):
-                here.patch("workflow", str(record["id"]), {"stage": canonical, "role_key": role_key})
+                here.patch("workflow", str(record["id"]), {"stage": canonical, "role_key": canonical_role_key})
 
     return {
         "workflow_records": len(workflow_records),

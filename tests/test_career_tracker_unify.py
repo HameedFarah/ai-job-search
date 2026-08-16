@@ -206,6 +206,26 @@ def test_direct_tracker_role_key_avoids_full_tracker_rescan(runtime, monkeypatch
     assert resolved == job_id
 
 
+def test_legacy_role_alias_resolves_only_to_existing_tracker_job(runtime, monkeypatch):
+    _, tracker = runtime
+    job_id = "8" * 20
+    seed_job(tracker, job_id)
+
+    def fail_scan(_tracker):
+        raise AssertionError("known legacy aliases must resolve without a full tracker scan")
+
+    monkeypatch.setattr(unify, "tracker_records", fail_scan)
+    resolved = unify.resolve_site_role(
+        tracker,
+        {},
+        "legacy-design-manager",
+        apply=True,
+        aliases={"legacy-design-manager": job_id},
+    )
+
+    assert resolved == job_id
+
+
 def test_legacy_dashboard_seed_migrates_missing_job_and_dedupes_existing_url(runtime):
     repo, tracker = runtime
     existing_id = "4" * 20
