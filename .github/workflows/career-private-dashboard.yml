@@ -27,7 +27,7 @@ jobs:
         run: |
           node --check dashboard/career-review/scripts/deploy_cloudflare_access.js
           node --check dashboard/career-review/worker.js
-          node --check dashboard/career-review/site/assets/one-click-submission.js
+          node --check dashboard/career-review/site/assets/shared.js
           node --check scripts/career-cloudflare-access-20260818-plan.mjs
       - name: Access policy self-test
         run: node dashboard/career-review/scripts/deploy_cloudflare_access.js --self-test
@@ -47,11 +47,10 @@ jobs:
           if (config.preview_urls !== false) throw new Error('preview_urls must be false');
           if (config.assets?.directory !== './site') throw new Error('static asset directory must be ./site');
           if (config.assets?.binding !== 'ASSETS') throw new Error('static assets must be available through the ASSETS binding');
-          const workerFirst = new Set(config.assets?.run_worker_first || []);
-          for (const path of ['/', '/index.html', '/.herenow/data/*']) {
-            if (!workerFirst.has(path)) throw new Error(`missing Worker-first route ${path}`);
+          const workerFirst = config.assets?.run_worker_first || [];
+          if (workerFirst.length !== 1 || workerFirst[0] !== '/.herenow/data/*') {
+            throw new Error('Worker-first routing must be limited to /.herenow/data/*');
           }
-          if (workerFirst.size !== 3) throw new Error('unexpected Worker-first route broadening');
           const requiredSecrets = config.secrets?.required || [];
           if (requiredSecrets.length !== 1 || requiredSecrets[0] !== 'HERENOW_API_KEY') {
             throw new Error('HERENOW_API_KEY must be the only declared required Worker secret');
