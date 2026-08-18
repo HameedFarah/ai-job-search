@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - fix/career-rebuild-documents-status-v2-20260818
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
 
 jobs:
   patch-and-test:
+    if: github.head_ref == 'fix/career-rebuild-documents-status-v2-20260818' || github.ref_name == 'fix/career-rebuild-documents-status-v2-20260818'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -82,7 +86,7 @@ def run_rebuild_documents(
     website_root: Path,
     job_id: str,
 ) -> str:
-    context = _ensure_rebuild_generation_packet(repo=repo, job_id=job_id)
+    _ensure_rebuild_generation_packet(repo=repo, job_id=job_id)
     try:
         # Prefer deterministic rerendering when validated application content
         # already exists. Only regenerate prose when content is missing or the
@@ -118,13 +122,13 @@ def run_rebuild_documents(
           js = Path('dashboard/career-review/site/assets/bulk-table.js')
           text = js.read_text(encoding='utf-8')
           if '/* ---- Per-job document rebuild status action ---- */' not in text:
-              raise SystemExit('frontend rebuild action missing')
+              # Port the already-tested frontend action from the first bounded branch.
+              raise SystemExit('frontend rebuild action missing; seed v2 branch from validated frontend source first')
           text = text.replace("request_type: 'edit_cv',\n      prompt: REBUILD_DOCUMENTS_PROMPT,", "request_type: 'rebuild_documents',\n      prompt: REBUILD_DOCUMENTS_PROMPT,", 1)
           text = text.replace("&& data.request_type === 'edit_cv'", "&& data.request_type === 'rebuild_documents'", 1)
           js.write_text(text, encoding='utf-8')
 
-          trigger = Path('.career-rebuild-documents-trigger')
-          trigger.unlink(missing_ok=True)
+          Path('.career-rebuild-documents-trigger').unlink(missing_ok=True)
 
           test = Path('tests/test_dashboard_rebuild_documents_status.py')
           test.write_text(r'''import inspect
