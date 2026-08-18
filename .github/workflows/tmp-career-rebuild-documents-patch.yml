@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/career-rebuild-documents-status-20260818
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
