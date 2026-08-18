@@ -103,12 +103,12 @@ def _load_tracker_ops(root: Path | None = None) -> Any:
 def _effective_score(record: dict[str, Any], row_score: str = "") -> int:
     scoring = record.get("scoring") or {}
     value = scoring.get("total")
-    if value is None:
-        try:
-            value = int(float(row_score))
-        except (TypeError, ValueError):
-            value = 0
-    return int(value)
+    # Legacy/superseded Site Data stubs may carry an empty-string score.
+    # Treat blank/non-numeric values as unrated rather than aborting the run.
+    try:
+        return int(float(value if value not in (None, "") else row_score))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _artifact_dir(root: Path | None, job_id: str) -> Path:
