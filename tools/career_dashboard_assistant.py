@@ -970,6 +970,67 @@ def run_process_jobs(
     return message
 
 
+
+def _ensure_rebuild_generation_packet(*, repo: Path, job_id: str) -> dict[str, Any]:
+    try:
+        return load_job_context(repo, job_id)
+    except AssistantError as exc:
+        if str(exc) != "generation_packet_missing":
+            raise
+
+    # A rebuild is an explicit owner request. Reuse the canonical preparation
+    # pipeline for this one existing tracker record, while allowing an internal
+    # review package when the employer route is unresolved. Closed vacancies
+    # remain blocked by prepare(). No external action is enabled here.
+    from career_engine.ops import _load_tracker_ops, _payload_from_record
+    from career_engine.pipeline import prepare
+
+    tracker = _load_tracker_ops(repo)
+    record = tracker.get_job(job_id)
+    state = prepare(
+        _payload_from_record(record, repo),
+        root=repo,
+        actor="owner",
+        force_weak=True,
+        allow_unresolved_route_for_owner_review=True,
+    )
+    if not state.get("outputs", {}).get("generation_packet"):
+        blockers = ", ".join(str(item) for item in state.get("blockers", [])) or "generation packet unavailable"
+        raise AssistantError(f"document rebuild preparation blocked: {blockers}")
+    return load_job_context(repo, job_id)
+
+
+def run_rebuild_documents(
+    *,
+    repo: Path,
+    dispatcher: Path,
+    website_root: Path,
+    job_id: str,
+) -> str:
+    _ensure_rebuild_generation_packet(repo=repo, job_id=job_id)
+    try:
+        # Prefer deterministic rerendering when validated application content
+        # already exists. Only regenerate prose when content is missing or the
+        # existing package cannot render successfully.
+        action = _generate_application_package(
+            repo=repo,
+            dispatcher=dispatcher,
+            job_id=job_id,
+            force_regenerate=False,
+        )
+    except AssistantError:
+        action = _generate_application_package(
+            repo=repo,
+            dispatcher=dispatcher,
+            job_id=job_id,
+            force_regenerate=True,
+        )
+    _refresh_dashboard_site(repo, website_root)
+    return (
+        f"CV and cover letter rebuilt ({action}) and the dashboard was republished. "
+        "External action remains blocked pending owner submission."
+    )
+
 def apply_cv_edit(
     *,
     repo: Path,
@@ -1080,6 +1141,18 @@ def answer_request(
         return role_key, answer, {"validation_status": "success", "owner_input_needed": False}
 
     job_id = job_id_from_role_key(role_key)
+    if request_type == "rebuild_documents":
+        answer = run_rebuild_documents(
+            repo=repo,
+            dispatcher=dispatcher,
+            website_root=website_root,
+            job_id=job_id,
+        )
+        return role_key, answer, {
+            "validation_status": "success",
+            "owner_input_needed": False,
+        }
+
     context = load_job_context(repo, job_id)
     if request_type in {"edit_cv", "revise_cv", "resume_edit"}:
         if not prompt:

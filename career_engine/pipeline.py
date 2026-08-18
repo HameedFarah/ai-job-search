@@ -107,7 +107,14 @@ def _restore_revision(artifact_dir: Path, revision_id: str | None) -> dict[str, 
     return {"revision_id": source.name, "path": str(source), "files": manifest.get("files", [])}
 
 
-def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "chatgpt", force_weak: bool = False) -> dict[str, Any]:
+def prepare(
+    payload: dict[str, Any],
+    *,
+    root: Path | None = None,
+    actor: str = "chatgpt",
+    force_weak: bool = False,
+    allow_unresolved_route_for_owner_review: bool = False,
+) -> dict[str, Any]:
     config, paths = load_config(root)
     production_root = Path(__file__).resolve().parents[1]
     if paths.repo_root.resolve() == production_root.resolve():
@@ -209,7 +216,7 @@ def prepare(payload: dict[str, Any], *, root: Path | None = None, actor: str = "
         blockers.append(f"below_generation_threshold:{score['total']}")
     if not skip_reason and route["route"] == "unresolved":
         route_message = "route_unresolved:" + route.get("blocker", "")
-        if normalized.get("source") in {"owner_dashboard", "Supplied directly by owner"}:
+        if normalized.get("source") in {"owner_dashboard", "Supplied directly by owner"} or allow_unresolved_route_for_owner_review:
             # Owner-supplied JDs are allowed to produce an internal review package
             # before an employer route is known. The unresolved route remains a
             # warning and the rendered package still carries
