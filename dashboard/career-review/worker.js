@@ -69,24 +69,10 @@ async function proxySiteData(request, env) {
   });
 }
 
-async function serveDashboardShell(request, env) {
-  const response = await env.ASSETS.fetch(request);
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('text/html')) return response;
-  return new HTMLRewriter()
-    .on('body', {
-      element(element) {
-        element.append('<script src="/assets/one-click-submission.js" defer></script>', { html: true });
-      }
-    })
-    .transform(response);
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith(DATA_PREFIX)) return proxySiteData(request, env);
-    if (url.pathname === '/' || url.pathname === '/index.html') return serveDashboardShell(request, env);
     return env.ASSETS.fetch(request);
   }
 };
