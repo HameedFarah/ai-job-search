@@ -26,6 +26,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - name: Seed validated frontend action
+        run: |
+          git fetch origin fix/career-rebuild-documents-status-20260818
+          if ! grep -q 'Per-job document rebuild status action' dashboard/career-review/site/assets/bulk-table.js; then
+            git show origin/fix/career-rebuild-documents-status-20260818:dashboard/career-review/site/assets/bulk-table.js > dashboard/career-review/site/assets/bulk-table.js
+          fi
       - name: Apply bounded source patch
         run: |
           python - <<'PY'
@@ -45,8 +51,7 @@ jobs:
 
           worker = Path('tools/career_dashboard_assistant.py')
           text = worker.read_text(encoding='utf-8')
-          marker = 'def run_rebuild_documents('
-          if marker not in text:
+          if 'def run_rebuild_documents(' not in text:
               insert_at = text.index('\ndef apply_cv_edit(')
               helper = r'''
 
@@ -122,8 +127,7 @@ def run_rebuild_documents(
           js = Path('dashboard/career-review/site/assets/bulk-table.js')
           text = js.read_text(encoding='utf-8')
           if '/* ---- Per-job document rebuild status action ---- */' not in text:
-              # Port the already-tested frontend action from the first bounded branch.
-              raise SystemExit('frontend rebuild action missing; seed v2 branch from validated frontend source first')
+              raise SystemExit('frontend rebuild action missing')
           text = text.replace("request_type: 'edit_cv',\n      prompt: REBUILD_DOCUMENTS_PROMPT,", "request_type: 'rebuild_documents',\n      prompt: REBUILD_DOCUMENTS_PROMPT,", 1)
           text = text.replace("&& data.request_type === 'edit_cv'", "&& data.request_type === 'rebuild_documents'", 1)
           js.write_text(text, encoding='utf-8')
