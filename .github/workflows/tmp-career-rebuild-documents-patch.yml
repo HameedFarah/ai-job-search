@@ -4,16 +4,12 @@ on:
   push:
     branches:
       - fix/career-rebuild-documents-status-20260818
-  pull_request:
-    branches:
-      - master
 
 permissions:
   contents: write
 
 jobs:
   patch-and-test:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -184,5 +180,9 @@ document.addEventListener('change', async event => {
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add dashboard/career-review/site/assets/bulk-table.js tests/test_dashboard_rebuild_documents_status.py
           git diff --cached --check
-          git commit -m "feat(career): add document rebuild status action"
-          git push origin HEAD:fix/career-rebuild-documents-status-20260818
+          if git diff --cached --quiet; then
+            echo "No patch changes required."
+          else
+            git commit -m "feat(career): add document rebuild status action"
+            git push origin HEAD:fix/career-rebuild-documents-status-20260818
+          fi
