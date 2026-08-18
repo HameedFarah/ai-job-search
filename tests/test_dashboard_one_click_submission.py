@@ -8,15 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DashboardOneClickSubmissionTest(unittest.TestCase):
     def test_job_applied_is_one_click_and_preserves_submission_evidence(self):
-        source = (ROOT / "dashboard/career-review/site/assets/one-click-submission.js").read_text(encoding="utf-8")
-        self.assertNotIn("window.confirm(", source)
-        self.assertNotIn("window.prompt(", source)
+        source = (ROOT / "dashboard/career-review/site/assets/shared.js").read_text(encoding="utf-8")
+        self.assertNotIn("window.confirm(`Confirm that", source)
+        self.assertNotIn("window.prompt('Optional: paste the submission confirmation", source)
+        self.assertIn("SUBMISSION_CONFIRMATION_PENDING", source)
         self.assertIn("explicit_owner_confirmation", source)
         self.assertIn("application_submitted", source)
         self.assertIn("email_sent_owner_confirmed", source)
         self.assertIn("submissionDocumentEvidence", source)
         self.assertIn("submissionHistoryFields", source)
         self.assertIn("compactSubmissionNote", source)
+        self.assertIn("confirmation_reference: ''", source)
         self.assertIn("to_stage: 'applied'", source)
 
     def test_private_worker_proxies_only_known_site_data_collections_for_owner(self):
@@ -33,29 +35,21 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertIn("'POST'", source)
         self.assertIn("'PATCH'", source)
         self.assertIn("'DELETE'", source)
+        self.assertIn("env.ASSETS.fetch(request)", source)
 
-    def test_wrangler_runs_worker_only_for_shell_and_site_data_paths(self):
+    def test_wrangler_runs_worker_only_for_site_data_path(self):
         config = json.loads((ROOT / "dashboard/career-review/wrangler.jsonc").read_text(encoding="utf-8"))
         self.assertEqual(config["main"], "./worker.js")
         self.assertFalse(config["workers_dev"])
         self.assertFalse(config["preview_urls"])
         self.assertEqual(config["assets"]["directory"], "./site")
         self.assertEqual(config["assets"]["binding"], "ASSETS")
-        self.assertEqual(
-            set(config["assets"]["run_worker_first"]),
-            {"/", "/index.html", "/.herenow/data/*"},
-        )
+        self.assertEqual(config["assets"]["run_worker_first"], ["/.herenow/data/*"])
         self.assertEqual(config["secrets"]["required"], ["HERENOW_API_KEY"])
         self.assertEqual(config["routes"], [{
             "pattern": "career.farahdigital.com/*",
             "zone_name": "farahdigital.com",
         }])
-
-    def test_worker_injects_one_click_override_into_dashboard_shell(self):
-        source = (ROOT / "dashboard/career-review/worker.js").read_text(encoding="utf-8")
-        self.assertIn('/assets/one-click-submission.js', source)
-        self.assertIn("HTMLRewriter", source)
-        self.assertIn("env.ASSETS.fetch(request)", source)
 
 
 if __name__ == "__main__":
