@@ -207,8 +207,6 @@ async function undoAppliedMark(role, priorStage, confirmation) {
     actor: 'owner',
     ui_source: 'applied_toast_undo',
     evidence_type: 'explicit_owner_correction',
-    retracted_event_id: confirmation?.record?.id || '',
-    retracted_at: retractedAt,
     note: JSON.stringify({
       reason: 'Owner used Undo after an accidental applied mark.',
       retracted_event_id: confirmation?.record?.id || '',

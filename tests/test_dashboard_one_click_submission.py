@@ -21,6 +21,18 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertIn("confirmation_reference: ''", source)
         self.assertIn("to_stage: 'applied'", source)
 
+    def test_undo_retraction_uses_only_live_history_schema_fields(self):
+        source = (ROOT / "dashboard/career-review/site/assets/app.js").read_text(encoding="utf-8")
+        block = source.split("async function undoAppliedMark", 1)[1].split("function showAppliedSuccess", 1)[0]
+        self.assertNotIn("\n    retracted_event_id:", block)
+        self.assertNotIn("\n    retracted_at:", block)
+        self.assertIn("retracted_event_id: confirmation?.record?.id", block)
+        self.assertIn("retracted_at: retractedAt", block)
+        schema = json.loads((ROOT / "dashboard/career-review/site/.herenow/data.json").read_text(encoding="utf-8"))
+        history_fields = schema["collections"]["history"]["fields"]
+        self.assertNotIn("retracted_event_id", history_fields)
+        self.assertNotIn("retracted_at", history_fields)
+
     def test_private_worker_proxies_only_known_site_data_collections_for_owner(self):
         source = (ROOT / "dashboard/career-review/worker.js").read_text(encoding="utf-8")
         self.assertIn("/.herenow/data/", source)
