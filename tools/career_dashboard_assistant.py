@@ -568,6 +568,16 @@ def _refresh_dashboard_site(repo: Path, website_root: Path) -> None:
     _run_engine(repo, ["dashboard", "--sync"], timeout=180)
     _run_command(["/usr/bin/node", "scripts/build_site.js"], cwd=website_root, timeout=300)
     _run_command(["/usr/bin/node", "scripts/publish_here_now.js"], cwd=website_root, timeout=300)
+    _run_command(
+        [
+            "/home/hameedo/vps-infra-dev/scripts/operations/cloudflare-with-infisical-runtime.sh",
+            "node",
+            str(website_root / "scripts" / "deploy_cloudflare_access.js"),
+            "--deploy",
+        ],
+        cwd=repo,
+        timeout=900,
+    )
 
 
 def _hermes_direct_claim_owner_alive() -> bool:

@@ -376,6 +376,41 @@ def test_dead_direct_claim_owner_is_not_reused(monkeypatch, tmp_path):
     assert assistant._hermes_direct_claim_owner_alive() is False
 
 
+def test_refresh_dashboard_republishes_here_now_and_private_cloudflare_worker(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    website_root = repo / "dashboard" / "career-review"
+    website_root.mkdir(parents=True)
+    engine_calls = []
+    command_calls = []
+
+    monkeypatch.setattr(
+        assistant,
+        "_run_engine",
+        lambda call_repo, args, timeout=240: engine_calls.append((call_repo, args, timeout)),
+    )
+    monkeypatch.setattr(
+        assistant,
+        "_run_command",
+        lambda command, cwd, timeout=240: command_calls.append((command, cwd, timeout)),
+    )
+
+    assistant._refresh_dashboard_site(repo, website_root)
+
+    assert engine_calls == [(repo, ["dashboard", "--sync"], 180)]
+    assert command_calls[0] == (["/usr/bin/node", "scripts/build_site.js"], website_root, 300)
+    assert command_calls[1] == (["/usr/bin/node", "scripts/publish_here_now.js"], website_root, 300)
+    assert command_calls[2] == (
+        [
+            "/home/hameedo/vps-infra-dev/scripts/operations/cloudflare-with-infisical-runtime.sh",
+            "node",
+            str(website_root / "scripts" / "deploy_cloudflare_access.js"),
+            "--deploy",
+        ],
+        repo,
+        900,
+    )
+
+
 def test_refresh_reuses_existing_running_hermes_scan(monkeypatch, tmp_path):
     executable = tmp_path / "hermes"
     executable.write_text("", encoding="utf-8")
