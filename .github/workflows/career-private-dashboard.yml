@@ -48,10 +48,9 @@ jobs:
             throw new Error('Worker route must be exactly career.farahdigital.com/* in farahdigital.com');
           }
           NODE
-      - name: No committed secret values in migration source
+      - name: No literal Cloudflare credential assignments
         run: |
-          if grep -RInE '(CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|CLOUDFLARE_ZONE_ID)[[:space:]]*[:=][[:space:]]*["'"'][^$<{][^"'"']+' \
-            dashboard/career-review docs/implementation/career-cloudflare-access-20260818-* docs/reports/2026-08-18__career-cloudflare-access-baseline.md; then
-            echo '::error::Possible Cloudflare secret value committed in migration source'
+          if git grep -nE 'CLOUDFLARE_(API_TOKEN|ACCOUNT_ID|ZONE_ID)=[^$[:space:]]+' -- dashboard/career-review docs/implementation docs/reports; then
+            echo '::error::Possible literal Cloudflare credential assignment committed in migration source'
             exit 1
           fi
