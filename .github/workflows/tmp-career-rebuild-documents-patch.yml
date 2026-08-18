@@ -1,0 +1,185 @@
+name: Temporary Career rebuild-documents patch
+
+on:
+  push:
+    branches:
+      - fix/career-rebuild-documents-status-20260818
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: fix/career-rebuild-documents-status-20260818
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Patch rebuild action and regression test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('dashboard/career-review/site/assets/bulk-table.js')
+          text = path.read_text(encoding='utf-8')
+          marker = '/* ---- Per-job document rebuild status action ---- */'
+          if marker not in text:
+              block = r'''
+
+/* ---- Per-job document rebuild status action ---- */
+const REBUILD_DOCUMENTS_ACTION = '__rebuild_documents__';
+const REBUILD_DOCUMENTS_PROMPT = '[REBUILD_DOCUMENTS] Rebuild the current Career Engine application package without changing supported factual content. Regenerate and validate both resume variants and the tailored cover letter, including PDF and DOCX outputs. Do not send, submit, contact a recruiter, or perform any external action.';
+const rebuildDocumentPollers = new Map();
+
+function rebuildRoleFromSelect(select) {
+  const host = select.closest('[data-role-key]');
+  const key = host?.dataset.roleKey || (state.overlayOpen ? state.overlayKey : '');
+  return state.roles.find(role => role.key === key) || null;
+}
+
+function ensureRebuildDocumentsOption(select) {
+  if (!(select instanceof HTMLSelectElement) || !select.classList.contains('card-stage-select')) return;
+  if (select.querySelector(`option[value="${REBUILD_DOCUMENTS_ACTION}"]`)) return;
+  const option = document.createElement('option');
+  option.value = REBUILD_DOCUMENTS_ACTION;
+  option.textContent = '↻ Rebuild CV & cover letter';
+  select.append(option);
+}
+
+function updateAiRequestState(record) {
+  const normalized = { id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt };
+  const index = state.aiRequests.findIndex(item => item.id === normalized.id);
+  if (index >= 0) state.aiRequests[index] = normalized;
+  else state.aiRequests.push(normalized);
+  return normalized;
+}
+
+function stopDocumentRebuildPoller(roleKey) {
+  const timer = rebuildDocumentPollers.get(roleKey);
+  if (timer) clearInterval(timer);
+  rebuildDocumentPollers.delete(roleKey);
+}
+
+function pollDocumentRebuild(role, requestId) {
+  stopDocumentRebuildPoller(role.key);
+  let attempts = 0;
+  const timer = setInterval(async () => {
+    attempts += 1;
+    try {
+      const records = await loadCollection('ai_requests', 300, true);
+      const record = records.find(item => item.id === requestId);
+      if (!record) return;
+      const normalized = updateAiRequestState(record);
+      const requestState = normalized.state || 'pending';
+      if (['pending', 'processing'].includes(requestState)) return;
+      stopDocumentRebuildPoller(role.key);
+      state.batchStageOverrides.delete(role.key);
+      refreshRoleSurfaces(role);
+      if (requestState === 'done' && normalized.validation_status !== 'failure') {
+        showToast('CV and cover letter rebuilt. Reloading the updated package…');
+        setTimeout(() => window.location.reload(), 650);
+      } else {
+        const detail = normalized.answer || normalized.response || normalized.error || 'Document rebuild failed. Review the Career Engine request details.';
+        showToast(detail, true);
+      }
+    } catch (error) {
+      console.warn('document rebuild poll failed', error);
+    }
+    if (attempts >= 400) {
+      stopDocumentRebuildPoller(role.key);
+      state.batchStageOverrides.delete(role.key);
+      refreshRoleSurfaces(role);
+      showToast('Document rebuild is still running. Reload later to check the result.', true);
+    }
+  }, 3000);
+  rebuildDocumentPollers.set(role.key, timer);
+}
+
+async function queueDocumentRebuild(role) {
+  try {
+    const existingRecords = await loadCollection('ai_requests', 300, true);
+    const existing = existingRecords.find(record => {
+      const data = dataOf(record);
+      return data.role_key === role.key
+        && data.request_type === 'edit_cv'
+        && String(data.prompt || '').startsWith('[REBUILD_DOCUMENTS]')
+        && ['pending', 'processing'].includes(data.state || 'pending');
+    });
+    if (existing) {
+      updateAiRequestState(existing);
+      state.batchStageOverrides.set(role.key, 'processing');
+      refreshRoleSurfaces(role);
+      pollDocumentRebuild(role, existing.id);
+      showToast('A CV and cover-letter rebuild is already running.');
+      return;
+    }
+
+    const record = await createRecord('ai_requests', {
+      role_key: role.key,
+      request_type: 'edit_cv',
+      prompt: REBUILD_DOCUMENTS_PROMPT,
+      state: 'pending'
+    }, `rebuild-documents-${role.key}-${Date.now()}`);
+    const normalized = updateAiRequestState(record);
+    await createRecord('history', {
+      role_key: role.key,
+      event: 'document_rebuild_requested',
+      note: 'Owner requested Career Engine CV and cover-letter regeneration from the Status control.'
+    }, `history-rebuild-${role.key}-${Date.now()}`);
+    state.batchStageOverrides.set(role.key, 'processing');
+    refreshRoleSurfaces(role);
+    pollDocumentRebuild(role, normalized.id);
+    showToast('Rebuild queued. Career Engine is regenerating the CV and cover letter.');
+  } catch (error) {
+    state.batchStageOverrides.delete(role.key);
+    refreshRoleSurfaces(role);
+    showToast(`Could not queue document rebuild: ${error.message}`, true);
+  }
+}
+
+function primeRebuildOption(event) {
+  const select = event.target?.closest?.('.card-stage-select');
+  if (select) ensureRebuildDocumentsOption(select);
+}
+
+document.addEventListener('focusin', primeRebuildOption, true);
+document.addEventListener('pointerdown', primeRebuildOption, true);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') primeRebuildOption(event);
+}, true);
+document.addEventListener('change', async event => {
+  const select = event.target?.closest?.('.card-stage-select');
+  if (!select || select.value !== REBUILD_DOCUMENTS_ACTION) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const role = rebuildRoleFromSelect(select);
+  if (!role) {
+    showToast('Unable to identify the selected job for document rebuild.', true);
+    return;
+  }
+  select.value = stageFor(role);
+  await queueDocumentRebuild(role);
+}, true);
+'''
+              path.write_text(text.rstrip() + block + '\n', encoding='utf-8')
+
+          test = Path('tests/test_dashboard_rebuild_documents_status.py')
+          test.write_text('''from pathlib import Path\nimport unittest\n\n\nclass DashboardRebuildDocumentsStatusTest(unittest.TestCase):\n    def test_status_control_queues_existing_edit_cv_regeneration_path(self):\n        text = Path("dashboard/career-review/site/assets/bulk-table.js").read_text(encoding="utf-8")\n        self.assertIn("↻ Rebuild CV & cover letter", text)\n        self.assertIn("request_type: 'edit_cv'", text)\n        self.assertIn("[REBUILD_DOCUMENTS]", text)\n        self.assertIn("state.batchStageOverrides.set(role.key, 'processing')", text)\n        self.assertIn("window.location.reload()", text)\n        self.assertNotIn("stage: REBUILD_DOCUMENTS_ACTION", text)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''', encoding='utf-8')
+          PY
+      - name: JavaScript syntax
+        run: node --check dashboard/career-review/site/assets/bulk-table.js
+      - name: Focused rebuild-status regression
+        run: python -m unittest tests.test_dashboard_rebuild_documents_status
+      - name: Commit tested patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add dashboard/career-review/site/assets/bulk-table.js tests/test_dashboard_rebuild_documents_status.py
+          git diff --cached --check
+          git commit -m "feat(career): add document rebuild status action"
+          git push origin HEAD:fix/career-rebuild-documents-status-20260818
