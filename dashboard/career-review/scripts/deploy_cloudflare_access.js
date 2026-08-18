@@ -345,10 +345,8 @@ async function deploy() {
   const backup = writeBackup(before);
   prepareSite();
 
-  let accessMutated = false;
   try {
     const access = await ensureAccess(before);
-    accessMutated = access.created;
     deployWorker();
     const acceptance = await verify();
     return {
@@ -359,11 +357,9 @@ async function deploy() {
       ...acceptance,
     };
   } catch (error) {
-    if (accessMutated) {
-      try { await rollbackFromSnapshot(backup); }
-      catch (rollbackError) {
-        throw new Error(`${error.message}; automatic rollback also failed: ${rollbackError.message}`);
-      }
+    try { await rollbackFromSnapshot(backup); }
+    catch (rollbackError) {
+      throw new Error(`${error.message}; automatic rollback also failed: ${rollbackError.message}`);
     }
     throw error;
   }
