@@ -428,47 +428,48 @@ function openTrackedPortal(role, uiSource = 'dashboard') {
   return opened;
 }
 
-/* Owner confirmation is a separate evidence event. It is deliberately explicit
-   because neither opening the portal nor leaving this tab proves submission. */
+/* Clicking the private dashboard's Job applied / Confirm submitted action is
+   the explicit owner confirmation. Opening the destination alone still never
+   counts as submission evidence. Exact selected-package evidence is preserved. */
+const SUBMISSION_CONFIRMATION_PENDING = new Set();
 async function confirmApplicationSubmitted(role, uiSource = 'dashboard') {
-  const action = role.route === 'email' ? 'sent by email' : 'submitted through the portal';
-  const workflow = typeof state !== 'undefined' && state.workflow ? (state.workflow.get(role.key) || {}) : {};
-  const documentEvidence = submissionDocumentEvidence(role, workflow.template_id);
-  const resumeName = templateLabel(documentEvidence.template_id);
-  if (!window.confirm(`Confirm that ${role.company} - ${role.role} was actually ${action}.\n\nResume to record: ${resumeName}\nFile: ${documentEvidence.document_pdf || 'No PDF recorded'}\n\nOpening the destination alone is not submission evidence.`)) {
-    return false;
+  if (!role?.key || SUBMISSION_CONFIRMATION_PENDING.has(role.key)) return false;
+  SUBMISSION_CONFIRMATION_PENDING.add(role.key);
+  try {
+    const workflow = typeof state !== 'undefined' && state.workflow ? (state.workflow.get(role.key) || {}) : {};
+    const submittedAt = new Date().toISOString();
+    const currentStage = workflow.stage || stageFor(role);
+    const evidence = {
+      actor: 'owner',
+      ui_source: uiSource,
+      evidence_type: 'explicit_owner_confirmation',
+      url: role.application_url || '',
+      recipient: role.recipient || '',
+      confirmation_reference: '',
+      submitted_at: submittedAt,
+      ...submissionDocumentEvidence(role, workflow.template_id)
+    };
+    const saved = await createRecord('history', {
+      role_key: role.key,
+      event: role.route === 'email' ? 'email_sent_owner_confirmed' : 'application_submitted',
+      from_stage: currentStage,
+      to_stage: 'applied',
+      ...submissionHistoryFields(evidence),
+      note: JSON.stringify(compactSubmissionNote(evidence))
+    }, `submission-confirm-${role.key}-${Date.now()}`);
+    const savedHistory = {
+      id: saved.id,
+      ...(dataOf(saved) || {}),
+      createdAt: saved.createdAt || submittedAt,
+      updatedAt: saved.updatedAt || submittedAt
+    };
+    if (typeof state !== 'undefined' && Array.isArray(state.history)) {
+      state.history.push(savedHistory);
+    }
+    return { record: savedHistory, evidence, priorStage: currentStage };
+  } finally {
+    SUBMISSION_CONFIRMATION_PENDING.delete(role.key);
   }
-  const reference = window.prompt('Optional: paste the submission confirmation/reference number or a short evidence note.', '') || '';
-  const submittedAt = new Date().toISOString();
-  const currentStage = workflow.stage || stageFor(role);
-  const evidence = {
-    actor: 'owner',
-    ui_source: uiSource,
-    evidence_type: 'explicit_owner_confirmation',
-    url: role.application_url || '',
-    recipient: role.recipient || '',
-    confirmation_reference: reference.trim(),
-    submitted_at: submittedAt,
-    ...submissionDocumentEvidence(role, workflow.template_id)
-  };
-  const saved = await createRecord('history', {
-    role_key: role.key,
-    event: role.route === 'email' ? 'email_sent_owner_confirmed' : 'application_submitted',
-    from_stage: currentStage,
-    to_stage: 'applied',
-    ...submissionHistoryFields(evidence),
-    note: JSON.stringify(compactSubmissionNote(evidence))
-  }, `submission-confirm-${role.key}-${Date.now()}`);
-  const savedHistory = {
-    id: saved.id,
-    ...(dataOf(saved) || {}),
-    createdAt: saved.createdAt || submittedAt,
-    updatedAt: saved.updatedAt || submittedAt
-  };
-  if (typeof state !== 'undefined' && Array.isArray(state.history)) {
-    state.history.push(savedHistory);
-  }
-  return { record: savedHistory, evidence, priorStage: currentStage };
 }
 
 /* ---- Resume template selection ---- */
