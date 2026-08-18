@@ -1,0 +1,57 @@
+name: Career private dashboard
+
+on:
+  push:
+    branches:
+      - fix/career-cloudflare-access-20260818
+  pull_request:
+    paths:
+      - 'dashboard/career-review/**'
+      - 'docs/implementation/career-cloudflare-access-20260818-*'
+      - 'docs/reports/2026-08-18__career-cloudflare-access-baseline.md'
+      - 'scripts/career-cloudflare-access-20260818-plan.mjs'
+      - '.github/workflows/career-private-dashboard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check dashboard/career-review/scripts/deploy_cloudflare_access.js
+          node --check scripts/career-cloudflare-access-20260818-plan.mjs
+      - name: Access policy self-test
+        run: node dashboard/career-review/scripts/deploy_cloudflare_access.js --self-test
+      - name: Validate trackable plan
+        run: |
+          node scripts/career-cloudflare-access-20260818-plan.mjs validate
+          node scripts/career-cloudflare-access-20260818-plan.mjs summary
+          node scripts/career-cloudflare-access-20260818-plan.mjs next
+      - name: Validate Worker privacy config
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('dashboard/career-review/wrangler.jsonc', 'utf8'));
+          if (config.name !== 'career-engine-private') throw new Error('unexpected Worker name');
+          if (config.workers_dev !== false) throw new Error('workers_dev must be false');
+          if (config.preview_urls !== false) throw new Error('preview_urls must be false');
+          if (config.assets?.directory !== './site') throw new Error('static asset directory must be ./site');
+          const routes = Array.isArray(config.routes) ? config.routes : [];
+          if (routes.length !== 1 || routes[0].pattern !== 'career.farahdigital.com/*' || routes[0].zone_name !== 'farahdigital.com') {
+            throw new Error('Worker route must be exactly career.farahdigital.com/* in farahdigital.com');
+          }
+          NODE
+      - name: No committed secret values in migration source
+        run: |
+          if grep -RInE '(CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|CLOUDFLARE_ZONE_ID)[[:space:]]*[:=][[:space:]]*["'"'][^$<{][^"'"']+' \
+            dashboard/career-review docs/implementation/career-cloudflare-access-20260818-* docs/reports/2026-08-18__career-cloudflare-access-baseline.md; then
+            echo '::error::Possible Cloudflare secret value committed in migration source'
+            exit 1
+          fi
