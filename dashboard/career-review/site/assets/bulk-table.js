@@ -537,7 +537,6 @@ function scheduleBoardDecoration() {
     if (tableViewMode === 'table') renderBulkTable();
   });
 }
-
 function initializeBulkTable() {
   ensureBulkUi();
   const board = $('#board');
@@ -552,3 +551,138 @@ function initializeBulkTable() {
 }
 
 initializeBulkTable();
+
+/* ---- Per-job document rebuild status action ---- */
+const REBUILD_DOCUMENTS_ACTION = '__rebuild_documents__';
+const REBUILD_DOCUMENTS_PROMPT = '[REBUILD_DOCUMENTS] Rebuild the current Career Engine application package without changing supported factual content. Regenerate and validate both resume variants and the tailored cover letter, including PDF and DOCX outputs. Do not send, submit, contact a recruiter, or perform any external action.';
+const rebuildDocumentPollers = new Map();
+
+function rebuildRoleFromSelect(select) {
+  const host = select.closest('[data-role-key]');
+  const key = host?.dataset.roleKey || (state.overlayOpen ? state.overlayKey : '');
+  return state.roles.find(role => role.key === key) || null;
+}
+
+function ensureRebuildDocumentsOption(select) {
+  if (!(select instanceof HTMLSelectElement) || !select.classList.contains('card-stage-select')) return;
+  if (select.querySelector(`option[value="${REBUILD_DOCUMENTS_ACTION}"]`)) return;
+  const option = document.createElement('option');
+  option.value = REBUILD_DOCUMENTS_ACTION;
+  option.textContent = '↻ Rebuild CV & cover letter';
+  select.append(option);
+}
+
+function updateAiRequestState(record) {
+  const normalized = { id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt };
+  const index = state.aiRequests.findIndex(item => item.id === normalized.id);
+  if (index >= 0) state.aiRequests[index] = normalized;
+  else state.aiRequests.push(normalized);
+  return normalized;
+}
+
+function stopDocumentRebuildPoller(roleKey) {
+  const timer = rebuildDocumentPollers.get(roleKey);
+  if (timer) clearInterval(timer);
+  rebuildDocumentPollers.delete(roleKey);
+}
+
+function pollDocumentRebuild(role, requestId) {
+  stopDocumentRebuildPoller(role.key);
+  let attempts = 0;
+  const timer = setInterval(async () => {
+    attempts += 1;
+    try {
+      const records = await loadCollection('ai_requests', 300, true);
+      const record = records.find(item => item.id === requestId);
+      if (!record) return;
+      const normalized = updateAiRequestState(record);
+      const requestState = normalized.state || 'pending';
+      if (['pending', 'processing'].includes(requestState)) return;
+      stopDocumentRebuildPoller(role.key);
+      state.batchStageOverrides.delete(role.key);
+      refreshRoleSurfaces(role);
+      if (requestState === 'done' && normalized.validation_status !== 'failure') {
+        showToast('CV and cover letter rebuilt. Reloading the updated package…');
+        setTimeout(() => window.location.reload(), 650);
+      } else {
+        const detail = normalized.answer || normalized.response || normalized.error || 'Document rebuild failed. Review the Career Engine request details.';
+        showToast(detail, true);
+      }
+    } catch (error) {
+      console.warn('document rebuild poll failed', error);
+    }
+    if (attempts >= 400) {
+      stopDocumentRebuildPoller(role.key);
+      state.batchStageOverrides.delete(role.key);
+      refreshRoleSurfaces(role);
+      showToast('Document rebuild is still running. Reload later to check the result.', true);
+    }
+  }, 3000);
+  rebuildDocumentPollers.set(role.key, timer);
+}
+
+async function queueDocumentRebuild(role) {
+  try {
+    const existingRecords = await loadCollection('ai_requests', 300, true);
+    const existing = existingRecords.find(record => {
+      const data = dataOf(record);
+      return data.role_key === role.key
+        && data.request_type === 'edit_cv'
+        && String(data.prompt || '').startsWith('[REBUILD_DOCUMENTS]')
+        && ['pending', 'processing'].includes(data.state || 'pending');
+    });
+    if (existing) {
+      updateAiRequestState(existing);
+      state.batchStageOverrides.set(role.key, 'processing');
+      refreshRoleSurfaces(role);
+      pollDocumentRebuild(role, existing.id);
+      showToast('A CV and cover-letter rebuild is already running.');
+      return;
+    }
+
+    const record = await createRecord('ai_requests', {
+      role_key: role.key,
+      request_type: 'edit_cv',
+      prompt: REBUILD_DOCUMENTS_PROMPT,
+      state: 'pending'
+    }, `rebuild-documents-${role.key}-${Date.now()}`);
+    const normalized = updateAiRequestState(record);
+    await createRecord('history', {
+      role_key: role.key,
+      event: 'document_rebuild_requested',
+      note: 'Owner requested Career Engine CV and cover-letter regeneration from the Status control.'
+    }, `history-rebuild-${role.key}-${Date.now()}`);
+    state.batchStageOverrides.set(role.key, 'processing');
+    refreshRoleSurfaces(role);
+    pollDocumentRebuild(role, normalized.id);
+    showToast('Rebuild queued. Career Engine is regenerating the CV and cover letter.');
+  } catch (error) {
+    state.batchStageOverrides.delete(role.key);
+    refreshRoleSurfaces(role);
+    showToast(`Could not queue document rebuild: ${error.message}`, true);
+  }
+}
+
+function primeRebuildOption(event) {
+  const select = event.target?.closest?.('.card-stage-select');
+  if (select) ensureRebuildDocumentsOption(select);
+}
+
+document.addEventListener('focusin', primeRebuildOption, true);
+document.addEventListener('pointerdown', primeRebuildOption, true);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') primeRebuildOption(event);
+}, true);
+document.addEventListener('change', async event => {
+  const select = event.target?.closest?.('.card-stage-select');
+  if (!select || select.value !== REBUILD_DOCUMENTS_ACTION) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const role = rebuildRoleFromSelect(select);
+  if (!role) {
+    showToast('Unable to identify the selected job for document rebuild.', true);
+    return;
+  }
+  select.value = stageFor(role);
+  await queueDocumentRebuild(role);
+}, true);
