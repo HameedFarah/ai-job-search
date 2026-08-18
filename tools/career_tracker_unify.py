@@ -42,6 +42,7 @@ READY_VALUES = {
     "generated_content_valid", "rendered", "render_complete", "packaged",
 }
 SUBMISSION_EVENTS = {"application_submitted", "email_sent_owner_confirmed"}
+SUBMISSION_RETRACTION_EVENTS = {"application_submission_retracted"}
 STAGE_TO_PROCESSING = {
     "found": "ingested",
     "manual_review_needed": "manual_review_needed",
@@ -563,6 +564,35 @@ def promote_submission(tracker: Any, job_id: str, *, event: str, data: dict[str,
     return True
 
 
+def retract_submission(tracker: Any, repo: Path, job_id: str, *, data: dict[str, Any], source: str) -> bool:
+    record = tracker.get_job(job_id)
+    job = record.get("job") or {}
+    if norm(job.get("application_status")) == "not_submitted" and norm(job.get("processing_status")) != "applied":
+        return False
+    target_processing = "awaiting_owner_approval" if has_generated_package(repo, job_id) else "ingested"
+    target_action = (
+        "Owner reviews the selected CV and generated cover letter, then explicitly approves any portal submission or email action."
+        if target_processing == "awaiting_owner_approval"
+        else "Review the vacancy and prepare an application package if appropriate"
+    )
+    package = dict(record.get("submission_package") or {})
+    package["status_source"] = source
+    package["submission_retracted_at"] = data.get("retracted_at") or utc_now()
+    changes: dict[str, Any] = {
+        "processing_status": target_processing,
+        "application_status": "not_submitted",
+        "next_action": target_action,
+    }
+    if package:
+        changes["submission_package"] = package
+    tracker.update_job(
+        job_id, changes,
+        comment="Canonical submission reconciliation: owner explicitly retracted an accidental Applied mark; prior evidence remains in append-only history but no longer represents a submitted application.",
+        actor="system", action="reviewed", confidence="high", requires_owner_review=False,
+    )
+    return True
+
+
 def scan_submission_manifests(repo: Path) -> list[dict[str, Any]]:
     root = repo / "projects/job-automation/artifacts"
     found: list[dict[str, Any]] = []
@@ -653,20 +683,37 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
     aliases = legacy_role_aliases(tracker, repo)
     submission_events: dict[str, list[dict[str, Any]]] = defaultdict(list)
     promoted: list[str] = []
+    retracted: list[str] = []
     unresolved: list[dict[str, str]] = []
 
-    for record in history_records:
+    def history_time(record: dict[str, Any]) -> str:
+        data = data_of(record)
+        return str(record.get("createdAt") or data.get("retracted_at") or data.get("submitted_at") or "")
+
+    for record in sorted(history_records, key=history_time):
         data = data_of(record)
         event = norm(data.get("event"))
-        if event not in SUBMISSION_EVENTS:
+        if event not in SUBMISSION_EVENTS and event not in SUBMISSION_RETRACTION_EVENTS:
             continue
         role_key = str(data.get("role_key") or "")
         job_id = resolve_site_role(tracker, data, role_key, apply=apply, aliases=aliases)
         if not job_id:
             unresolved.append({"role_key": role_key, "reason": "submission_event_job_unresolved"})
             continue
+        canonical_role_key = f"tracker-{job_id}"
+        if event in SUBMISSION_RETRACTION_EVENTS:
+            # Retraction is an append-only owner correction. It invalidates prior
+            # UI confirmation evidence for this role without deleting history.
+            submission_events[role_key].clear()
+            submission_events[canonical_role_key].clear()
+            if apply and retract_submission(
+                tracker, repo, job_id, data=data,
+                source="here.now explicit owner correction",
+            ):
+                retracted.append(job_id)
+            continue
         submission_events[role_key].append(record)
-        submission_events[f"tracker-{job_id}"].append(record)
+        submission_events[canonical_role_key].append(record)
         if apply and promote_submission(tracker, job_id, event=event, data=data, source="here.now explicit owner confirmation"):
             promoted.append(job_id)
 
@@ -704,6 +751,7 @@ def reconcile_site_data(tracker: Any, repo: Path, here: HereNow, *, apply: bool)
         "workflow_records": len(workflow_records),
         "history_records": len(history_records),
         "submission_promoted": sorted(set(promoted)),
+        "submission_retracted": sorted(set(retracted)),
         "workflow_patched_to_canonical": workflow_updates,
         "workflow_applied_without_evidence_blocked": workflow_blocked_applied,
         "unresolved": unresolved,

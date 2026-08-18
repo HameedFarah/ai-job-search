@@ -205,9 +205,11 @@ moveRole = async function moveRoleInBackground(role, nextStage, requireConfirmat
   const priorStage = stageFor(role);
   if (priorStage === nextStage) return true;
 
+  let submissionConfirmation = null;
   if (requireConfirmation) {
     try {
-      if (!await confirmApplicationSubmitted(role, 'kanban_stage_change')) return false;
+      submissionConfirmation = await confirmApplicationSubmitted(role, 'kanban_stage_change');
+      if (!submissionConfirmation) return false;
     } catch (error) {
       showToast(`Submission was not marked complete: ${error.message}`, true);
       return false;
@@ -236,7 +238,8 @@ moveRole = async function moveRoleInBackground(role, nextStage, requireConfirmat
   try {
     await write;
     if (!bulkUpdating && stageMutationVersions.get(roleKey) === version) {
-      showToast(`Moved to ${STAGES.find(stage => stage.id === nextStage)?.label || nextStage}.`);
+      if (nextStage === 'applied' && submissionConfirmation) showAppliedSuccess(role, priorStage, submissionConfirmation);
+      else showToast(`Moved to ${STAGES.find(stage => stage.id === nextStage)?.label || nextStage}.`);
     }
     return true;
   } catch (error) {

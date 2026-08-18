@@ -342,9 +342,32 @@ html[data-theme="high-contrast"] .card-button.email { background: #2b2410; borde
 code { background: var(--soft-blue); padding: 1px 4px; border-radius: 4px; }
 
 /* ---------- Toast / errors / gmail blocked ---------- */
-.toast { position: fixed; right: 14px; bottom: 14px; z-index: 10; background: var(--navy); color: white; border-radius: 8px; padding: 9px 12px; box-shadow: var(--shadow); font-size: .75rem; transition: opacity .2s; max-width: min(480px, 90vw); }
+.toast { position: fixed; right: 14px; bottom: 14px; z-index: 80; background: var(--navy); color: white; border-radius: 8px; padding: 9px 12px; box-shadow: var(--shadow); font-size: .75rem; transition: opacity .2s, transform .2s; max-width: min(480px, 90vw); }
 .toast.error { background: var(--risk); }
-.toast.hidden { opacity: 0; pointer-events: none; }
+.toast.success { background: #15803d; }
+.toast.actionable { min-width: 190px; padding: 11px 14px 10px; }
+.toast-message { font-weight: 700; }
+.toast-action { display: block; margin-top: 5px; padding: 0; border: 0; background: transparent; color: white; font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.toast-action:hover { text-decoration-thickness: 2px; }
+.toast-action:disabled { opacity: .6; cursor: default; }
+.toast.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+
+.application-confetti { position: fixed; inset: 0; z-index: 79; pointer-events: none; overflow: hidden; }
+.application-confetti i { position: absolute; left: var(--confetti-x); top: -18px; width: var(--confetti-size); height: calc(var(--confetti-size) * 1.8); border-radius: 2px; animation: application-confetti-fall 1.75s cubic-bezier(.12,.72,.28,1) var(--confetti-delay) forwards; }
+.application-confetti i[data-tone="0"] { background: #16a34a; }
+.application-confetti i[data-tone="1"] { background: #2563eb; }
+.application-confetti i[data-tone="2"] { background: #f59e0b; }
+.application-confetti i[data-tone="3"] { background: #db2777; }
+.application-confetti i[data-tone="4"] { background: #7c3aed; }
+.application-confetti i[data-tone="5"] { background: #0f766e; }
+@keyframes application-confetti-fall {
+  0% { opacity: 0; transform: translate3d(0,-20px,0) rotate(0deg); }
+  8% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--confetti-drift),105vh,0) rotate(var(--confetti-spin)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .application-confetti { display: none; }
+}
 .board-error { grid-column: 1 / -1; padding: 25px; text-align: center; color: var(--risk); background: var(--paper); border: 1px solid var(--tag-low-bg); border-radius: 10px; }
 
 .gmail-blocked {

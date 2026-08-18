@@ -9,6 +9,17 @@ const STAGES = [
   { id: 'inactive', label: 'Closed / inactive', next: 'found', nextLabel: 'Reopen' }
 ];
 
+const APPLIED_STATUS_VALUES = new Set([
+  'applied', 'submitted', 'sent', 'application_submitted', 'email_sent',
+  'submitted_pending_response', 'email_sent_owner_confirmed'
+]);
+const SUBMISSION_HISTORY_EVENTS = new Set(['application_submitted', 'email_sent_owner_confirmed']);
+const SUBMISSION_RETRACTION_EVENTS = new Set(['application_submission_retracted']);
+const READY_PROCESSING_STATUS_VALUES = new Set([
+  'awaiting_owner_approval', 'owner_review_ready', 'ready_for_review',
+  'generated_content_valid', 'rendered', 'render_complete', 'packaged'
+]);
+
 const THEMES = [
   { id: 'executive-navy', label: 'Executive Navy' },
   { id: 'compact-slate', label: 'Compact Slate' },
@@ -448,15 +459,16 @@ async function confirmApplicationSubmitted(role, uiSource = 'dashboard') {
     ...submissionHistoryFields(evidence),
     note: JSON.stringify(compactSubmissionNote(evidence))
   }, `submission-confirm-${role.key}-${Date.now()}`);
+  const savedHistory = {
+    id: saved.id,
+    ...(dataOf(saved) || {}),
+    createdAt: saved.createdAt || submittedAt,
+    updatedAt: saved.updatedAt || submittedAt
+  };
   if (typeof state !== 'undefined' && Array.isArray(state.history)) {
-    state.history.push({
-      id: saved.id,
-      ...(dataOf(saved) || {}),
-      createdAt: saved.createdAt || submittedAt,
-      updatedAt: saved.updatedAt || submittedAt
-    });
+    state.history.push(savedHistory);
   }
-  return true;
+  return { record: savedHistory, evidence, priorStage: currentStage };
 }
 
 /* ---- Resume template selection ---- */
@@ -547,11 +559,64 @@ function showToast(message, isError = false) {
     toast.id = 'board-toast';
     document.body.append(toast);
   }
+  toast.replaceChildren();
   toast.textContent = message;
   toast.className = isError ? 'toast error' : 'toast';
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.add('hidden'), 3200);
   toast.classList.remove('hidden');
+}
+
+function showActionToast(message, actionLabel, handler, { duration = 7000, success = false } = {}) {
+  let toast = $('#board-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'board-toast';
+    document.body.append(toast);
+  }
+  toast.replaceChildren();
+  const text = document.createElement('div');
+  text.className = 'toast-message';
+  text.textContent = message;
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'toast-action';
+  action.textContent = actionLabel;
+  action.addEventListener('click', async () => {
+    action.disabled = true;
+    try {
+      await handler();
+      toast.classList.add('hidden');
+    } catch (error) {
+      showToast(error?.message || String(error), true);
+    }
+  });
+  toast.append(text, action);
+  toast.className = `toast actionable${success ? ' success' : ''}`;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.add('hidden'), duration);
+  toast.classList.remove('hidden');
+}
+
+function launchApplicationConfetti() {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  const old = $('.application-confetti');
+  if (old) old.remove();
+  const layer = document.createElement('div');
+  layer.className = 'application-confetti';
+  layer.setAttribute('aria-hidden', 'true');
+  for (let index = 0; index < 42; index += 1) {
+    const piece = document.createElement('i');
+    piece.style.setProperty('--confetti-x', `${Math.round(Math.random() * 100)}vw`);
+    piece.style.setProperty('--confetti-delay', `${Math.round(Math.random() * 220)}ms`);
+    piece.style.setProperty('--confetti-drift', `${Math.round((Math.random() - 0.5) * 180)}px`);
+    piece.style.setProperty('--confetti-spin', `${Math.round(300 + Math.random() * 720)}deg`);
+    piece.style.setProperty('--confetti-size', `${6 + Math.round(Math.random() * 6)}px`);
+    piece.dataset.tone = String(index % 6);
+    layer.append(piece);
+  }
+  document.body.append(layer);
+  window.setTimeout(() => layer.remove(), 2100);
 }
 
 /* ---- Theme persistence (Site Data preferences) ---- */
@@ -597,6 +662,32 @@ function normalizedStatus(value) {
   return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 }
 
+function latestSubmissionHistoryState(role) {
+  if (typeof state === 'undefined' || !Array.isArray(state.history) || !role?.key) return '';
+  const relevant = state.history
+    .filter(record => record.role_key === role.key
+      && (SUBMISSION_HISTORY_EVENTS.has(normalizedStatus(record.event))
+        || SUBMISSION_RETRACTION_EVENTS.has(normalizedStatus(record.event))))
+    .sort((a, b) => {
+      const aTime = new Date(a.retracted_at || a.submitted_at || a.updatedAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.retracted_at || b.submitted_at || b.updatedAt || b.createdAt || 0).getTime();
+      return aTime - bTime;
+    });
+  const latest = relevant.at(-1);
+  if (!latest) return '';
+  return SUBMISSION_RETRACTION_EVENTS.has(normalizedStatus(latest.event)) ? 'retracted' : 'submitted';
+}
+
+function roleHasActiveSubmissionEvidence(role) {
+  const historyState = latestSubmissionHistoryState(role);
+  if (historyState === 'retracted') return false;
+  if (historyState === 'submitted') return true;
+  if (role?.submitted_package && !role.submitted_package.submission_retracted_at) return true;
+  const applicationStatus = normalizedStatus(role?.application_status);
+  const processingStatus = normalizedStatus(role?.processing_status);
+  return processingStatus === 'applied' || APPLIED_STATUS_VALUES.has(applicationStatus);
+}
+
 function roleIsInactive(role) {
   const liveStatus = normalizedStatus(role.live_status);
   const processingStatus = normalizedStatus(role.processing_status);
@@ -614,8 +705,15 @@ function roleIsInactive(role) {
 
 function defaultStage(role) {
   if (roleIsInactive(role)) return 'inactive';
-  if (normalizedStatus(role.processing_status) === 'manual_review_needed') return 'manual_review_needed';
-  return role.kind === 'application' ? 'ready_review' : 'found';
+  const processingStatus = normalizedStatus(role.processing_status);
+  if (processingStatus === 'manual_review_needed') return 'manual_review_needed';
+  const hasGeneratedResume = Boolean(
+    role.card_resume_pdf
+    || role.resume?.pdf || role.resume?.docx
+    || role.resume_ats?.pdf || role.resume_ats?.docx
+  );
+  if (READY_PROCESSING_STATUS_VALUES.has(processingStatus) || hasGeneratedResume) return 'ready_review';
+  return 'found';
 }
 
 function normalizedWorkflowStage(stage, role) {
@@ -629,8 +727,14 @@ function normalizedWorkflowStage(stage, role) {
 }
 
 function stageFor(role) {
-  const batchOverride = state.batchStageOverrides?.get(role.key);
-  return normalizedWorkflowStage(batchOverride, role) || normalizedWorkflowStage(state.workflow.get(role.key)?.stage, role) || defaultStage(role);
+  if (roleHasActiveSubmissionEvidence(role)) return 'applied';
+  const batchOverride = normalizedWorkflowStage(state.batchStageOverrides?.get(role.key), role);
+  const workflowStage = normalizedWorkflowStage(state.workflow.get(role.key)?.stage, role);
+  // here.now workflow rows are only a projection. A stale/accidental Applied
+  // projection must never outrank CareerTracker status without explicit
+  // submission evidence.
+  if (workflowStage === 'applied') return batchOverride || defaultStage(role);
+  return batchOverride || workflowStage || defaultStage(role);
 }
 
 function activityTime(role) {

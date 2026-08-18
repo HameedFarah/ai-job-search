@@ -174,6 +174,41 @@ def test_portal_open_does_not_become_application(runtime):
     assert ("workflow", "wf2", {"stage": "ready_review", "role_key": f"tracker-{job_id}"}) in here.patches
 
 
+def test_owner_undo_retracts_accidental_submission_without_deleting_history(runtime):
+    repo, tracker = runtime
+    job_id = "7" * 20
+    seed_job(tracker, job_id, source_url="https://example.com/job/7", processing_status="awaiting_owner_approval")
+    here = FakeHere(
+        workflow=[wrap("wf7", {"role_key": f"tracker-{job_id}", "stage": "applied", "company": "Example Co", "role": "Design Manager"}, "2026-08-16T10:01:00Z")],
+        history=[
+            wrap("h7-submit", {
+                "role_key": f"tracker-{job_id}",
+                "event": "application_submitted",
+                "to_stage": "applied",
+                "submitted_at": "2026-08-16T09:59:00Z",
+                "url": "https://example.com/job/7",
+            }, "2026-08-16T09:59:00Z"),
+            wrap("h7-undo", {
+                "role_key": f"tracker-{job_id}",
+                "event": "application_submission_retracted",
+                "from_stage": "applied",
+                "to_stage": "ready_review",
+                "retracted_event_id": "h7-submit",
+                "retracted_at": "2026-08-16T10:00:00Z",
+            }, "2026-08-16T10:00:00Z"),
+        ],
+    )
+
+    report = unify.reconcile_site_data(tracker, repo, here, apply=True)
+    record = tracker.get_job(job_id)
+
+    assert record["job"]["application_status"] == "not_submitted"
+    assert record["job"]["processing_status"] == "ingested"
+    assert job_id in report["submission_retracted"]
+    assert f"tracker-{job_id}" in report["workflow_applied_without_evidence_blocked"]
+    assert ("workflow", "wf7", {"stage": "found", "role_key": f"tracker-{job_id}"}) in here.patches
+
+
 def test_dashboard_stage_is_projection_and_cannot_overwrite_tracker(runtime):
     repo, tracker = runtime
     job_id = "3" * 20

@@ -196,13 +196,80 @@ async function appendHistoryEvent(role, event, fromStage, toStage, note = '') {
   }
 }
 
+async function undoAppliedMark(role, priorStage, confirmation) {
+  const targetStage = STAGES.some(stage => stage.id === priorStage) && priorStage !== 'applied' ? priorStage : 'ready_review';
+  const retractedAt = new Date().toISOString();
+  const saved = await createRecord('history', {
+    role_key: role.key,
+    event: 'application_submission_retracted',
+    from_stage: 'applied',
+    to_stage: targetStage,
+    actor: 'owner',
+    ui_source: 'applied_toast_undo',
+    evidence_type: 'explicit_owner_correction',
+    retracted_event_id: confirmation?.record?.id || '',
+    retracted_at: retractedAt,
+    note: JSON.stringify({
+      reason: 'Owner used Undo after an accidental applied mark.',
+      retracted_event_id: confirmation?.record?.id || '',
+      retracted_at: retractedAt
+    })
+  }, `submission-retract-${role.key}-${Date.now()}`);
+  state.history.push({
+    id: saved.id,
+    ...(dataOf(saved) || {}),
+    createdAt: saved.createdAt || retractedAt,
+    updatedAt: saved.updatedAt || retractedAt
+  });
+
+  const current = state.workflow.get(role.key);
+  const templateId = current?.template_id || selectedTemplateFor(role);
+  try {
+    const record = current?.id
+      ? await patchRecord('workflow', current.id, { stage: targetStage, role_key: role.key, route: role.route || '', company: role.company, role: role.role, template_id: templateId })
+      : await createRecord('workflow', {
+          role_key: role.key,
+          stage: targetStage,
+          route: role.route || '',
+          company: role.company,
+          role: role.role,
+          template_id: templateId
+        }, `${role.key}-${targetStage}-${Date.now()}`);
+    state.workflow.set(role.key, {
+      id: record.id || current?.id,
+      ...(dataOf(record) || {}),
+      role_key: role.key,
+      stage: targetStage,
+      template_id: templateId,
+      createdAt: record.createdAt || current?.createdAt,
+      updatedAt: record.updatedAt || new Date().toISOString()
+    });
+  } catch (error) {
+    console.warn('Applied undo workflow projection could not be updated immediately', error);
+  }
+
+  if (typeof refreshRoleSurfaces === 'function') refreshRoleSurfaces(role);
+  else {
+    renderBoard();
+    renderOverlayIfOpen();
+  }
+}
+
+function showAppliedSuccess(role, priorStage, confirmation) {
+  if (state.overlayOpen && state.overlayKey === role.key) closeOverlay();
+  launchApplicationConfetti();
+  showActionToast('Job applied', 'Undo', () => undoAppliedMark(role, priorStage, confirmation), { success: true, duration: 7000 });
+}
+
 async function moveRole(role, nextStage, requireConfirmation = false) {
   const current = state.workflow.get(role.key);
   const priorStage = stageFor(role);
   if (priorStage === nextStage) return;
+  let submissionConfirmation = null;
   if (requireConfirmation) {
     try {
-      if (!await confirmApplicationSubmitted(role, 'kanban_stage_change')) return;
+      submissionConfirmation = await confirmApplicationSubmitted(role, 'kanban_stage_change');
+      if (!submissionConfirmation) return;
     } catch (error) {
       showToast(`Submission was not marked complete: ${error.message}`, true);
       return;
@@ -227,7 +294,8 @@ async function moveRole(role, nextStage, requireConfirmation = false) {
     await appendHistoryEvent(role, 'stage_change', priorStage, nextStage);
     renderBoard();
     renderOverlayIfOpen();
-    showToast(`Moved to ${STAGES.find(stage => stage.id === nextStage)?.label}.`);
+    if (nextStage === 'applied' && submissionConfirmation) showAppliedSuccess(role, priorStage, submissionConfirmation);
+    else showToast(`Moved to ${STAGES.find(stage => stage.id === nextStage)?.label}.`);
   } catch (error) {
     if (current) state.workflow.set(role.key, current); else state.workflow.delete(role.key);
     renderBoard();
@@ -464,21 +532,39 @@ function renderBoard() {
   updateScanClock();
 }
 
+function mergeRoleCardData(role, generatedAt) {
+  const route = role.route || 'portal';
+  const cardResume = role.card_resume_pdf || '';
+  const cardCover = role.card_cover_pdf || '';
+  const resume = { ...(role.resume || {}) };
+  const resumeAts = { ...(role.resume_ats || {}) };
+  if (cardResume) {
+    if (route === 'portal' && !resumeAts.pdf) resumeAts.pdf = cardResume;
+    if (route !== 'portal' && !resume.pdf) resume.pdf = cardResume;
+  }
+  const coverLetter = { ...(role.cover_letter || {}) };
+  if (cardCover && !coverLetter.pdf) coverLetter.pdf = cardCover;
+  return {
+    ...role,
+    route,
+    application_url: role.application_url || role.card_application_url || '',
+    source_url: role.source_url || role.application_url || role.card_application_url || '',
+    found_at: role.found_at || role.first_seen || generatedAt,
+    resume,
+    resume_ats: resumeAts,
+    cover_letter: coverLetter
+  };
+}
+
 function mergeRoles(data) {
   const generatedAt = data.generated_at || new Date().toISOString();
   const applications = (data.applications || []).map(role => ({
-    ...role,
-    kind: 'application',
-    found_at: role.found_at || role.first_seen || generatedAt
+    ...mergeRoleCardData(role, generatedAt),
+    kind: 'application'
   }));
   const reviewed = (data.reviewed || []).map(role => ({
-    ...role,
+    ...mergeRoleCardData(role, generatedAt),
     kind: 'reviewed',
-    route: role.route || 'portal',
-    source_url: role.source_url || role.application_url || '',
-    found_at: role.found_at || role.first_seen || generatedAt,
-    resume: role.resume || {},
-    cover_letter: role.cover_letter || {},
     email_subject: role.email_subject || `Abdelhamid Farah - ${role.role}`,
     email_body: role.email_body || `Dear Recruitment Team,\n\nPlease find my application for the ${role.role} position at ${role.company}.\n\nKind regards,\nAbdelhamid Farah\n${OUTWARD_EMAIL}`
   }));
@@ -1320,9 +1406,14 @@ function renderOverlayEmail(role) {
 }
 
 function submissionRecordsForRole(roleKey) {
-  return state.history
-    .filter(record => record.role_key === roleKey && ['application_submitted', 'email_sent_owner_confirmed'].includes(record.event))
-    .sort((a, b) => String(a.submitted_at || a.createdAt || '').localeCompare(String(b.submitted_at || b.createdAt || '')));
+  const lifecycle = state.history
+    .filter(record => record.role_key === roleKey
+      && (SUBMISSION_HISTORY_EVENTS.has(normalizedStatus(record.event))
+        || SUBMISSION_RETRACTION_EVENTS.has(normalizedStatus(record.event))))
+    .sort((a, b) => String(a.retracted_at || a.submitted_at || a.createdAt || '').localeCompare(String(b.retracted_at || b.submitted_at || b.createdAt || '')));
+  const lastRetraction = lifecycle.map(record => normalizedStatus(record.event)).lastIndexOf('application_submission_retracted');
+  return lifecycle.slice(lastRetraction + 1)
+    .filter(record => SUBMISSION_HISTORY_EVENTS.has(normalizedStatus(record.event)));
 }
 
 function submissionEvidenceFromRecord(record) {
@@ -1336,7 +1427,7 @@ function renderOverlaySubmissionRecord(role) {
   const target = $('#ov-submission-record');
   if (!section || !target) return;
   const records = submissionRecordsForRole(role.key);
-  const archived = role.submitted_package || null;
+  const archived = latestSubmissionHistoryState(role) === 'retracted' ? null : (role.submitted_package || null);
   const latest = archived
     ? {
         history_event_id: archived.history_event_id || '',

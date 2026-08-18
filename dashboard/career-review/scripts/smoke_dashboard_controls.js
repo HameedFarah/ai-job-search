@@ -63,6 +63,46 @@ async function main() {
     renderGlobalOperationStatus();
   });
 
+  const staleAppliedGuard = await page.evaluate(() => {
+    const role = state.roles.find(item => item.job_id === '031286f3993d99a0f94d');
+    if (!role) return { found: false };
+    const previous = state.workflow.get(role.key);
+    state.workflow.set(role.key, { id: 'stale-applied-projection', role_key: role.key, stage: 'applied' });
+    const stage = stageFor(role);
+    if (previous) state.workflow.set(role.key, previous); else state.workflow.delete(role.key);
+    return {
+      found: true,
+      stage,
+      applicationStatus: role.application_status,
+      processingStatus: role.processing_status,
+      applicationUrl: role.application_url
+    };
+  });
+  assert(staleAppliedGuard.found, 'XAD regression role is present in the dashboard fixture');
+  assert(staleAppliedGuard.stage !== 'applied', 'Stale Applied workflow projection cannot outrank canonical not-submitted tracker state', JSON.stringify(staleAppliedGuard));
+  assert(staleAppliedGuard.applicationStatus === 'not_submitted', 'XAD canonical application status remains not_submitted', JSON.stringify(staleAppliedGuard));
+  assert(/^https:\/\//.test(staleAppliedGuard.applicationUrl || ''), 'XAD card-level application route is immediately available before detail hydration', JSON.stringify(staleAppliedGuard));
+
+  const cardArtifactGuard = await page.evaluate(() => {
+    const role = state.roles.find(item => item.company === 'Dar Al Riyadh' && item.card_resume_pdf && item.card_application_url);
+    if (!role) return { found: false };
+    const selected = selectedTemplateFor(role);
+    const availability = templateAvailability(role, state.templatesData || {});
+    return {
+      found: true,
+      role: role.role,
+      route: role.route,
+      applicationUrl: role.application_url,
+      cardResume: role.card_resume_pdf,
+      selected,
+      selectedPdf: availability[selected]?.pdf || '',
+      coverPdf: role.cover_letter?.pdf || ''
+    };
+  });
+  assert(cardArtifactGuard.found, 'Dar Al Riyadh regression role with generated card artifacts is present');
+  assert(/^https:\/\//.test(cardArtifactGuard.applicationUrl || ''), 'Dar Al Riyadh application link is immediately available before detail hydration', JSON.stringify(cardArtifactGuard));
+  assert(Boolean(cardArtifactGuard.selectedPdf), 'Dar Al Riyadh generated resume is immediately available before detail hydration', JSON.stringify(cardArtifactGuard));
+
   await page.locator('.role-card').first().click();
   await page.locator('#job-overlay:not([hidden])').waitFor();
   const ctaContrast = await page.evaluate(() => {
@@ -125,7 +165,39 @@ async function main() {
   assert(calls.some(call => call.collection === 'ai_requests' && call.payload.request_type === 'cover_letter'), 'Assistant request uses selected quick action', JSON.stringify(calls));
   assert(calls.some(call => call.collection === 'history' && /Cover Letter/i.test(call.payload.note)), 'Assistant history write no longer references removed aiSelect', JSON.stringify(calls));
 
-  console.log(JSON.stringify({ valid: true, columns, processDefault: 70, assistantStatus: status }, null, 2));
+  await page.evaluate(() => {
+    const role = state.roles.find(item => item.job_id === '031286f3993d99a0f94d');
+    const submittedAt = new Date().toISOString();
+    state.history.push({
+      id: 'fake-applied-confirmation',
+      role_key: role.key,
+      event: 'application_submitted',
+      submitted_at: submittedAt,
+      createdAt: submittedAt,
+      updatedAt: submittedAt
+    });
+    state.workflow.set(role.key, { role_key: role.key, stage: 'applied', template_id: 'ats-classic' });
+    openOverlay(role.key, false);
+    showAppliedSuccess(role, 'ready_review', { record: { id: 'fake-applied-confirmation' } });
+  });
+  assert(await page.locator('#job-overlay').getAttribute('aria-hidden') === 'true', 'Applied success closes an open job-detail overlay');
+  assert(await page.locator('#board-toast').evaluate(node => node.classList.contains('success')), 'Applied success toast is green/success styled');
+  assert(await page.locator('#board-toast .toast-message').innerText() === 'Job applied', 'Applied success toast uses the requested message');
+  assert(await page.locator('#board-toast .toast-action').innerText() === 'Undo', 'Applied success toast exposes Undo below the message');
+  assert(await page.locator('.application-confetti i').count() > 0, 'Applied success launches on-screen confetti');
+  await page.locator('#board-toast .toast-action').click();
+  await page.waitForTimeout(80);
+  const undoResult = await page.evaluate(() => {
+    const role = state.roles.find(item => item.job_id === '031286f3993d99a0f94d');
+    return {
+      stage: stageFor(role),
+      hasRetraction: state.history.some(record => record.role_key === role.key && record.event === 'application_submission_retracted')
+    };
+  });
+  assert(undoResult.stage !== 'applied', 'Undo removes the accidental Applied display state', JSON.stringify(undoResult));
+  assert(undoResult.hasRetraction, 'Undo preserves append-only history with an explicit submission retraction');
+
+  console.log(JSON.stringify({ valid: true, columns, processDefault: 70, assistantStatus: status, staleAppliedGuard, undoResult }, null, 2));
   await context.close();
   await browser.close();
 }
