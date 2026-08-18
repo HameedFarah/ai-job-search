@@ -130,14 +130,14 @@ function safeState(state) {
   };
 }
 
-async function inspect() {
+async function inspect({ requireProxied = true } = {}) {
   const { accountId, zoneId } = auth();
 
   const dnsRows = await api('GET', `/zones/${zoneId}/dns_records?name=${encodeURIComponent(HOSTNAME)}`);
   const dnsList = Array.isArray(dnsRows) ? dnsRows : [];
   if (dnsList.length !== 1) die(`Expected exactly one DNS record for ${HOSTNAME}; found ${dnsList.length}`);
   const dns = dnsList[0];
-  if (!dns.proxied) die(`${HOSTNAME} is not Cloudflare-proxied; a Worker route would not be safe or effective`);
+  if (requireProxied && !dns.proxied) die(`${HOSTNAME} is not Cloudflare-proxied; a Worker route would not be safe or effective`);
 
   const appsRows = await api('GET', `/accounts/${accountId}/access/apps`);
   const apps = Array.isArray(appsRows) ? appsRows : [];
@@ -320,17 +320,29 @@ async function rollbackFromSnapshot(backupPath) {
     }
   }
 
-  return { mode: 'rollback', backup: absolute, restored: safeState(await inspect()) };
+  if (previous.dns) {
+    const dnsRows = await api('GET', `/zones/${zoneId}/dns_records?name=${encodeURIComponent(HOSTNAME)}`);
+    const dnsList = Array.isArray(dnsRows) ? dnsRows : [];
+    if (dnsList.length !== 1 || dnsList[0].id !== previous.dns.id) {
+      die('DNS record identity changed; refusing ambiguous rollback');
+    }
+    if (Boolean(dnsList[0].proxied) !== Boolean(previous.dns.proxied)) {
+      await api('PATCH', `/zones/${zoneId}/dns_records/${previous.dns.id}`, { proxied: Boolean(previous.dns.proxied) });
+    }
+  }
+
+  return { mode: 'rollback', backup: absolute, restored: safeState(await inspect({ requireProxied: false })) };
 }
 
 async function preflight() {
-  const state = await inspect();
+  const state = await inspect({ requireProxied: false });
   return {
     mode: 'preflight',
     hostname: HOSTNAME,
     worker_name: WORKER_NAME,
     credentials_present: true,
     mutation_performed: false,
+    dns_proxy_ready: Boolean(state.dns?.proxied),
     state: safeState(state),
     existing_access_safe: !state.app || (
       state.policies.length === 1
@@ -341,17 +353,23 @@ async function preflight() {
 }
 
 async function deploy() {
-  const before = await inspect();
+  const before = await inspect({ requireProxied: false });
   const backup = writeBackup(before);
   prepareSite();
 
   try {
-    const access = await ensureAccess(before);
+    if (!before.dns.proxied) {
+      const { zoneId } = auth();
+      await api('PATCH', `/zones/${zoneId}/dns_records/${before.dns.id}`, { proxied: true });
+    }
+    const ready = await inspect();
+    const access = await ensureAccess(ready);
     deployWorker();
     const acceptance = await verify();
     return {
       mode: 'deploy',
       backup,
+      dns_proxy_changed: !before.dns.proxied,
       access_app_id: access.app.id,
       access_policy_id: access.policy.id,
       ...acceptance,
