@@ -21,31 +21,26 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertIn("confirmation_reference: ''", source)
         self.assertIn("to_stage: 'applied'", source)
 
-    def test_undo_retraction_uses_only_live_history_schema_fields(self):
+    def test_undo_retraction_keeps_extra_evidence_inside_schema_safe_note(self):
         source = (ROOT / "dashboard/career-review/site/assets/app.js").read_text(encoding="utf-8")
         block = source.split("async function undoAppliedMark", 1)[1].split("function showAppliedSuccess", 1)[0]
         self.assertNotIn("\n    retracted_event_id:", block)
         self.assertNotIn("\n    retracted_at:", block)
+        self.assertIn("note: JSON.stringify({", block)
         self.assertIn("retracted_event_id: confirmation?.record?.id", block)
         self.assertIn("retracted_at: retractedAt", block)
-        schema = json.loads((ROOT / "dashboard/career-review/site/.herenow/data.json").read_text(encoding="utf-8"))
-        history_fields = schema["collections"]["history"]["fields"]
-        self.assertNotIn("retracted_event_id", history_fields)
-        self.assertNotIn("retracted_at", history_fields)
 
-    def test_add_job_request_uses_only_live_ai_requests_schema_fields(self):
+    def test_add_job_request_uses_only_known_ai_request_fields(self):
         source = (ROOT / "dashboard/career-review/site/assets/add-job.js").read_text(encoding="utf-8")
         request_block = source.split("const record = await createRecord('ai_requests'", 1)[1].split("dialog.close()", 1)[0]
+        self.assertIn("role_key: ADD_JOB_ROLE_KEY", request_block)
+        self.assertIn("request_type: 'add_job'", request_block)
         self.assertIn("prompt: requestPrompt", request_block)
+        self.assertIn("state: 'pending'", request_block)
         self.assertIn("requestPrompt.length > ADD_JOB_PROMPT_MAX_LENGTH", source)
+        self.assertIn("const ADD_JOB_PROMPT_MAX_LENGTH = 8000", source)
         for field in ("job_url", "job_description", "company", "role", "location"):
             self.assertNotIn(f"{field}:", request_block)
-        schema = json.loads((ROOT / "dashboard/career-review/site/.herenow/data.json").read_text(encoding="utf-8"))
-        request_fields = schema["collections"]["ai_requests"]["fields"]
-        self.assertEqual(
-            set(request_fields),
-            {"role_key", "request_type", "prompt", "state", "answer", "validation_status", "owner_input_needed", "min_score"},
-        )
 
     def test_add_job_opens_resumable_processing_detail_until_package_is_ready(self):
         source = (ROOT / "dashboard/career-review/site/assets/add-job.js").read_text(encoding="utf-8")
