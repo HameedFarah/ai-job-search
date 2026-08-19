@@ -23,7 +23,8 @@
       || role?.owner_relevance
       || role?.processing_state?.owner_relevance
     );
-    if (ownerRelevance === 'irrelevant') {
+    const exportedIrrelevantMarker = /Owner marked this role Irrelevant/i.test(String(role?.brief || ''));
+    if (ownerRelevance === 'irrelevant' || exportedIrrelevantMarker) {
       // A deliberate owner move away from Irrelevant should render immediately,
       // even before the next server-side reconciliation clears the stale export.
       if (workflowStage && !['irrelevant', 'inactive'].includes(workflowStage)) return workflowStage;
