@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 from career_engine.bundle import load_bundle
 from career_engine.config import load_config
 from career_engine.pipeline import _load_tracker
+from career_engine.post_scan import reconcile_after_scan
 from career_engine.scanner import run_scan, write_report
 from career_engine.targeting import reconcile_existing_non_target_jobs
 
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     report = run_scan(Path(args.input), root=ROOT, scanner_id="hermes_scanner")
     report["target_lane_reconciliation"] = target_lane_reconciliation
+    reconcile_after_scan(ROOT, report)
     print(write_report(report, Path(args.output) if args.output else None), end="")
     return 0
 
