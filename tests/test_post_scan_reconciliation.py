@@ -53,7 +53,13 @@ def test_optional_connected_reconciliation_failure_is_reported_not_raised(monkey
     assert report["owner_irrelevant_reconciliation"] == {"changed": []}
 
 
-def test_all_supported_scanner_wrappers_use_shared_post_scan_reconciliation() -> None:
+def test_core_scanner_owns_post_scan_reconciliation_for_every_entry_point() -> None:
+    scanner = (ROOT / "career_engine/scanner.py").read_text(encoding="utf-8")
+    assert "from .post_scan import reconcile_after_scan" in scanner
+    assert "reconcile_after_scan(root, report)" in scanner
+
+    # All supported wrappers and the native CLI already converge on run_scan;
+    # they must not duplicate the post-scan connected-data pass themselves.
     wrappers = (
         ROOT / "projects/job-automation/daily_scanner.py",
         ROOT / "projects/job-automation/hermes_scanner.py",
@@ -61,5 +67,9 @@ def test_all_supported_scanner_wrappers_use_shared_post_scan_reconciliation() ->
     )
     for path in wrappers:
         source = path.read_text(encoding="utf-8")
-        assert "from career_engine.post_scan import reconcile_after_scan" in source, path
-        assert "reconcile_after_scan(" in source, path
+        assert "run_scan(" in source, path
+        assert "reconcile_after_scan" not in source, path
+
+    cli = (ROOT / "career_engine/cli.py").read_text(encoding="utf-8")
+    assert "report = run_scan(" in cli
+    assert "result = scan(" in cli
