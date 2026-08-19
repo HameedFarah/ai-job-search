@@ -21,7 +21,6 @@ if str(REPO_ROOT) not in sys.path:
 from career_engine.bundle import load_bundle
 from career_engine.config import load_config
 from career_engine.pipeline import _load_tracker
-from career_engine.post_scan import reconcile_after_scan
 from career_engine.scanner import SCANNER_ACTORS, add_path_scan_statistics, run_scan, write_report
 from career_engine.targeting import reconcile_existing_non_target_jobs
 
@@ -53,10 +52,9 @@ def main(argv: list[str] | None = None) -> int:
         actor=SCANNER_ACTORS[args.scanner_id],
     )
 
-    # Run discovery first, then let real owner/Gmail evidence have final authority.
+    # run_scan owns discovery plus higher-authority Gmail/owner reconciliation.
     report = run_scan(source_path, root=REPO_ROOT, scanner_id=args.scanner_id)
     report["target_lane_reconciliation"] = target_lane_reconciliation
-    reconcile_after_scan(REPO_ROOT, report)
 
     if consultant_report is not None:
         report["consultant_sources"] = consultant_report["sources"]
