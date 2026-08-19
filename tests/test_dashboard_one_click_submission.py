@@ -47,6 +47,22 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
             {"role_key", "request_type", "prompt", "state", "answer", "validation_status", "owner_input_needed", "min_score"},
         )
 
+    def test_add_job_opens_resumable_processing_detail_until_package_is_ready(self):
+        source = (ROOT / "dashboard/career-review/site/assets/add-job.js").read_text(encoding="utf-8")
+        self.assertIn("ADD_JOB_REQUEST_PARAM = 'add_job_request'", source)
+        self.assertIn("renderAddJobProcessingOverlay", source)
+        self.assertIn("restoreAddJobRequest", source)
+        self.assertIn("window.setInterval(pollAddJobRequest, 2500)", source)
+        self.assertIn("activeAddJobJobKey = `tracker-${progress.job_id}`", source)
+        self.assertIn("url.searchParams.set('job', jobKey)", source)
+        self.assertIn("window.location.replace", source)
+        for phase in ("reading", "scoring", "generating", "publishing"):
+            self.assertIn(phase, source)
+        css = (ROOT / "dashboard/career-review/site/assets/add-job.css").read_text(encoding="utf-8")
+        self.assertIn(".add-job-processing-detail", css)
+        self.assertIn(".add-job-progress-step", css)
+        self.assertIn("@keyframes add-job-spin", css)
+
     def test_private_worker_proxies_only_known_site_data_collections_for_owner(self):
         source = (ROOT / "dashboard/career-review/worker.js").read_text(encoding="utf-8")
         self.assertIn("/.herenow/data/", source)
