@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,6 +37,39 @@ class CareerDashboardAddJobTests(unittest.TestCase):
         with self.assertRaises(add_job.AddJobError):
             add_job._valid_public_url("http://localhost/job/1")
 
+    def test_prompt_envelope_supplies_schema_compatible_add_job_fields(self):
+        normalized = add_job._normalize_request_data({
+            "role_key": "__career_engine_add_job__",
+            "request_type": "add_job",
+            "state": "pending",
+            "prompt": json.dumps({
+                "schema_version": 1,
+                "kind": "career_engine_add_job",
+                "job_url": "https://example.com/jobs/321",
+                "job_description": "Lead multidisciplinary design delivery and technical coordination across complex projects, including client and consultant interfaces.",
+                "company": "Example Development",
+                "role": "Design Manager",
+                "location": "Riyadh, Saudi Arabia",
+            }),
+        })
+        self.assertEqual(normalized["job_url"], "https://example.com/jobs/321")
+        self.assertEqual(normalized["company"], "Example Development")
+        self.assertEqual(normalized["role"], "Design Manager")
+        self.assertIn("multidisciplinary design delivery", normalized["job_description"])
+
+    def test_prompt_envelope_does_not_override_legacy_top_level_fields(self):
+        normalized = add_job._normalize_request_data({
+            "company": "Top Level Company",
+            "prompt": json.dumps({
+                "schema_version": 1,
+                "kind": "career_engine_add_job",
+                "company": "Envelope Company",
+                "role": "Design Manager",
+            }),
+        })
+        self.assertEqual(normalized["company"], "Top Level Company")
+        self.assertEqual(normalized["role"], "Design Manager")
+
     def test_pasted_job_is_prepared_and_generated(self):
         prepared = {
             "job_id": "abcdef1234567890",
@@ -56,13 +90,18 @@ class CareerDashboardAddJobTests(unittest.TestCase):
                 dispatcher=root / "dispatcher.py",
                 website_root=root / "dashboard",
                 data={
-                    "job_description": (
-                        "Lead multidisciplinary design delivery across complex projects and manage consultant coordination, "
-                        "technical reviews, client interfaces, programme requirements and construction-stage design issues."
-                    ),
-                    "company": "Example Development",
-                    "role": "Senior Design Manager",
-                    "location": "Riyadh, Saudi Arabia",
+                    "prompt": json.dumps({
+                        "schema_version": 1,
+                        "kind": "career_engine_add_job",
+                        "job_url": "",
+                        "job_description": (
+                            "Lead multidisciplinary design delivery across complex projects and manage consultant coordination, "
+                            "technical reviews, client interfaces, programme requirements and construction-stage design issues."
+                        ),
+                        "company": "Example Development",
+                        "role": "Senior Design Manager",
+                        "location": "Riyadh, Saudi Arabia",
+                    }),
                 },
                 generate_package=fake_generate,
                 refresh_dashboard=lambda repo, site: refreshed.append((repo, site)),
