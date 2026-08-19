@@ -228,6 +228,20 @@ def _run_prepare(repo: Path, args: list[str]) -> dict[str, Any]:
     return payload
 
 
+def _prepared_status(prepared: dict[str, Any]) -> tuple[str, str, list[str]]:
+    """Return stage, skip reason and blockers from canonical prepare output.
+
+    Older tests/records may not contain ``stage``. Infer the historical behavior
+    from blockers/skip_reason so intake remains backward-compatible.
+    """
+    blockers = [str(item) for item in (prepared.get("blockers") or [])]
+    skip_reason = str(prepared.get("skip_reason") or "").strip()
+    stage = str(prepared.get("stage") or "").strip()
+    if not stage:
+        stage = "rejected" if skip_reason else ("blocked" if blockers else "generation_ready")
+    return stage, skip_reason, blockers
+
+
 def run_add_job(
     *,
     repo: Path,
@@ -308,19 +322,55 @@ def run_add_job(
     if not job_id:
         raise AddJobError("Career Engine did not return a job id for the supplied vacancy.")
     score = int((prepared.get("fit_score") or {}).get("total", 0))
-    blockers = [str(item) for item in (prepared.get("blockers") or [])]
+    stage, skip_reason, blockers = _prepared_status(prepared)
 
-    if blockers:
+    # Non-target URL-only jobs are a valid Career Engine outcome. prepare()
+    # deliberately rejects them before creating generation_packet.json, and the
+    # Add Job worker must not mistake that policy result for an assistant crash.
+    if skip_reason or stage == "rejected":
+        if progress_callback:
+            progress_callback({
+                "kind": "add_job_progress", "phase": "skipped", "job_id": job_id,
+                "score": score, "message": "Job added and classified as irrelevant to the current target lane."
+            })
+        refresh_dashboard(repo, website_root)
+        reason = skip_reason or "Career Engine target-lane policy"
+        return job_id, (
+            f"Added {company} — {role} and scored it {score}/100. Career Engine classified it as a non-target role "
+            f"({reason}), so no generation packet was created. The job remains recorded for review/calibration. "
+            "Nothing was sent or submitted."
+        )
+
+    if blockers or stage != "generation_ready":
         if progress_callback:
             progress_callback({
                 "kind": "add_job_progress", "phase": "blocked", "job_id": job_id,
                 "score": score, "message": "Job added but package generation is blocked by Career Engine policy."
             })
         refresh_dashboard(repo, website_root)
+        reasons = blockers or [f"unexpected preparation stage:{stage}"]
         return job_id, (
             f"Added {company} — {role} and scored it {score}/100. Package generation was not forced because Career Engine "
-            f"blocked it: {'; '.join(blockers)}. The job is now on the dashboard for review."
+            f"blocked it: {'; '.join(reasons)}. The job is now on the dashboard for review."
         )
+
+    # A generation-ready preparation must declare a packet. Guard that invariant
+    # here so a rare storage/runtime fault is reported as a bounded intake result
+    # rather than leaking AssistantError:generation_packet_missing into the UI.
+    outputs = prepared.get("outputs")
+    if isinstance(outputs, dict):
+        packet_path = str(outputs.get("generation_packet") or "").strip()
+        if not packet_path or not Path(packet_path).is_file():
+            if progress_callback:
+                progress_callback({
+                    "kind": "add_job_progress", "phase": "deferred", "job_id": job_id,
+                    "score": score, "message": "Job added; document generation is deferred because the preparation packet is unavailable."
+                })
+            refresh_dashboard(repo, website_root)
+            return job_id, (
+                f"Added {company} — {role} and scored it {score}/100, but the internal generation packet was unavailable. "
+                "The job remains safely recorded; use Rebuild documents after runtime reconciliation. Nothing was sent or submitted."
+            )
 
     if progress_callback:
         progress_callback({
