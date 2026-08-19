@@ -8,6 +8,7 @@ from typing import Any
 from .bundle import load_bundle
 from .config import load_config
 from .pipeline import _load_tracker
+from .post_scan import reconcile_after_scan
 from .service import prepare_job
 from .targeting import auto_skip_title_reason
 
@@ -434,6 +435,7 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
             path_stats["blocked_or_below_threshold"] += 1
 
     _refresh_path_totals(report["statistics"])
+    reconcile_after_scan(root, report)
     return report
 
 

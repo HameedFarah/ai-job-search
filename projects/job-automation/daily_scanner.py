@@ -20,19 +20,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from career_engine.bundle import load_bundle
 from career_engine.config import load_config
-from career_engine.gmail_reconcile import reconcile_submission_mail
-from career_engine.owner_feedback import apply_owner_feedback_calibration, reconcile_irrelevant_feedback
 from career_engine.pipeline import _load_tracker
 from career_engine.scanner import SCANNER_ACTORS, add_path_scan_statistics, run_scan, write_report
 from career_engine.targeting import reconcile_existing_non_target_jobs
-
-
-def _safe_runtime_step(name: str, function, *args, **kwargs):
-    """Keep discovery running when an optional connected-data reconciliation fails."""
-    try:
-        return function(*args, **kwargs)
-    except Exception as exc:  # noqa: BLE001 - surfaced in the structured daily report
-        return {"step": name, "error": f"{type(exc).__name__}: {exc}", "send_or_submit": False}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,20 +52,9 @@ def main(argv: list[str] | None = None) -> int:
         actor=SCANNER_ACTORS[args.scanner_id],
     )
 
-    # Run discovery first, then let real owner/Gmail evidence have final authority.
-    # This prevents a stale discovery record from overwriting an application that
-    # was actually submitted or a role that the owner explicitly marked irrelevant.
+    # run_scan owns discovery plus higher-authority Gmail/owner reconciliation.
     report = run_scan(source_path, root=REPO_ROOT, scanner_id=args.scanner_id)
     report["target_lane_reconciliation"] = target_lane_reconciliation
-    report["gmail_submission_reconciliation"] = _safe_runtime_step(
-        "gmail_submission_reconciliation", reconcile_submission_mail, REPO_ROOT,
-    )
-    report["owner_irrelevant_reconciliation"] = _safe_runtime_step(
-        "owner_irrelevant_reconciliation", reconcile_irrelevant_feedback, REPO_ROOT,
-    )
-    report["owner_feedback_calibration"] = _safe_runtime_step(
-        "owner_feedback_calibration", apply_owner_feedback_calibration, REPO_ROOT, report,
-    )
 
     if consultant_report is not None:
         report["consultant_sources"] = consultant_report["sources"]
