@@ -68,3 +68,32 @@ def test_applied_positive_example_blocks_negative_title_penalty(monkeypatch, tmp
     assert rule["positive_samples"] == 1
     assert rule["active"] is False
     assert rule["penalty"] == 0
+
+
+class AppliedTracker:
+    def get_job(self, job_id):
+        assert job_id == "applied-job"
+        return {
+            "job": {
+                "job_id": job_id,
+                "processing_status": "applied",
+                "application_status": "submitted",
+                "outcome": "",
+            },
+            "processing_state": {"status": "applied"},
+        }
+
+    def update_job(self, *args, **kwargs):
+        raise AssertionError("Applied submission evidence must not be overwritten by Irrelevant feedback")
+
+
+def test_irrelevant_event_cannot_demote_applied_job(tmp_path) -> None:
+    tracker = AppliedTracker()
+    changed = owner_feedback._apply_irrelevant_event(
+        tracker,
+        SimpleNamespace(tracker_base=tmp_path),
+        "applied-job",
+        "owner-event-1",
+        {"createdAt": "2026-08-20T00:00:00+00:00"},
+    )
+    assert changed is False

@@ -138,6 +138,8 @@ def _has_generated_package(paths: Any, job_id: str) -> bool:
 def _apply_irrelevant_event(tracker: Any, paths: Any, job_id: str, record_id: str, data: dict[str, Any]) -> bool:
     record = tracker.get_job(job_id)
     job = record.get("job") or {}
+    if _norm(job.get("processing_status")) == "applied" or _norm(job.get("application_status")) in {"applied", "submitted", "sent"}:
+        return False
     state = dict(record.get("processing_state") or {})
     if state.get("owner_relevance_event_id") == record_id and _norm(job.get("outcome")) == "irrelevant":
         return False
