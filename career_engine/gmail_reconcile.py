@@ -86,6 +86,54 @@ def _extract_workable(subject: str, body: str, urls: list[str]) -> dict[str, str
     return {"company": company, "role": role, "external_job_id": external, "route": "portal", "signal": "workable_submission_confirmation"}
 
 
+def _extract_qiddiya_workable(subject: str, body: str, sender: str) -> dict[str, str] | None:
+    if not re.search(r"@candidates\.workablemail\.com\b", sender, re.I):
+        return None
+    match = re.fullmatch(
+        r"Senior Director - Design - Qiddiya Investment Company", subject, re.I
+    )
+    if not match:
+        return None
+    if not re.match(
+        r"Dear\s+Abdelhamid Farah,\s+Thank you for your application for the "
+        r"Senior Director - Design position at Qiddiya Investment Company\.",
+        body,
+        re.I | re.S,
+    ):
+        return None
+    return {
+        "company": "Qiddiya Investment Company",
+        "role": "Senior Director - Design",
+        "external_job_id": "",
+        "route": "portal",
+        "signal": "qiddiya_workable_submission_confirmation",
+    }
+
+
+def _extract_buro_happold(subject: str, body: str, sender: str) -> dict[str, str] | None:
+    if not re.search(r"@burohappold\.com\b", sender, re.I):
+        return None
+    subject_match = re.fullmatch(r"Thank you for applying for the role of (.+)", subject, re.I)
+    body_match = re.search(
+        r"your application for the role\s*-\s*(.+?)\s*\(burohappold/TP/\d+/(\d+)\)",
+        body,
+        re.I | re.S,
+    )
+    if not body_match:
+        return None
+    role = _text(body_match.group(1))
+    external = body_match.group(2)
+    if subject_match and _key(subject_match.group(1)) != _key(role):
+        return None
+    return {
+        "company": "Buro Happold",
+        "role": role,
+        "external_job_id": external,
+        "route": "portal",
+        "signal": "buro_happold_submission_confirmation",
+    }
+
+
 def _extract_workday(subject: str, body: str) -> dict[str, str] | None:
     match = re.search(r"^Your\s+(.+?)\s+Job Application Has Been Received$", subject, re.I)
     if not match:
@@ -102,7 +150,7 @@ def _extract_successfactors(subject: str, body: str) -> dict[str, str] | None:
         return None
     company = _text(match.group(1))
     external = _text(match.group(2))
-    ref_match = re.search(r"REF:\s*(.+?)\s*-\s*([A-Za-z0-9_-]+)\s*(?:\n|$)", body, re.I)
+    ref_match = re.search(r"REF:\s*(.+?)\s*-\s*([A-Za-z0-9_-]+)\s*(?:\s|$)", body, re.I)
     role = _text(ref_match.group(1)) if ref_match else ""
     if ref_match and ref_match.group(2):
         external = _text(ref_match.group(2))
@@ -133,6 +181,8 @@ def _extract_linkedin(subject: str) -> dict[str, str] | None:
 
 def _extract_sent(message: dict[str, Any], subject: str, body: str) -> dict[str, str] | None:
     labels = {str(value).upper() for value in message.get("label_ids", [])}
+    if "DRAFT" in labels:
+        return None
     sender = _text(message.get("from")).lower()
     if "SENT" not in labels and CAREER_OUTWARD_EMAIL.lower() not in sender:
         return None
@@ -160,7 +210,9 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         return None
 
     extracted = (
-        _extract_workable(subject, body, urls)
+        _extract_qiddiya_workable(subject, body, sender)
+        or _extract_buro_happold(subject, body, sender)
+        or _extract_workable(subject, body, urls)
         or _extract_workday(subject, body)
         or _extract_successfactors(subject, body)
         or _extract_icims(subject, body, sender)

@@ -30,6 +30,33 @@ def test_workable_submission_confirmation_is_classified() -> None:
     assert result["route"] == "portal"
 
 
+def test_qiddiya_workable_application_confirmation_is_classified() -> None:
+    result = classify_submission_message(message(
+        subject="Senior Director - Design - Qiddiya Investment Company",
+        sender="Qiddiya Investment Company <noreply@candidates.workablemail.com>",
+        body="Dear Abdelhamid Farah, Thank you for your application for the Senior Director - Design position at Qiddiya Investment Company.",
+    ))
+    assert result is not None
+    assert result["company"] == "Qiddiya Investment Company"
+    assert result["role"] == "Senior Director - Design"
+    assert result["route"] == "portal"
+    assert result["signal"] == "qiddiya_workable_submission_confirmation"
+
+
+def test_buro_happold_confirmation_extracts_role_and_reference() -> None:
+    result = classify_submission_message(message(
+        subject="Thank you for applying for the role of Senior Design Manager – Structures",
+        sender="no-reply@burohappold.com",
+        body="Thank you for considering Buro Happold and for your application for the role - Senior Design Manager – Structures (burohappold/TP/652/2261).",
+    ))
+    assert result is not None
+    assert result["company"] == "Buro Happold"
+    assert result["role"] == "Senior Design Manager – Structures"
+    assert result["external_job_id"] == "2261"
+    assert result["route"] == "portal"
+    assert result["signal"] == "buro_happold_submission_confirmation"
+
+
 def test_workday_submission_confirmation_is_classified() -> None:
     result = classify_submission_message(message(
         subject="Your Parsons Job Application Has Been Received",
@@ -84,6 +111,16 @@ def test_real_sent_application_email_is_submission_evidence() -> None:
     assert result["route"] == "email"
     assert result["company"] == "Beresford Wilson and Partners"
     assert result["role"] == "Technical Project Manager"
+
+
+def test_gmail_draft_from_career_sender_is_not_submission_evidence() -> None:
+    result = classify_submission_message(message(
+        subject="Abdelhamid Farah - Technical Project Manager",
+        sender="hameedfarah@gmail.com",
+        labels=["DRAFT"],
+        body="Dear Ross, I am writing to apply for the Technical Project Manager position with BWP Ltd. Please find my CV attached.",
+    ))
+    assert result is None
 
 
 class FakeTracker:
