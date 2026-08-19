@@ -129,7 +129,8 @@
         <p><strong>Add your own job:</strong> use <strong>Add job</strong> to paste a public vacancy link, paste the full job description, or both. Link metadata is extracted when available. The vacancy is deduplicated and scored through the normal Career Engine; eligible jobs are packaged immediately, while blocked jobs stay visible for review. Nothing is sent or submitted.</p>
         <p><strong>Move cards:</strong> drag between columns or use the stage select / action button on each card. Found and review cards move directly to Ready for review; use <strong>Process all ≥ N</strong> for actual Career Engine package processing. Stage, resume template, comments, AI requests and design preference are saved to the private site data and survive re-publishes.</p>
         <p><strong>Bulk edit:</strong> select jobs with the card or table checkboxes, then use the bulk status bar. Applied / sent remains an individual confirmation because opening a portal is not submission evidence. Switch between Kanban and Table under Display.</p>
-        <p><strong>Gmail and application links:</strong> external actions open in separate tabs. A fresh Hermes scan also asks for a read-only reconciliation of replies and confirmations for jobs already marked applied/sent; nothing is sent automatically.</p>
+        <p><strong>Gmail and application links:</strong> external actions open in separate tabs. A fresh Hermes scan also performs a read-only Gmail submission reconciliation and updates CareerTracker from verified confirmations or sent application evidence; nothing is sent automatically.</p>
+        <p><strong>Irrelevant:</strong> mark a role Irrelevant when it is not a useful target. The record is retained, excluded from generation, and becomes negative evidence for bounded daily fit-score calibration.</p>
         <p><strong>External gate:</strong> Ready for review is the final internal pre-submission state. You still submit or send manually, then confirm it here.</p>
         <p><strong>Recency tags:</strong> Fresh ≤2 days · Recent ≤7 days · Aging ≤30 days · Old &gt;30 days · Unknown when no date. <strong>Score tags:</strong> High ≥85 · Good 70–84 · Marginal 55–69 · Low &lt;55.</p>
       </div>
@@ -204,6 +205,7 @@
 
 <script src="assets/shared.js?v=66898f4b8aed" defer></script>
 <script src="assets/app.js?v=e66be94c0568" defer></script>
+<script src="assets/irrelevant-feedback.js?v=20260819" defer></script>
   <script src="assets/add-job.js?v=e478d743a3f9" defer></script>
 <script src="assets/bulk-table.js?v=8cf677ab5364" defer></script>
 <script src="assets/external-links.js?v=f8ce5e7786af" defer></script>
