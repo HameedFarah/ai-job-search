@@ -33,6 +33,20 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertNotIn("retracted_event_id", history_fields)
         self.assertNotIn("retracted_at", history_fields)
 
+    def test_add_job_request_uses_only_live_ai_requests_schema_fields(self):
+        source = (ROOT / "dashboard/career-review/site/assets/add-job.js").read_text(encoding="utf-8")
+        request_block = source.split("const record = await createRecord('ai_requests'", 1)[1].split("dialog.close()", 1)[0]
+        self.assertIn("prompt: requestPrompt", request_block)
+        self.assertIn("requestPrompt.length > ADD_JOB_PROMPT_MAX_LENGTH", source)
+        for field in ("job_url", "job_description", "company", "role", "location"):
+            self.assertNotIn(f"{field}:", request_block)
+        schema = json.loads((ROOT / "dashboard/career-review/site/.herenow/data.json").read_text(encoding="utf-8"))
+        request_fields = schema["collections"]["ai_requests"]["fields"]
+        self.assertEqual(
+            set(request_fields),
+            {"role_key", "request_type", "prompt", "state", "answer", "validation_status", "owner_input_needed", "min_score"},
+        )
+
     def test_private_worker_proxies_only_known_site_data_collections_for_owner(self):
         source = (ROOT / "dashboard/career-review/worker.js").read_text(encoding="utf-8")
         self.assertIn("/.herenow/data/", source)

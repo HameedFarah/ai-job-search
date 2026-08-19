@@ -26,6 +26,36 @@ class AddJobError(RuntimeError):
     pass
 
 
+ADD_JOB_REQUEST_KIND = "career_engine_add_job"
+ADD_JOB_REQUEST_SCHEMA_VERSION = 1
+ADD_JOB_INPUT_FIELDS = ("job_url", "job_description", "company", "role", "location")
+
+
+def _normalize_request_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Decode schema-compatible Add Job input from the generic prompt field.
+
+    Legacy top-level fields remain supported for already-created/test records,
+    but current browser writes keep job-specific metadata inside ``prompt`` so
+    the live ``ai_requests`` collection does not need schema expansion.
+    """
+    normalized = dict(data)
+    raw_prompt = data.get("prompt")
+    if not isinstance(raw_prompt, str) or not raw_prompt.strip():
+        return normalized
+    try:
+        payload = json.loads(raw_prompt)
+    except json.JSONDecodeError:
+        return normalized
+    if not isinstance(payload, dict) or payload.get("kind") != ADD_JOB_REQUEST_KIND:
+        return normalized
+    if payload.get("schema_version") != ADD_JOB_REQUEST_SCHEMA_VERSION:
+        raise AddJobError("Unsupported Add Job request payload version.")
+    for field in ADD_JOB_INPUT_FIELDS:
+        if not str(normalized.get(field, "") or "").strip():
+            normalized[field] = payload.get(field, "")
+    return normalized
+
+
 class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -209,6 +239,7 @@ def run_add_job(
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[str, str]:
     """Add one owner-supplied job and return ``(job_id, status_message)``."""
+    data = _normalize_request_data(data)
     url = _valid_public_url(str(data.get("job_url", "")))
     description = str(data.get("job_description", "") or "").strip()
     owner_pasted_description = bool(description)

@@ -2,6 +2,7 @@
 'use strict';
 
 const ADD_JOB_ROLE_KEY = '__career_engine_add_job__';
+const ADD_JOB_PROMPT_MAX_LENGTH = 8000;
 let addJobPollTimer = null;
 let activeAddJobRequestId = '';
 
@@ -97,15 +98,28 @@ function setupAddJobIntake() {
     if (submit) submit.disabled = true;
     setAddJobStatus('Adding job to Career Engine…');
     try {
-      const record = await createRecord('ai_requests', {
-        role_key: ADD_JOB_ROLE_KEY,
-        request_type: 'add_job',
-        prompt: 'Add this owner-supplied vacancy to Career Engine and process this job immediately when eligible. Do not send or submit anything.',
+      // Keep ai_requests writes schema-compatible. Job-specific intake fields
+      // travel inside the existing prompt text field rather than as undeclared
+      // collection columns, which here.now rejects with HTTP 400.
+      const requestPayload = {
+        schema_version: 1,
+        kind: 'career_engine_add_job',
         job_url: jobUrl,
         job_description: jobDescription,
         company,
         role,
-        location,
+        location
+      };
+      const requestPrompt = JSON.stringify(requestPayload);
+      if (requestPrompt.length > ADD_JOB_PROMPT_MAX_LENGTH) {
+        setAddJobStatus('The pasted job description is too long for the intake queue. Use the job URL only, or shorten the pasted description and retry.', true);
+        if (submit) submit.disabled = false;
+        return;
+      }
+      const record = await createRecord('ai_requests', {
+        role_key: ADD_JOB_ROLE_KEY,
+        request_type: 'add_job',
+        prompt: requestPrompt,
         state: 'pending'
       }, `career-add-job-${Date.now()}`);
       dialog.close();
