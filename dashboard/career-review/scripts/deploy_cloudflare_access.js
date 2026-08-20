@@ -17,6 +17,10 @@ const ROUTE_PATTERN = `${HOSTNAME}/*`;
 const WORKER_NAME = 'career-engine-private';
 const ACCESS_APP_NAME = 'Career Engine';
 const ACCESS_POLICY_NAME = 'Career Engine owner only';
+const ACCESS_SERVICE_TOKEN_NAME = 'Career Engine VPS automation';
+const ACCESS_SERVICE_POLICY_NAME = 'Career Engine automation service';
+const ACCESS_SERVICE_TOKEN_DURATION = '8760h';
+const ACCESS_SERVICE_CREDENTIALS = path.join(RUNTIME, 'cloudflare-access-service-token.json');
 const OWNER_EMAIL = 'hameedo@gmail.com';
 
 function die(message) {
@@ -72,6 +76,18 @@ function ownerPolicyBody() {
   };
 }
 
+function servicePolicyBody(tokenId) {
+  if (!String(tokenId || '').trim()) die('service token ID is required');
+  return {
+    name: ACCESS_SERVICE_POLICY_NAME,
+    decision: 'non_identity',
+    precedence: 2,
+    include: [{ service_token: { token_id: tokenId } }],
+    exclude: [],
+    require: [],
+  };
+}
+
 function isOwnerOnlyPolicy(policy) {
   if (!policy || policy.decision !== 'allow') return false;
   const include = Array.isArray(policy.include) ? policy.include : [];
@@ -81,6 +97,30 @@ function isOwnerOnlyPolicy(policy) {
     && include[0]?.email?.email === OWNER_EMAIL
     && exclude.length === 0
     && requireRules.length === 0;
+}
+
+function isServiceAuthPolicy(policy, tokenId = '') {
+  if (!policy || policy.decision !== 'non_identity') return false;
+  const include = Array.isArray(policy.include) ? policy.include : [];
+  const exclude = Array.isArray(policy.exclude) ? policy.exclude : [];
+  const requireRules = Array.isArray(policy.require) ? policy.require : [];
+  const actualTokenId = String(include[0]?.service_token?.token_id || '').trim();
+  return include.length === 1
+    && Boolean(actualTokenId)
+    && (!tokenId || actualTokenId === tokenId)
+    && exclude.length === 0
+    && requireRules.length === 0;
+}
+
+function isManagedPolicySet(policies, { requireService = false } = {}) {
+  const list = Array.isArray(policies) ? policies : [];
+  const owners = list.filter(policy => policy.name === ACCESS_POLICY_NAME);
+  const services = list.filter(policy => policy.name === ACCESS_SERVICE_POLICY_NAME);
+  const unmanaged = list.filter(policy => ![ACCESS_POLICY_NAME, ACCESS_SERVICE_POLICY_NAME].includes(policy.name));
+  if (owners.length !== 1 || !isOwnerOnlyPolicy(owners[0])) return false;
+  if (unmanaged.length !== 0 || services.length > 1) return false;
+  if (services.length === 1 && !isServiceAuthPolicy(services[0])) return false;
+  return requireService ? services.length === 1 : true;
 }
 
 function safePolicy(policy) {
@@ -177,6 +217,83 @@ function writeBackup(state) {
   return target;
 }
 
+function loadServiceCredentials() {
+  if (!fs.existsSync(ACCESS_SERVICE_CREDENTIALS)) return null;
+  const stat = fs.statSync(ACCESS_SERVICE_CREDENTIALS);
+  if ((stat.mode & 0o077) !== 0) die('Cloudflare Access service credential file permissions are too broad');
+  const parsed = JSON.parse(fs.readFileSync(ACCESS_SERVICE_CREDENTIALS, 'utf8'));
+  const serviceTokenId = String(parsed.service_token_id || '').trim();
+  const clientId = String(parsed.client_id || '').trim();
+  const clientSecret = String(parsed.client_secret || '').trim();
+  if (!serviceTokenId || !clientId || !clientSecret) die('Cloudflare Access service credential file is incomplete');
+  return { serviceTokenId, clientId, clientSecret };
+}
+
+function writeServiceCredentials(token) {
+  const serviceTokenId = String(token?.id || '').trim();
+  const clientId = String(token?.client_id || '').trim();
+  const clientSecret = String(token?.client_secret || '').trim();
+  if (!serviceTokenId || !clientId || !clientSecret) die('Cloudflare did not return complete service-token credentials');
+  fs.mkdirSync(RUNTIME, { recursive: true });
+  fs.writeFileSync(ACCESS_SERVICE_CREDENTIALS, `${JSON.stringify({
+    schema_version: 1,
+    created_at: new Date().toISOString(),
+    hostname: HOSTNAME,
+    service_token_id: serviceTokenId,
+    client_id: clientId,
+    client_secret: clientSecret,
+  }, null, 2)}\n`, { mode: 0o600 });
+  fs.chmodSync(ACCESS_SERVICE_CREDENTIALS, 0o600);
+  return { serviceTokenId, clientId, clientSecret };
+}
+
+function removeServiceCredentials() {
+  try { fs.rmSync(ACCESS_SERVICE_CREDENTIALS, { force: true }); }
+  catch { /* best-effort cleanup only */ }
+}
+
+async function ensureServiceToken() {
+  const { accountId } = auth();
+  const tokenRows = await api('GET', `/accounts/${accountId}/access/service_tokens`);
+  const matches = (Array.isArray(tokenRows) ? tokenRows : []).filter(token => token.name === ACCESS_SERVICE_TOKEN_NAME);
+  if (matches.length > 1) die(`Multiple service tokens named ${ACCESS_SERVICE_TOKEN_NAME}`);
+
+  if (matches.length === 0) {
+    const created = await api('POST', `/accounts/${accountId}/access/service_tokens`, {
+      name: ACCESS_SERVICE_TOKEN_NAME,
+      duration: ACCESS_SERVICE_TOKEN_DURATION,
+    });
+    return { token: created, credentials: writeServiceCredentials(created), created: true, rotated: false };
+  }
+
+  const token = matches[0];
+  const local = loadServiceCredentials();
+  if (local && local.serviceTokenId === token.id && local.clientId === token.client_id) {
+    return { token, credentials: local, created: false, rotated: false };
+  }
+
+  const rotated = await api('POST', `/accounts/${accountId}/access/service_tokens/${token.id}/rotate`, {});
+  return { token: rotated, credentials: writeServiceCredentials(rotated), created: false, rotated: true };
+}
+
+async function ensureServicePolicy(app, policies, tokenId) {
+  const { accountId } = auth();
+  if (!app?.id) die('Access application is missing');
+  if (!isManagedPolicySet(policies)) {
+    die(`Existing Access application for ${HOSTNAME} has unmanaged policies; refusing service-auth mutation`);
+  }
+  const existing = (policies || []).find(policy => policy.name === ACCESS_SERVICE_POLICY_NAME);
+  if (existing) {
+    if (!isServiceAuthPolicy(existing, tokenId)) {
+      die('Existing Career Engine automation service policy targets an unexpected service token');
+    }
+    return { policy: existing, created: false };
+  }
+  const policy = await api('POST', `/accounts/${accountId}/access/apps/${app.id}/policies`, servicePolicyBody(tokenId));
+  if (!isServiceAuthPolicy(policy, tokenId)) die('Created service-auth policy did not round-trip safely');
+  return { policy, created: true };
+}
+
 function run(command, args, timeout = 180000) {
   execFileSync(command, args, {
     cwd: REPO,
@@ -219,13 +336,10 @@ async function ensureAccess(before) {
   } else {
     if (app.type !== 'self_hosted') die(`Existing Access application for ${HOSTNAME} is not self_hosted`);
     const current = before.policies || [];
-    const alreadySafe = current.length === 1
-      && current[0].name === ACCESS_POLICY_NAME
-      && isOwnerOnlyPolicy(current[0]);
-    if (!alreadySafe) {
+    if (!isManagedPolicySet(current)) {
       die(`Existing Access application for ${HOSTNAME} has unmanaged policies; refusing destructive replacement without a separate review`);
     }
-    return { app, policy: current[0], created: false };
+    return { app, policy: current.find(item => item.name === ACCESS_POLICY_NAME), created: false };
   }
 
   try {
@@ -264,11 +378,38 @@ async function probeUnauthenticated() {
   return { status: response.status, location_host: locationHost, dashboard_content_exposed: leaked };
 }
 
-async function verify() {
+async function probeServiceAuth(credentials) {
+  const response = await fetch(`https://${HOSTNAME}/`, {
+    redirect: 'manual',
+    headers: {
+      'cache-control': 'no-cache',
+      'CF-Access-Client-Id': credentials.clientId,
+      'CF-Access-Client-Secret': credentials.clientSecret,
+    },
+  });
+  const body = await response.text();
+  if (response.status !== 200) {
+    let locationHost = '';
+    const location = response.headers.get('location');
+    if (location) {
+      try { locationHost = new URL(location, `https://${HOSTNAME}/`).hostname; }
+      catch { locationHost = ''; }
+    }
+    die(`Service-authenticated request failed (HTTP ${response.status}${locationHost ? ` -> ${locationHost}` : ''})`);
+  }
+  return {
+    status: response.status,
+    dashboard_content_visible: /Career Application Review|Career Application Board/i.test(body),
+  };
+}
+
+async function verify({ requireServiceAuth = false } = {}) {
   const state = await inspect();
   if (!state.app) die('Access application is missing');
-  if (state.policies.length !== 1 || state.policies[0].name !== ACCESS_POLICY_NAME || !isOwnerOnlyPolicy(state.policies[0])) {
-    die('Access policy is not exactly the owner-only policy');
+  if (!isManagedPolicySet(state.policies, { requireService: requireServiceAuth })) {
+    die(requireServiceAuth
+      ? 'Access policies are not exactly the managed owner + automation service policies'
+      : 'Access policies contain an unmanaged or unsafe policy');
   }
   if (!state.worker) die('Career Engine Worker is missing');
   if (!state.route || state.route.script !== WORKER_NAME) die(`Worker route ${ROUTE_PATTERN} is missing or targets another script`);
@@ -277,6 +418,19 @@ async function verify() {
     die('workers.dev or Worker preview URLs are enabled');
   }
   return { state: safeState(state), unauthenticated_probe: await probeUnauthenticated() };
+}
+
+async function verifyServiceAuth() {
+  const credentials = loadServiceCredentials();
+  if (!credentials) die('Cloudflare Access service credentials are not configured on this host');
+  const acceptance = await verify({ requireServiceAuth: true });
+  return {
+    mode: 'service-auth-verify',
+    ...acceptance,
+    service_authenticated_probe: await probeServiceAuth(credentials),
+    credentials_file: ACCESS_SERVICE_CREDENTIALS,
+    credentials_permissions: '0600',
+  };
 }
 
 async function rollbackFromSnapshot(backupPath) {
@@ -344,12 +498,49 @@ async function preflight() {
     mutation_performed: false,
     dns_proxy_ready: Boolean(state.dns?.proxied),
     state: safeState(state),
-    existing_access_safe: !state.app || (
-      state.policies.length === 1
-      && state.policies[0].name === ACCESS_POLICY_NAME
-      && isOwnerOnlyPolicy(state.policies[0])
-    ),
+    existing_access_safe: !state.app || isManagedPolicySet(state.policies),
   };
+}
+
+async function setupServiceAuth() {
+  const { accountId } = auth();
+  const before = await inspect();
+  if (!before.app) die('Career Engine Access application must exist before service auth is configured');
+  if (!isManagedPolicySet(before.policies)) {
+    die('Career Engine Access application contains unmanaged policies; refusing service-auth setup');
+  }
+  const backup = writeBackup(before);
+  let serviceToken;
+
+  try {
+    serviceToken = await ensureServiceToken();
+    const policy = await ensureServicePolicy(before.app, before.policies, serviceToken.token.id);
+    const acceptance = await verifyServiceAuth();
+    return {
+      mode: 'service-auth-setup',
+      backup,
+      service_token_name: ACCESS_SERVICE_TOKEN_NAME,
+      service_token_id: serviceToken.token.id,
+      service_token_created: serviceToken.created,
+      service_token_rotated: serviceToken.rotated,
+      service_policy_id: policy.policy.id,
+      service_policy_created: policy.created,
+      credentials_file: ACCESS_SERVICE_CREDENTIALS,
+      credentials_permissions: '0600',
+      ...acceptance,
+    };
+  } catch (error) {
+    try { await rollbackFromSnapshot(backup); }
+    catch (rollbackError) {
+      throw new Error(`${error.message}; automatic Access-policy rollback also failed: ${rollbackError.message}`);
+    }
+    if (serviceToken?.created && serviceToken?.token?.id) {
+      try { await api('DELETE', `/accounts/${accountId}/access/service_tokens/${serviceToken.token.id}`); }
+      catch { /* original error remains primary */ }
+      removeServiceCredentials();
+    }
+    throw error;
+  }
 }
 
 async function deploy() {
@@ -384,13 +575,26 @@ async function deploy() {
 }
 
 function selfTest() {
-  const good = ownerPolicyBody();
+  const owner = ownerPolicyBody();
+  const service = servicePolicyBody('svc-test');
   const everyone = { ...ownerPolicyBody(), include: [{ everyone: {} }] };
   const other = { ...ownerPolicyBody(), include: [{ email: { email: 'other@example.com' } }] };
-  if (!isOwnerOnlyPolicy(good)) die('self-test rejected the canonical owner policy');
+  const wrongService = { ...servicePolicyBody('svc-test'), include: [{ service_token: { token_id: 'other-service' } }] };
+  if (!isOwnerOnlyPolicy(owner)) die('self-test rejected the canonical owner policy');
   if (isOwnerOnlyPolicy(everyone)) die('self-test accepted Everyone');
   if (isOwnerOnlyPolicy(other)) die('self-test accepted the wrong email');
-  return { mode: 'self-test', passed: true, worker_name: WORKER_NAME, owner_email: OWNER_EMAIL };
+  if (!isServiceAuthPolicy(service, 'svc-test')) die('self-test rejected the canonical service policy');
+  if (isServiceAuthPolicy(wrongService, 'svc-test')) die('self-test accepted the wrong service token');
+  if (!isManagedPolicySet([owner])) die('self-test rejected owner-only managed policy set');
+  if (!isManagedPolicySet([owner, service], { requireService: true })) die('self-test rejected owner + service managed policy set');
+  if (isManagedPolicySet([owner, { ...service, name: 'unmanaged' }])) die('self-test accepted unmanaged policy');
+  return {
+    mode: 'self-test',
+    passed: true,
+    worker_name: WORKER_NAME,
+    owner_email: OWNER_EMAIL,
+    service_token_name: ACCESS_SERVICE_TOKEN_NAME,
+  };
 }
 
 async function main() {
@@ -400,8 +604,10 @@ async function main() {
   else if (mode === '--preflight') result = await preflight();
   else if (mode === '--deploy') result = await deploy();
   else if (mode === '--verify') result = await verify();
+  else if (mode === '--service-auth-setup') result = await setupServiceAuth();
+  else if (mode === '--service-auth-verify') result = await verifyServiceAuth();
   else if (mode === '--rollback') result = await rollbackFromSnapshot(argument);
-  else die('Usage: deploy_cloudflare_access.js --self-test|--preflight|--deploy|--verify|--rollback <backup.json>');
+  else die('Usage: deploy_cloudflare_access.js --self-test|--preflight|--deploy|--verify|--service-auth-setup|--service-auth-verify|--rollback <backup.json>');
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -412,4 +618,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { ownerPolicyBody, isOwnerOnlyPolicy, safeState };
+module.exports = {
+  ownerPolicyBody,
+  servicePolicyBody,
+  isOwnerOnlyPolicy,
+  isServiceAuthPolicy,
+  isManagedPolicySet,
+  safeState,
+};
