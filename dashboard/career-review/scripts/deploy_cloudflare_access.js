@@ -21,6 +21,7 @@ const ACCESS_SERVICE_TOKEN_NAME = 'Career Engine VPS automation';
 const ACCESS_SERVICE_POLICY_NAME = 'Career Engine automation service';
 const ACCESS_SERVICE_TOKEN_DURATION = '8760h';
 const ACCESS_SERVICE_CREDENTIALS = path.join(RUNTIME, 'cloudflare-access-service-token.json');
+const ACCESS_SERVICE_CREDENTIALS_SCOPE = 'account_self_hosted_access_apps';
 const OWNER_EMAIL = 'hameedo@gmail.com';
 
 function die(message) {
@@ -203,6 +204,152 @@ async function inspect({ requireProxied = true } = {}) {
   return { dns, app, policies, route, worker, subdomain };
 }
 
+function safeAccountState(applications) {
+  return (applications || []).map(item => ({
+    id: item.app?.id || '',
+    name: item.app?.name || '',
+    domain: item.app?.domain || '',
+    type: item.app?.type || '',
+    policies: (item.policies || []).map(safePolicy),
+  }));
+}
+
+async function inspectSelfHostedApps() {
+  const { accountId } = auth();
+  const rows = await api('GET', `/accounts/${accountId}/access/apps`);
+  const apps = (Array.isArray(rows) ? rows : []).filter(app => app.type === 'self_hosted');
+  const result = [];
+  for (const app of apps) {
+    const rowsForApp = await api('GET', `/accounts/${accountId}/access/apps/${app.id}/policies`);
+    result.push({ app, policies: Array.isArray(rowsForApp) ? rowsForApp : [] });
+  }
+  return result;
+}
+
+function accountServicePolicyBody(tokenId, precedence) {
+  const body = servicePolicyBody(tokenId);
+  return { ...body, precedence };
+}
+
+function writeAccountBackup(applications) {
+  fs.mkdirSync(RUNTIME, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const target = path.join(RUNTIME, `cloudflare-access-account-backup-${stamp}.json`);
+  fs.writeFileSync(target, `${JSON.stringify({
+    schema_version: 1,
+    created_at: new Date().toISOString(),
+    scope: ACCESS_SERVICE_CREDENTIALS_SCOPE,
+    previous: safeAccountState(applications),
+  }, null, 2)}\n`, { mode: 0o600 });
+  return target;
+}
+
+function ensureCredentialScope(token = null) {
+  const parsed = JSON.parse(fs.readFileSync(ACCESS_SERVICE_CREDENTIALS, 'utf8'));
+  const nextScope = ACCESS_SERVICE_CREDENTIALS_SCOPE;
+  const nextExpiry = token ? tokenExpiresAt(token) : String(parsed.expires_at || '').trim();
+  if (parsed.scope === nextScope && parsed.expires_at === nextExpiry) return;
+  parsed.scope = nextScope;
+  parsed.expires_at = nextExpiry;
+  fs.writeFileSync(ACCESS_SERVICE_CREDENTIALS, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
+  fs.chmodSync(ACCESS_SERVICE_CREDENTIALS, 0o600);
+}
+
+async function ensureServicePolicyOnApp(item, tokenId) {
+  const { accountId } = auth();
+  const matches = (item.policies || []).filter(policy => policy.name === ACCESS_SERVICE_POLICY_NAME);
+  if (matches.length > 1) die(`Multiple ${ACCESS_SERVICE_POLICY_NAME} policies exist for ${item.app.domain}`);
+  if (matches.length === 1) {
+    if (!isServiceAuthPolicy(matches[0], tokenId)) die(`Service policy for ${item.app.domain} targets an unexpected token`);
+    return { policy: matches[0], created: false };
+  }
+  const numericPrecedences = (item.policies || []).map(policy => Number(policy.precedence)).filter(Number.isFinite);
+  const precedence = numericPrecedences.length ? Math.max(...numericPrecedences) + 1 : 1;
+  const policy = await api('POST', `/accounts/${accountId}/access/apps/${item.app.id}/policies`, accountServicePolicyBody(tokenId, precedence));
+  if (!isServiceAuthPolicy(policy, tokenId)) die(`Created service policy did not round-trip safely for ${item.app.domain}`);
+  return { policy, created: true };
+}
+
+async function probeAccountServiceAuth(credentials, applications) {
+  const results = [];
+  for (const item of applications) {
+    const hostname = String(item.app.domain || '').replace(/\/$/, '');
+    if (!hostname) continue;
+    try {
+      const response = await fetch(`https://${hostname}/`, {
+        redirect: 'manual',
+        headers: {
+          'cache-control': 'no-cache',
+          'CF-Access-Client-Id': credentials.clientId,
+          'CF-Access-Client-Secret': credentials.clientSecret,
+        },
+      });
+      const body = await response.text();
+      results.push({
+        hostname,
+        status: response.status,
+        dashboard_content_visible: /Career Application Review|Career Application Board/i.test(body),
+      });
+    } catch (error) {
+      results.push({ hostname, status: null, fetch_error: String(error.message || 'fetch failed') });
+    }
+  }
+  return results;
+}
+
+async function verifyAccountServiceAuth() {
+  const credentials = loadServiceCredentials();
+  if (!credentials) die('Cloudflare Access service credentials are not configured on this host');
+  ensureCredentialScope();
+  const applications = await inspectSelfHostedApps();
+  if (!applications.length) die('No self-hosted Cloudflare Access applications were found');
+  const tokenId = credentials.serviceTokenId;
+  const policyChecks = applications.map(item => {
+    const matches = (item.policies || []).filter(policy => policy.name === ACCESS_SERVICE_POLICY_NAME);
+    return { hostname: item.app.domain, service_policy_count: matches.length, valid: matches.length === 1 && isServiceAuthPolicy(matches[0], tokenId) };
+  });
+  if (policyChecks.some(item => !item.valid)) die('One or more self-hosted Access applications lack the managed service policy');
+  return {
+    mode: 'service-auth-account-verify',
+    scope: ACCESS_SERVICE_CREDENTIALS_SCOPE,
+    self_hosted_app_count: applications.length,
+    policy_checks: policyChecks,
+    service_authenticated_probes: await probeAccountServiceAuth(credentials, applications),
+    credentials_file: ACCESS_SERVICE_CREDENTIALS,
+    credentials_permissions: '0600',
+    service_token_expires_at: credentials.expiresAt || '',
+    service_token_rotation_window_days: 30,
+  };
+}
+
+async function setupAccountServiceAuth() {
+  const applications = await inspectSelfHostedApps();
+  if (!applications.length) die('No self-hosted Cloudflare Access applications were found');
+  const backup = writeAccountBackup(applications);
+  let serviceToken;
+  try {
+    serviceToken = await ensureServiceToken();
+    ensureCredentialScope(serviceToken.token);
+    const results = [];
+    for (const item of applications) {
+      results.push({ hostname: item.app.domain, ...(await ensureServicePolicyOnApp(item, serviceToken.token.id)) });
+    }
+    const acceptance = await verifyAccountServiceAuth();
+    return {
+      mode: 'service-auth-account-setup',
+      scope: ACCESS_SERVICE_CREDENTIALS_SCOPE,
+      backup,
+      service_token_name: ACCESS_SERVICE_TOKEN_NAME,
+      service_token_id: serviceToken.token.id,
+      service_token_created: serviceToken.created,
+      service_token_rotated: serviceToken.rotated,
+      applications: results.map(item => ({ hostname: item.hostname, policy_id: item.policy.id, policy_created: item.created })),
+      ...acceptance,
+    };
+  } catch (error) {
+    throw new Error(`${error.message}; account-wide service-auth changes were not automatically rolled back; use the recorded backup for review`);
+  }
+}
 function writeBackup(state) {
   fs.mkdirSync(RUNTIME, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -217,6 +364,29 @@ function writeBackup(state) {
   return target;
 }
 
+function tokenExpiresAt(token) {
+  const explicit = token?.expires_at || token?.expiration || token?.expires_on || '';
+  if (explicit) {
+    const parsed = new Date(explicit);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  const created = token?.created_at || token?.createdAt || token?.created_on || '';
+  if (created) {
+    const parsed = new Date(created);
+    if (!Number.isNaN(parsed.getTime())) {
+      parsed.setTime(parsed.getTime() + (365 * 24 * 60 * 60 * 1000));
+      return parsed.toISOString();
+    }
+  }
+  return '';
+}
+
+function tokenNeedsRotation(token) {
+  const expiresAt = tokenExpiresAt(token);
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() - Date.now() <= (30 * 24 * 60 * 60 * 1000);
+}
+
 function loadServiceCredentials() {
   if (!fs.existsSync(ACCESS_SERVICE_CREDENTIALS)) return null;
   const stat = fs.statSync(ACCESS_SERVICE_CREDENTIALS);
@@ -226,7 +396,7 @@ function loadServiceCredentials() {
   const clientId = String(parsed.client_id || '').trim();
   const clientSecret = String(parsed.client_secret || '').trim();
   if (!serviceTokenId || !clientId || !clientSecret) die('Cloudflare Access service credential file is incomplete');
-  return { serviceTokenId, clientId, clientSecret };
+  return { serviceTokenId, clientId, clientSecret, expiresAt: String(parsed.expires_at || '').trim() };
 }
 
 function writeServiceCredentials(token) {
@@ -239,6 +409,8 @@ function writeServiceCredentials(token) {
     schema_version: 1,
     created_at: new Date().toISOString(),
     hostname: HOSTNAME,
+    scope: ACCESS_SERVICE_CREDENTIALS_SCOPE,
+    expires_at: tokenExpiresAt(token),
     service_token_id: serviceTokenId,
     client_id: clientId,
     client_secret: clientSecret,
@@ -268,7 +440,7 @@ async function ensureServiceToken() {
 
   const token = matches[0];
   const local = loadServiceCredentials();
-  if (local && local.serviceTokenId === token.id && local.clientId === token.client_id) {
+  if (local && local.serviceTokenId === token.id && local.clientId === token.client_id && !tokenNeedsRotation(token)) {
     return { token, credentials: local, created: false, rotated: false };
   }
 
@@ -430,6 +602,8 @@ async function verifyServiceAuth() {
     service_authenticated_probe: await probeServiceAuth(credentials),
     credentials_file: ACCESS_SERVICE_CREDENTIALS,
     credentials_permissions: '0600',
+    service_token_expires_at: credentials.expiresAt || '',
+    service_token_rotation_window_days: 30,
   };
 }
 
@@ -606,8 +780,10 @@ async function main() {
   else if (mode === '--verify') result = await verify();
   else if (mode === '--service-auth-setup') result = await setupServiceAuth();
   else if (mode === '--service-auth-verify') result = await verifyServiceAuth();
+  else if (mode === '--service-auth-account-setup') result = await setupAccountServiceAuth();
+  else if (mode === '--service-auth-account-verify') result = await verifyAccountServiceAuth();
   else if (mode === '--rollback') result = await rollbackFromSnapshot(argument);
-  else die('Usage: deploy_cloudflare_access.js --self-test|--preflight|--deploy|--verify|--service-auth-setup|--service-auth-verify|--rollback <backup.json>');
+  else die('Usage: deploy_cloudflare_access.js --self-test|--preflight|--deploy|--verify|--service-auth-setup|--service-auth-verify|--service-auth-account-setup|--service-auth-account-verify|--rollback <backup.json>');
   console.log(JSON.stringify(result, null, 2));
 }
 

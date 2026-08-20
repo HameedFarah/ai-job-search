@@ -129,6 +129,7 @@ def _extract_buro_happold(subject: str, body: str, sender: str) -> dict[str, str
         "company": "Buro Happold",
         "role": role,
         "external_job_id": external,
+        "external_job_reference": f"TP/652/{external}",
         "route": "portal",
         "signal": "buro_happold_submission_confirmation",
     }
@@ -172,11 +173,18 @@ def _extract_icims(subject: str, body: str, sender: str) -> dict[str, str] | Non
     return {"company": company, "role": role, "external_job_id": "", "route": "portal", "signal": "icims_submission_confirmation"}
 
 
-def _extract_linkedin(subject: str) -> dict[str, str] | None:
+def _extract_linkedin(subject: str, body: str, urls: list[str]) -> dict[str, Any] | None:
     match = re.search(r"your application was sent to\s+(.+)$", subject, re.I)
     if not match:
         return None
-    return {"company": _text(match.group(1)), "role": "", "external_job_id": "", "route": "portal", "signal": "linkedin_submission_confirmation"}
+    company = _text(match.group(1))
+    primary = next((url for url in urls if re.search(r"linkedin\.com/(?:comm/)?jobs/view/", url, re.I)), "")
+    role = ""
+    body_match = re.search(r"Your application was sent to\s+(.+?)\s+(.+?)\s+\1\s+(?:Riyadh|Jeddah|Dubai|Abu Dhabi|KSA)\b", body, re.I)
+    if body_match:
+        company = _text(body_match.group(1))
+        role = _text(body_match.group(2))
+    return {"company": company, "role": role, "external_job_id": "", "route": "portal", "signal": "linkedin_submission_confirmation", "evidence_urls": [primary] if primary else []}
 
 
 def _extract_sent(message: dict[str, Any], subject: str, body: str) -> dict[str, str] | None:
@@ -216,7 +224,7 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         or _extract_workday(subject, body)
         or _extract_successfactors(subject, body)
         or _extract_icims(subject, body, sender)
-        or _extract_linkedin(subject)
+        or _extract_linkedin(subject, body, urls)
         or _extract_sent(message, subject, body)
     )
     if not extracted:
@@ -231,7 +239,7 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         "subject": subject,
         "sender": sender,
         "date": _message_day(message),
-        "urls": urls,
+        "urls": extracted.get("evidence_urls", urls),
     }
 
 
@@ -272,6 +280,13 @@ def _matches_external(record: dict[str, Any], external: str) -> bool:
 def match_submission_to_tracker(tracker: Any, evidence: dict[str, Any]) -> tuple[str, str]:
     records = _tracker_records(tracker)
     external = _text(evidence.get("external_job_id"))
+    reference = _text(evidence.get("external_job_reference"))
+    if reference:
+        exact_reference_matches = [record for record in records if _key((record.get("job") or {}).get("external_job_id")) == _key(reference)]
+        if len(exact_reference_matches) == 1:
+            return str(exact_reference_matches[0]["job"]["job_id"]), "external_job_id"
+        if len(exact_reference_matches) > 1:
+            return "", "ambiguous_external_job_id"
     if external:
         matches = [record for record in records if _matches_external(record, external)]
         if len(matches) == 1:
