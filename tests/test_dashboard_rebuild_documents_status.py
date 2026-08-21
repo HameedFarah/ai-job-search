@@ -21,6 +21,21 @@ class DashboardRebuildDocumentsStatusTest(unittest.TestCase):
             result = subprocess.run(["node", "--check", str(path)], text=True, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_selected_resume_generation_request_uses_live_ai_requests_schema(self):
+        path = Path("dashboard/career-review/site/assets/external-links.js")
+        text = path.read_text(encoding="utf-8")
+        start = text.index("async function ownerQueuePackageGeneration")
+        end = text.index("const ownerBaseRenderOverlayTemplate", start)
+        block = text[start:end]
+        self.assertIn("request_type: 'edit_cv'", block)
+        self.assertIn("prompt,", block)
+        self.assertIn("state: 'pending'", block)
+        self.assertNotIn("template_id:", block)
+        self.assertIn("(${templateId})", block)
+        if shutil.which("node"):
+            result = subprocess.run(["node", "--check", str(path)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_prepare_has_explicit_owner_review_route_override(self):
         self.assertIn("allow_unresolved_route_for_owner_review", inspect.signature(prepare).parameters)
 
