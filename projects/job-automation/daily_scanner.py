@@ -37,6 +37,8 @@ from career_engine.pipeline import _load_tracker
 from career_engine.scanner import SCANNER_ACTORS, add_path_scan_statistics, run_scan, write_report
 from career_engine.targeting import reconcile_existing_non_target_jobs
 
+_GMAIL_DISCOVERY_LABEL = "gmail_job_alerts"
+
 REVIEW_RUNTIME_BRANCH = "career-review-runtime"
 REVIEW_RUNTIME_REMOTE = "origin"
 REVIEW_RUNTIME_ROOT = Path("projects/job-automation/review-runtime")
@@ -119,6 +121,57 @@ def _score_distribution(results: list[dict[str, Any]], threshold: int) -> dict[s
         else:
             bands["below_50"] += 1
     return bands
+
+
+def _gmail_platform_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): int(v) for k, v in value.items() if isinstance(v, int)}
+
+
+def _gmail_review_block(report: dict[str, Any]) -> dict[str, Any]:
+    discovery = report.get("gmail_discovery") if isinstance(report.get("gmail_discovery"), dict) else {}
+    submission = report.get("gmail_submission_reconciliation") if isinstance(report.get("gmail_submission_reconciliation"), dict) else {}
+    reconciled = submission.get("reconciled") if isinstance(submission.get("reconciled"), list) else []
+    unmatched = submission.get("unmatched") if isinstance(submission.get("unmatched"), list) else []
+    discovery_errors = discovery.get("errors") if isinstance(discovery.get("errors"), list) else []
+    submission_error = submission.get("error")
+    errors: list[str] = []
+    errors.extend(str(v) for v in discovery_errors if v)
+    if submission_error:
+        errors.append(str(submission_error))
+    return {
+        "authenticated": bool(discovery.get("authenticated", submission.get("messages_scanned") is not None)),
+        "messages_scanned": int(discovery.get("messages_scanned") or submission.get("messages_scanned") or 0),
+        "career_relevant_messages": int(discovery.get("career_relevant_messages") or 0),
+        "job_alert_messages": int(discovery.get("job_alert_messages") or 0),
+        "recruiter_messages": int(discovery.get("recruiter_messages") or 0),
+        "vacancy_messages": int(discovery.get("vacancy_messages") or 0),
+        "application_instruction_messages": int(discovery.get("application_instruction_messages") or 0),
+        "submission_confirmation_messages": int(discovery.get("submission_confirmation_messages") or submission.get("submission_messages_classified") or 0),
+        "application_status_messages": int(discovery.get("application_status_messages") or 0),
+        "interview_or_assessment_messages": int(discovery.get("interview_or_assessment_messages") or 0),
+        "candidate_jobs_extracted": int(discovery.get("candidate_jobs_extracted") or 0),
+        "jobs_new_after_deduplication": int(discovery.get("jobs_new_after_deduplication") or 0),
+        "jobs_matched_existing": int(discovery.get("jobs_matched_existing") or 0),
+        "application_confirmations_matched": len(reconciled),
+        "application_confirmations_unmatched": len(unmatched),
+        "application_states_changed": int(submission.get("application_states_changed") or sum(1 for r in reconciled if isinstance(r, dict) and r.get("changed"))),
+        "ambiguous_messages_manual_review": int(discovery.get("ambiguous_messages_manual_review") or 0) + int(submission.get("ambiguous_manual_review") or 0),
+        "errors": errors[:10],
+        "platform_counts": _gmail_platform_counts(discovery.get("platform_counts")),
+        "send_or_submit": False,
+    }
+
+
+def _url_key_for_merge(url: str) -> str:
+    import re as _re
+
+    raw = _re.sub(r"\s+", " ", str(url or "")).strip().split("#", 1)[0].split("?", 1)[0].rstrip("/").lower()
+    m = _re.search(r"linkedin\.com/(?:comm/)?jobs/view/(?:[^/?#]*-)?(\d+)", raw, _re.I)
+    if m:
+        return f"linkedin-job:{m.group(1)}"
+    return raw
 
 
 def _job_projection(
@@ -250,6 +303,7 @@ def _build_review_bundle(report: dict[str, Any]) -> dict[str, Any]:
             "owner_feedback_calibration": _safe_numeric_summary(report.get("owner_feedback_calibration")),
             "target_lane": _safe_numeric_summary(report.get("target_lane_reconciliation")),
         },
+        "gmail": _gmail_review_block(report),
         "source": {
             "head": source_head,
             "origin_master": origin_master,
@@ -385,11 +439,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not publish the sanitized Git review projection (Hermes scanner publishes by default)",
     )
+    parser.add_argument(
+        "--no-gmail",
+        action="store_true",
+        help="Disable Gmail discovery and submission reconciliation integration",
+    )
     args = parser.parse_args(argv)
     source_path = Path(args.input)
     consultant_report = None
     if args.consultants:
         from career_engine.sources.consultants import scan_consultants
+
         consultant_report = scan_consultants(root=REPO_ROOT)
         base = json.loads(source_path.read_text(encoding="utf-8"))
         jobs = base if isinstance(base, list) else base.get("jobs", [])
@@ -397,6 +457,150 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as handle:
             json.dump({"jobs": jobs + consultant_report["jobs"], "paths": scan_paths}, handle, ensure_ascii=False)
             source_path = Path(handle.name)
+
+    gmail_discovery: dict[str, Any] | None = None
+    if not args.no_gmail:
+        try:
+            from career_engine.gmail_discovery import discover_job_mail
+
+            gmail_discovery = discover_job_mail(REPO_ROOT)
+        except Exception as exc:  # noqa: BLE001
+            gmail_discovery = {
+                "schema_version": 1,
+                "authenticated": False,
+                "query": "",
+                "start_date": "",
+                "end_date": "",
+                "messages_scanned": 0,
+                "career_relevant_messages": 0,
+                "job_alert_messages": 0,
+                "recruiter_messages": 0,
+                "vacancy_messages": 0,
+                "application_instruction_messages": 0,
+                "submission_confirmation_messages": 0,
+                "application_status_messages": 0,
+                "interview_or_assessment_messages": 0,
+                "candidate_jobs_extracted": 0,
+                "jobs_new_after_deduplication": 0,
+                "jobs_matched_existing": 0,
+                "ambiguous_messages_manual_review": 0,
+                "platform_counts": {},
+                "errors": [f"{type(exc).__name__}: {str(exc)[:400]}"],
+                "send_or_submit": False,
+                "candidates": [],
+            }
+        # Merge Gmail candidates into the scan input as a distinct source path
+        try:
+            candidates = list(gmail_discovery.get("candidates", []) if isinstance(gmail_discovery.get("candidates"), list) else [])
+            if candidates:
+                base_payload = json.loads(source_path.read_text(encoding="utf-8"))
+                if isinstance(base_payload, list):
+                    existing_jobs: list[dict[str, Any]] = base_payload
+                    existing_paths: list[dict[str, Any]] = []
+                    was_list = True
+                else:
+                    existing_jobs = list(base_payload.get("jobs", []) if isinstance(base_payload.get("jobs"), list) else [])
+                    existing_paths = list(base_payload.get("paths", base_payload.get("scan_paths", [])) if isinstance(base_payload.get("paths", base_payload.get("scan_paths", [])), list) else [])
+                    was_list = False
+                existing_keys = {_url_key_for_merge(str(j.get("source_url") or j.get("application_url") or "")) for j in existing_jobs if j.get("source_url") or j.get("application_url")}
+                existing_keys.update(str(j.get("external_job_id") or "") for j in existing_jobs if j.get("external_job_id"))
+                new_candidates: list[dict[str, Any]] = []
+                matched = 0
+                for cand in candidates:
+                    key = _url_key_for_merge(str(cand.get("source_url") or "")) or str(cand.get("external_job_id") or "")
+                    if key and key in existing_keys:
+                        matched += 1
+                        continue
+                    new_candidates.append(cand)
+                    if key:
+                        existing_keys.add(key)
+                gmail_discovery["jobs_matched_existing"] = matched
+                gmail_discovery["jobs_new_after_deduplication"] = len(new_candidates)
+                if new_candidates:
+                    merged_jobs = existing_jobs + new_candidates
+                    # record gmail as a declared path
+                    gmail_path_entry = {
+                        "path": _GMAIL_DISCOVERY_LABEL,
+                        "attempted": True,
+                        "status": "observed" if new_candidates else "empty",
+                        "jobs_discovered": len(candidates),
+                        "error": "; ".join(str(e) for e in gmail_discovery.get("errors", []) if e)[:300],
+                    }
+                    if was_list:
+                        merged_payload: Any = merged_jobs
+                    else:
+                        merged_payload = {"jobs": merged_jobs, "paths": existing_paths + [gmail_path_entry]}
+                        # keep scan_paths alias if present
+                        if "scan_paths" in base_payload:
+                            merged_payload["scan_paths"] = existing_paths + [gmail_path_entry]
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as handle:
+                        json.dump(merged_payload, handle, ensure_ascii=False)
+                        source_path = Path(handle.name)
+                else:
+                    # still record the path even with zero new candidates (visible but empty)
+                    if not isinstance(base_payload, list):
+                        gmail_path_entry = {
+                            "path": _GMAIL_DISCOVERY_LABEL,
+                            "attempted": True,
+                            "status": "empty" if not gmail_discovery.get("errors") else "error",
+                            "jobs_discovered": 0,
+                            "error": "; ".join(str(e) for e in gmail_discovery.get("errors", []) if e)[:300],
+                        }
+                        merged_payload = {"jobs": existing_jobs, "paths": existing_paths + [gmail_path_entry]}
+                        if "scan_paths" in base_payload:
+                            merged_payload["scan_paths"] = existing_paths + [gmail_path_entry]
+                        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as handle:
+                            json.dump(merged_payload, handle, ensure_ascii=False)
+                            source_path = Path(handle.name)
+            else:
+                # No candidates but record empty path for visibility when authenticated
+                try:
+                    base_payload = json.loads(source_path.read_text(encoding="utf-8"))
+                    if not isinstance(base_payload, list):
+                        existing_paths = list(base_payload.get("paths", base_payload.get("scan_paths", [])) if isinstance(base_payload.get("paths", base_payload.get("scan_paths", [])), list) else [])
+                        status = "error" if gmail_discovery.get("errors") else ("empty" if gmail_discovery.get("authenticated") else "unavailable")
+                        gmail_path_entry = {
+                            "path": _GMAIL_DISCOVERY_LABEL,
+                            "attempted": True,
+                            "status": status,
+                            "jobs_discovered": 0,
+                            "error": "; ".join(str(e) for e in gmail_discovery.get("errors", []) if e)[:300],
+                        }
+                        merged_payload = {"jobs": list(base_payload.get("jobs", [])), "paths": existing_paths + [gmail_path_entry]}
+                        if "scan_paths" in base_payload:
+                            merged_payload["scan_paths"] = existing_paths + [gmail_path_entry]
+                        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as handle:
+                            json.dump(merged_payload, handle, ensure_ascii=False)
+                            source_path = Path(handle.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    else:
+        gmail_discovery = {
+            "schema_version": 1,
+            "authenticated": False,
+            "query": "",
+            "start_date": "",
+            "end_date": "",
+            "messages_scanned": 0,
+            "career_relevant_messages": 0,
+            "job_alert_messages": 0,
+            "recruiter_messages": 0,
+            "vacancy_messages": 0,
+            "application_instruction_messages": 0,
+            "submission_confirmation_messages": 0,
+            "application_status_messages": 0,
+            "interview_or_assessment_messages": 0,
+            "candidate_jobs_extracted": 0,
+            "jobs_new_after_deduplication": 0,
+            "jobs_matched_existing": 0,
+            "ambiguous_messages_manual_review": 0,
+            "platform_counts": {},
+            "errors": [],
+            "send_or_submit": False,
+            "candidates": [],
+        }
 
     bundle = load_bundle(REPO_ROOT)
     _, paths = load_config(REPO_ROOT)
@@ -409,6 +613,9 @@ def main(argv: list[str] | None = None) -> int:
     # run_scan owns discovery plus higher-authority Gmail/owner reconciliation.
     report = run_scan(source_path, root=REPO_ROOT, scanner_id=args.scanner_id)
     report["target_lane_reconciliation"] = target_lane_reconciliation
+    if gmail_discovery is not None:
+        sanitized = {k: v for k, v in gmail_discovery.items() if k != "candidates"}
+        report["gmail_discovery"] = sanitized
 
     if consultant_report is not None:
         report["consultant_sources"] = consultant_report["sources"]

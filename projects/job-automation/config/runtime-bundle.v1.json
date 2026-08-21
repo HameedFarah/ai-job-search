@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.4",
-  "built_at": "2026-08-15T10:58:58+00:00",
+  "built_at": "2026-08-21T21:23:43+00:00",
   "source_hash": "4ad35491ecb6b81502f85759234571c579b8e8de644f3294205698e9373488df",
   "sources": [
     {
@@ -1550,6 +1550,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "09c6792f0d23808bce5e9c1126f7c4f8d9e4e3c89243c3429985e7eac16e8bf4",
+  "bundle_hash": "86d7717b6e055b3fc31f4a41c11524d75326223a5267cc0d5f0af11b058a42cd",
   "cache_reused": false
 }

@@ -506,12 +506,17 @@ def reconcile_submission_mail(
     unmatched: list[dict[str, Any]] = []
     classified = 0
 
+    ambiguous = 0
     for message in messages:
         message_id = _text(message.get("id"))
         if not message_id or message_id in processed:
             continue
         evidence = classify_submission_message(message)
         if not evidence:
+            # Count phrase-only ambiguity without mutating tracker state
+            lowered = f"{_text(message.get('subject'))}\n{_text(message.get('body'))}".lower()
+            if any(phrase in lowered for phrase in SUBMISSION_PHRASES):
+                ambiguous += 1
             continue
         classified += 1
         job_id, reason = match_submission_to_tracker(tracker, evidence)
@@ -553,6 +558,8 @@ def reconcile_submission_mail(
         "submission_messages_classified": classified,
         "reconciled": reconciled,
         "unmatched": unmatched,
+        "ambiguous_manual_review": ambiguous,
+        "application_states_changed": sum(1 for item in reconciled if item.get("changed")),
         "gmail_mutations": 0,
         "send_or_submit": False,
     }
