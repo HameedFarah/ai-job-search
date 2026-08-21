@@ -148,7 +148,7 @@
   // bulk-table.js installs the final optimistic moveRole implementation later in
   // document order. Wait until DOMContentLoaded so every card/table/drag/detail
   // status path is wrapped once, while the STAGES entry is available immediately.
-  if (document.readyState === 'loading') {
+  if (document.readyState === 'loading' || document.readyState === 'interactive') {
     document.addEventListener('DOMContentLoaded', installMoveRoleWrapper, { once: true });
   } else {
     installMoveRoleWrapper();

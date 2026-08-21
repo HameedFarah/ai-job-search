@@ -54,6 +54,12 @@ def test_closed_and_irrelevant_detail_dismiss_with_undo_toast() -> None:
     assert "Job closed" in source
 
 
+def test_relevance_wrapper_waits_for_later_deferred_bulk_table_script() -> None:
+    source = _source("dashboard/career-review/site/assets/irrelevant-feedback.js")
+    assert "document.readyState === 'loading' || document.readyState === 'interactive'" in source
+    assert "document.addEventListener('DOMContentLoaded', installMoveRoleWrapper" in source
+
+
 def test_owner_feedback_parser_recognises_irrelevant_events() -> None:
     source = _source("career_engine/owner_feedback.py")
     assert "role_marked_irrelevant" in source
