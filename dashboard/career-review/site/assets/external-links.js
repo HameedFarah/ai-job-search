@@ -201,8 +201,7 @@ async function ownerQueuePackageGeneration(role, templateId = selectedTemplateFo
     role_key: role.key,
     request_type: 'edit_cv',
     prompt,
-    state: 'pending',
-    template_id: templateId
+    state: 'pending'
   }, `generate-package-${role.key}-${templateId}-${Date.now()}`);
   const normalized = { id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt };
   state.aiRequests.push(normalized);
