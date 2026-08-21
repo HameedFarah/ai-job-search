@@ -204,7 +204,7 @@ def _build_review_bundle(report: dict[str, Any]) -> dict[str, Any]:
     origin_master = ""
     try:
         source_head = _git_value("rev-parse", "HEAD")
-        _git("fetch", REVIEW_RUNTIME_REMOTE, "master", check=False)
+        _git("fetch", REVIEW_RUNTIME_REMOTE, check=False)
         origin_master = _git_value("rev-parse", f"{REVIEW_RUNTIME_REMOTE}/master")
     except (subprocess.SubprocessError, OSError):
         pass
@@ -311,7 +311,7 @@ def _add_trend(bundle: dict[str, Any], worktree: Path) -> None:
 
 def _publish_review_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     try:
-        fetch = _git("fetch", REVIEW_RUNTIME_REMOTE, REVIEW_RUNTIME_BRANCH, check=False)
+        fetch = _git("fetch", REVIEW_RUNTIME_REMOTE, check=False)
         if fetch.returncode != 0:
             return {
                 "status": "failed",
