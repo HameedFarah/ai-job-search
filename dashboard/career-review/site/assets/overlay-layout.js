@@ -35,7 +35,7 @@
     document.documentElement.classList.remove('overlay-open');
     document.body.classList.remove('overlay-open');
 
-    window.scrollTo({ left: overlayOpenScrollX, top: overlayOpenScrollY, behavior: 'instant' });
+    window.scrollTo({ left: overlayOpenScrollX, top: overlayOpenScrollY, behavior: 'auto' });
     if (returnKey) {
       requestAnimationFrame(() => {
         const card = $(`.role-card[data-role-key="${returnKey}"]`);
@@ -47,39 +47,16 @@
     }
   };
 
-  function buildVisibleStatusControl(role) {
-    const meta = document.querySelector('.overlay-meta-strip');
-    if (!meta) return;
-
-    meta.querySelector('.owner-overlay-status-control')?.remove();
-    const control = document.createElement('label');
-    control.className = 'owner-overlay-status-control';
-    const caption = document.createElement('span');
-    caption.textContent = 'Status';
-    const select = document.createElement('select');
-    select.className = 'owner-overlay-stage-select card-stage-select';
-    select.setAttribute('aria-label', `Change status for ${role.role}`);
-
-    const current = stageFor(role);
-    for (const stage of STAGES) {
-      const option = document.createElement('option');
-      option.value = stage.id;
-      option.textContent = stage.label;
-      option.selected = stage.id === current;
-      select.append(option);
-    }
-
-    select.addEventListener('change', async () => {
-      const nextStage = select.value;
-      if (nextStage === stageFor(role)) return;
-      select.disabled = true;
-      const ok = await moveRole(role, nextStage, nextStage === 'applied');
-      if (ok === false && select.isConnected) select.value = stageFor(role);
-      if (select.isConnected) select.disabled = false;
-    });
-
-    control.append(caption, select);
-    meta.append(control);
+  /* bulk-table.js already owns the persistent stage select, including the
+     special Rebuild CV & cover letter action. Reuse that one source of behavior
+     and only relocate it to the far right of the metadata strip. */
+  function moveExistingStatusToRight() {
+    if (typeof ensureOverlayStageSelect === 'function') ensureOverlayStageSelect();
+    const strip = document.querySelector('.overlay-meta-strip');
+    const status = strip?.querySelector('.detail-stage-inline');
+    if (!strip || !status) return;
+    status.classList.add('owner-overlay-status-control');
+    strip.append(status);
   }
 
   function moveResumeSelectorAboveViewer() {
@@ -94,15 +71,15 @@
       resumeWorkspace.prepend(templateGroup);
     }
 
-    /* Stage is now the always-visible right-aligned select and Submission CV is
-       expanded above the preview, so the old three-dot popover is redundant. */
+    /* Status is now the existing always-visible right-aligned control and
+       Submission CV is expanded above the preview, so the old popover is redundant. */
     menu.remove();
   }
 
   const baseRenderOverlayContent = renderOverlayContent;
   renderOverlayContent = function ownerLayoutRenderOverlayContent(role) {
     baseRenderOverlayContent(role);
-    buildVisibleStatusControl(role);
+    moveExistingStatusToRight();
     moveResumeSelectorAboveViewer();
   };
 
@@ -115,9 +92,9 @@
       gap: 10px !important;
     }
 
-    .owner-overlay-status-control {
-      margin-left: auto;
-      display: inline-flex;
+    .detail-stage-inline.owner-overlay-status-control {
+      margin-left: auto !important;
+      display: inline-flex !important;
       align-items: center;
       gap: 6px;
       flex: 0 0 auto;
@@ -125,11 +102,11 @@
       font-size: .64rem;
       font-weight: 800;
     }
-    .owner-overlay-status-control > span {
+    .detail-stage-inline.owner-overlay-status-control > strong {
       text-transform: uppercase;
       letter-spacing: .04em;
     }
-    .owner-overlay-stage-select {
+    .detail-stage-inline.owner-overlay-status-control .detail-stage-select {
       min-width: 168px;
       max-width: 220px;
       border: 1px solid var(--line);
@@ -141,7 +118,7 @@
       font-weight: 700;
       outline: none;
     }
-    .owner-overlay-stage-select:focus {
+    .detail-stage-inline.owner-overlay-status-control .detail-stage-select:focus {
       border-color: #2859c8;
       box-shadow: 0 0 0 2px rgba(40,89,200,.12);
     }
@@ -210,13 +187,13 @@
 
     @media (max-width: 1050px) {
       .owner-resume-selector #ov-template-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .owner-overlay-status-control { width: 100%; margin-left: 0; justify-content: flex-end; }
+      .detail-stage-inline.owner-overlay-status-control { width: 100%; margin-left: 0 !important; justify-content: flex-end; }
       .overlay-meta-strip { flex-wrap: wrap !important; }
     }
     @media (max-width: 680px) {
       .owner-resume-selector #ov-template-options { grid-template-columns: 1fr; }
-      .owner-overlay-status-control { justify-content: stretch; }
-      .owner-overlay-stage-select { flex: 1 1 auto; max-width: none; }
+      .detail-stage-inline.owner-overlay-status-control { justify-content: stretch; }
+      .detail-stage-inline.owner-overlay-status-control .detail-stage-select { flex: 1 1 auto; max-width: none; }
     }
   `;
   document.head.append(style);
