@@ -31,12 +31,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Gmail submission reconciliation for cron context")
     parser.add_argument("--repo", default=str(REPO_ROOT), help="Repository root")
     parser.add_argument("--days", type=int, default=45, help="Window when no incremental state exists")
+    parser.add_argument("--start", default="", help="Explicit window start YYYY-MM-DD (overrides incremental state)")
     parser.add_argument("--limit", type=int, default=200, help="Max Gmail messages to scan")
     parser.add_argument("--backend", choices=("auto", "gws", "himalaya"), default="auto")
     args = parser.parse_args(argv)
 
     root = Path(args.repo)
-    today = date.today()
+    start = date.fromisoformat(args.start) if args.start else None
 
     # ``auto`` is canonical: repository gws integration first.
     # himalaya read-only fallback is accepted per spec but not needed while
@@ -62,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from career_engine.gmail_reconcile import reconcile_submission_mail
 
-        report = reconcile_submission_mail(root, max_results=args.limit)
+        report = reconcile_submission_mail(root, start=start, max_results=args.limit)
         # Map to the shape the cron context script expects.
         reconciled = report.get("reconciled", []) if isinstance(report.get("reconciled"), list) else []
         unmatched = report.get("unmatched", []) if isinstance(report.get("unmatched"), list) else []

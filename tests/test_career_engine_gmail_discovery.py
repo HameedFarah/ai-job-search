@@ -341,6 +341,91 @@ def test_gmail_failure_surfaced_not_silent_zero(tmp_path: Path, monkeypatch) -> 
     assert "invalid_grant" in block["errors"][0]
 
 
+def test_review_projection_gmail_counts_match_scanner_statistics(tmp_path: Path, monkeypatch) -> None:
+    """Defect A: derived Gmail summary must equal the scanner's canonical per-path counts."""
+    ds = _load_daily_scanner()
+
+    class FakeTracker:
+        def list_rows(self): return []
+        def get_job(self, jid): raise KeyError(jid)
+
+    monkeypatch.setattr(ds, "_load_tracker", lambda paths: FakeTracker())
+    monkeypatch.setattr(ds, "load_bundle", lambda root: {"bundle_hash": "abc", "taxonomy": {}, "config": {"scoring": {"thresholds": {"high_priority": 70}}}})
+    monkeypatch.setattr(ds, "load_config", lambda root: ({"scoring": {"thresholds": {"high_priority": 70}}}, type("P", (), {"tracker_base": Path(tmp_path)})()))
+    monkeypatch.setattr(ds, "_git_value", lambda *a, **kw: "")
+    monkeypatch.setattr(ds, "_git", lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+
+    report = {
+        "scanner_id": "hermes_scanner",
+        "scanned_at": "2026-08-22T00:15:00+03:00",
+        "bundle_hash": "abc",
+        "results": [],
+        "statistics": {
+            "jobs_discovered": 504, "jobs_ingested": 504, "new_jobs": 89, "existing_jobs": 415,
+            "by_path": {
+                "gmail_job_alerts": {
+                    "attempted": True, "status": "observed",
+                    "jobs_discovered": 105, "jobs_ingested": 105,
+                    "new_jobs": 89, "existing_jobs": 16,
+                },
+            },
+        },
+        # Raw discovery-level numbers (pre-tracker-dedupe) must NOT leak into the
+        # canonical summary when per-path statistics exist.
+        "gmail_discovery": {
+            "authenticated": True, "messages_scanned": 150,
+            "candidate_jobs_extracted": 802,
+            "jobs_new_after_deduplication": 105, "jobs_matched_existing": 0,
+            "platform_counts": {"linkedin": 64}, "errors": [], "send_or_submit": False,
+        },
+        "gmail_submission_reconciliation": {
+            "messages_scanned": 10, "submission_messages_classified": 3,
+            "reconciled": [], "unmatched": [], "ambiguous_manual_review": 0,
+            "application_states_changed": 0, "send_or_submit": False,
+        },
+    }
+    bundle = ds._build_review_bundle(report)
+    gmail = bundle["gmail"]
+    assert gmail["jobs_discovered_from_gmail"] == 105
+    assert gmail["jobs_new_after_deduplication"] == 89
+    assert gmail["jobs_matched_existing"] == 16
+    # Consistency with the source coverage row for the same path.
+    coverage = next(item for item in bundle["source_coverage"] if item["path"] == "gmail_job_alerts")
+    assert gmail["jobs_discovered_from_gmail"] == coverage["jobs_discovered"]
+    assert gmail["jobs_new_after_deduplication"] == coverage["new_jobs"]
+    assert gmail["jobs_matched_existing"] == coverage["existing_jobs"]
+
+
+def test_scan_sha_vs_current_sha_not_conflated(tmp_path: Path, monkeypatch) -> None:
+    """Defects B/C: scan-time source identity and projection-time identity are distinct fields."""
+    ds = _load_daily_scanner()
+
+    class FakeTracker:
+        def list_rows(self): return []
+        def get_job(self, jid): raise KeyError(jid)
+
+    monkeypatch.setattr(ds, "_load_tracker", lambda paths: FakeTracker())
+    monkeypatch.setattr(ds, "load_bundle", lambda root: {"bundle_hash": "abc", "taxonomy": {}, "config": {"scoring": {"thresholds": {"high_priority": 70}}}})
+    monkeypatch.setattr(ds, "load_config", lambda root: ({"scoring": {"thresholds": {"high_priority": 70}}}, type("P", (), {"tracker_base": Path(tmp_path)})()))
+    monkeypatch.setattr(ds, "_git_value", lambda *a, **kw: "c" * 40)
+    monkeypatch.setattr(ds, "_git", lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+
+    scan_sha = "3" * 40
+    report = {
+        "scanner_id": "hermes_scanner",
+        "scanned_at": "2026-08-22T00:15:00+03:00",
+        "bundle_hash": "abc",
+        "scan_source_sha": scan_sha,
+        "results": [],
+        "statistics": {"jobs_discovered": 0, "jobs_ingested": 0, "new_jobs": 0, "existing_jobs": 0, "by_path": {}},
+    }
+    bundle = ds._build_review_bundle(report)
+    scan = bundle["scan"]
+    assert scan["scan_source_sha"] == scan_sha
+    assert scan["current_source_sha"] == "c" * 40
+    assert scan["scan_sha_matches_current_source"] is False
+
+
 def test_owner_decisions_remain_authoritative() -> None:
     text = Path("projects/job-automation/daily_scanner.py").read_text(encoding="utf-8")
     # Discovery only appends candidates; reconciliation uses _append_submission_evidence which never overwrites owner-applied state without evidence

@@ -140,6 +140,20 @@ def _gmail_review_block(report: dict[str, Any]) -> dict[str, Any]:
     errors.extend(str(v) for v in discovery_errors if v)
     if submission_error:
         errors.append(str(submission_error))
+    # Canonical discovery reconciliation counts come from the scanner's own
+    # per-path statistics (tracker dedupe applied); discovery-level numbers
+    # only describe the raw mailbox extraction before ingestion.
+    statistics_block = report.get("statistics") if isinstance(report.get("statistics"), dict) else {}
+    by_path = statistics_block.get("by_path") if isinstance(statistics_block.get("by_path"), dict) else {}
+    gmail_path = by_path.get(_GMAIL_DISCOVERY_LABEL)
+    if isinstance(gmail_path, dict) and gmail_path.get("attempted"):
+        jobs_discovered_from_gmail = int(gmail_path.get("jobs_discovered") or 0)
+        jobs_new_after_deduplication = int(gmail_path.get("new_jobs") or 0)
+        jobs_matched_existing = int(gmail_path.get("existing_jobs") or 0)
+    else:
+        jobs_discovered_from_gmail = int(discovery.get("jobs_new_after_deduplication") or 0)
+        jobs_new_after_deduplication = jobs_discovered_from_gmail
+        jobs_matched_existing = int(discovery.get("jobs_matched_existing") or 0)
     return {
         "authenticated": bool(discovery.get("authenticated", submission.get("messages_scanned") is not None)),
         "messages_scanned": int(discovery.get("messages_scanned") or submission.get("messages_scanned") or 0),
@@ -152,8 +166,9 @@ def _gmail_review_block(report: dict[str, Any]) -> dict[str, Any]:
         "application_status_messages": int(discovery.get("application_status_messages") or 0),
         "interview_or_assessment_messages": int(discovery.get("interview_or_assessment_messages") or 0),
         "candidate_jobs_extracted": int(discovery.get("candidate_jobs_extracted") or 0),
-        "jobs_new_after_deduplication": int(discovery.get("jobs_new_after_deduplication") or 0),
-        "jobs_matched_existing": int(discovery.get("jobs_matched_existing") or 0),
+        "jobs_discovered_from_gmail": jobs_discovered_from_gmail,
+        "jobs_new_after_deduplication": jobs_new_after_deduplication,
+        "jobs_matched_existing": jobs_matched_existing,
         "application_confirmations_matched": len(reconciled),
         "application_confirmations_unmatched": len(unmatched),
         "application_states_changed": int(submission.get("application_states_changed") or sum(1 for r in reconciled if isinstance(r, dict) and r.get("changed"))),
@@ -262,6 +277,7 @@ def _build_review_bundle(report: dict[str, Any]) -> dict[str, Any]:
     except (subprocess.SubprocessError, OSError):
         pass
     scanned_at = str(report.get("scanned_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    scan_source_sha = str(report.get("scan_source_sha") or "")
     return {
         "schema_version": 1,
         "projection_type": "career_engine_daily_review",
@@ -281,6 +297,12 @@ def _build_review_bundle(report: dict[str, Any]) -> dict[str, Any]:
             "paths_total": int(statistics_block.get("paths_total") or len(source_coverage)),
             "paths_scanned": int(statistics_block.get("paths_scanned") or 0),
             "paths_failed": int(statistics_block.get("paths_failed") or 0),
+            # scan_source_sha is the source HEAD when the scan ran; current_source_sha
+            # is the HEAD when this projection was generated. They differ whenever the
+            # source advanced after the scan and must never be conflated.
+            "scan_source_sha": scan_source_sha,
+            "current_source_sha": source_head,
+            "scan_sha_matches_current_source": bool(scan_source_sha and source_head and scan_source_sha == source_head),
         },
         "scoring": {
             "threshold": threshold,
@@ -444,7 +466,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable Gmail discovery and submission reconciliation integration",
     )
+    parser.add_argument(
+        "--republish",
+        default="",
+        metavar="REPORT_JSON",
+        help="Rebuild and publish the sanitized review projection from an existing scan report without rescanning",
+    )
     args = parser.parse_args(argv)
+    if args.republish:
+        report = json.loads(Path(args.republish).read_text(encoding="utf-8"))
+        review_bundle = _build_review_bundle(report)
+        report["review_bundle_publication"] = _publish_review_bundle(review_bundle)
+        print(json.dumps(report, ensure_ascii=False, indent=2), end="")
+        return 0
     source_path = Path(args.input)
     consultant_report = None
     if args.consultants:
@@ -610,8 +644,16 @@ def main(argv: list[str] | None = None) -> int:
         actor=SCANNER_ACTORS[args.scanner_id],
     )
 
+    # Source HEAD at scan start: this is the identity the scan actually ran on,
+    # kept separate from the HEAD at projection-publication time.
+    try:
+        scan_source_sha = _git_value("rev-parse", "HEAD")
+    except (subprocess.SubprocessError, OSError):
+        scan_source_sha = ""
+
     # run_scan owns discovery plus higher-authority Gmail/owner reconciliation.
     report = run_scan(source_path, root=REPO_ROOT, scanner_id=args.scanner_id)
+    report["scan_source_sha"] = scan_source_sha
     report["target_lane_reconciliation"] = target_lane_reconciliation
     if gmail_discovery is not None:
         sanitized = {k: v for k, v in gmail_discovery.items() if k != "candidates"}

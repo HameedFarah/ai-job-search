@@ -20,6 +20,9 @@ SUBMISSION_PHRASES = (
     "confirm receipt of your application",
     "confirm receipt of your resume",
     "thank you for applying",
+    "thank you for your application",
+    "received your job application",
+    "writing to apply",
     "application confirmation",
     "application was sent to",
 )
@@ -77,36 +80,67 @@ def _extract_workable(subject: str, body: str, urls: list[str]) -> dict[str, str
     company = _text(match.group(1))
     role_match = re.search(r"application for the\s+(.+?)\s+job was submitted successfully", body, re.I | re.S)
     role = _text(role_match.group(1)) if role_match else ""
+    # Normalize trailing requisition suffix (Workable embeds it: 'Manager - Design Governance - 20004876').
+    req_in_role: str = ""
+    req_match = re.match(r"^(.*?)\s+-\s+(\d{4,})$", role)
+    if req_match:
+        role = _text(req_match.group(1))
+        req_in_role = _text(req_match.group(2))
     external = ""
     for url in urls:
         job_match = re.search(r"workable\.com/jobs/(\d+)", url, re.I)
         if job_match:
             external = job_match.group(1)
             break
+    # Prefer the ATS numeric job id; if unavailable, use the requisition in the title.
+    if not external and req_in_role:
+        external = req_in_role
+    if not role:
+        return None
     return {"company": company, "role": role, "external_job_id": external, "route": "portal", "signal": "workable_submission_confirmation"}
 
 
-def _extract_qiddiya_workable(subject: str, body: str, sender: str) -> dict[str, str] | None:
+def _extract_workable_receipt(subject: str, body: str, sender: str) -> dict[str, str] | None:
+    """Workable 'Thank you for your application' receipt template.
+
+    Covers both the subject form ``<role> - <req> - <company>`` and the body
+    form ``Thank you for your application for the <role> position at
+    <company>.``  A trailing numeric requisition in the role is promoted to
+    ``external_job_id`` because Workable receipts embed it there.
+    """
     if not re.search(r"@candidates\.workablemail\.com\b", sender, re.I):
         return None
-    match = re.fullmatch(
-        r"Senior Director - Design - Qiddiya Investment Company", subject, re.I
-    )
-    if not match:
-        return None
-    if not re.match(
-        r"Dear\s+Abdelhamid Farah,\s+Thank you for your application for the "
-        r"Senior Director - Design position at Qiddiya Investment Company\.",
+    company = ""
+    role = ""
+    external = ""
+    body_match = re.search(
+        r"Thank you for your application for the\s+(.+?)\s+position at\s+(.+?)\.",
         body,
         re.I | re.S,
-    ):
+    )
+    if body_match:
+        role = _text(body_match.group(1))
+        company = _text(body_match.group(2))
+    else:
+        subject_match = re.match(r"^(.+?)\s+-\s+(\d+)\s+-\s+(.+)$", subject)
+        if subject_match:
+            role = _text(subject_match.group(1))
+            external = _text(subject_match.group(2))
+            company = _text(subject_match.group(3))
+    if not role or not company:
+        return None
+    req_match = re.match(r"^(.*?)\s+-\s+(\d{4,})$", role)
+    if req_match:
+        role = _text(req_match.group(1))
+        external = external or _text(req_match.group(2))
+    if not role or not company:
         return None
     return {
-        "company": "Qiddiya Investment Company",
-        "role": "Senior Director - Design",
-        "external_job_id": "",
+        "company": company,
+        "role": role,
+        "external_job_id": external,
         "route": "portal",
-        "signal": "qiddiya_workable_submission_confirmation",
+        "signal": "workable_application_receipt",
     }
 
 
@@ -158,8 +192,40 @@ def _extract_successfactors(subject: str, body: str) -> dict[str, str] | None:
     return {"company": company, "role": role, "external_job_id": external, "route": "portal", "signal": "successfactors_submission_confirmation"}
 
 
+def _extract_oracle_taleo(subject: str, body: str, sender: str) -> dict[str, str] | None:
+    """Oracle Taleo/HCM 'Your recent job application for <role> - <requisition>'."""
+    match = re.match(
+        r"^Your recent job application for\s+(.+?)\s+-\s+([A-Za-z0-9_-]+)\s*$", subject
+    )
+    if not match:
+        return None
+    role = _text(match.group(1))
+    external = _text(match.group(2))
+    # The employer name must come from the message signature, not be guessed
+    # from the sender domain; without it the message stays ambiguous/manual.
+    company = ""
+    regards_match = re.search(
+        r"(?:Kind regards|Best regards|Regards)[,:\s]+([A-Z][A-Za-z .&'()-]{1,60}?)\s+Talent\s+Acquisition\b",
+        body,
+        re.I,
+    )
+    if regards_match:
+        company = _text(regards_match.group(1))
+    if not company:
+        return None
+    return {
+        "company": company,
+        "role": role,
+        "external_job_id": external,
+        "route": "portal",
+        "signal": "oracle_taleo_submission_confirmation",
+    }
+
+
 def _extract_icims(subject: str, body: str, sender: str) -> dict[str, str] | None:
     if not re.search(r"thank you for applying", subject, re.I):
+        return None
+    if not re.search(r"@[^>]*icims\b", sender, re.I):
         return None
     company = ""
     sender_match = re.match(r"\"?([^\"<]+?)\s*@\s*icims", sender, re.I)
@@ -170,6 +236,8 @@ def _extract_icims(subject: str, body: str, sender: str) -> dict[str, str] | Non
     if not role:
         subject_match = re.match(r"Thank you for applying\s*-\s*(.+?)\s*-\s*(?:Saudi Arabia|Riyadh|Jeddah|KSA)\b", subject, re.I)
         role = _text(subject_match.group(1)) if subject_match else ""
+    if not role:
+        return None
     return {"company": company, "role": role, "external_job_id": "", "route": "portal", "signal": "icims_submission_confirmation"}
 
 
@@ -187,14 +255,28 @@ def _extract_linkedin(subject: str, body: str, urls: list[str]) -> dict[str, Any
     return {"company": company, "role": role, "external_job_id": "", "route": "portal", "signal": "linkedin_submission_confirmation", "evidence_urls": [primary] if primary else []}
 
 
+_OWN_MAILBOX_ADDRESSES = {"hameedo@gmail.com", "hameedfarah@gmail.com"}
+
+
+def _external_recipients(value: Any) -> list[str]:
+    return [match.group(0).lower() for match in re.finditer(r"[\w.+-]+@[\w-]+\.[\w.-]+", str(value or ""), re.I)]
+
+
 def _extract_sent(message: dict[str, Any], subject: str, body: str) -> dict[str, str] | None:
     labels = {str(value).upper() for value in message.get("label_ids", [])}
     if "DRAFT" in labels:
         return None
     sender = _text(message.get("from")).lower()
-    if "SENT" not in labels and CAREER_OUTWARD_EMAIL.lower() not in sender:
+    if CAREER_OUTWARD_EMAIL.lower() not in sender:
         return None
-    body_match = re.search(r"(?:writing|emailing) to apply for the\s+(.+?)\s+position\s+(?:with|at)\s+(.+?)(?:\.|,|\n)", body, re.I | re.S)
+    recipients = _external_recipients(message.get("to"))
+    if not recipients or all(address in _OWN_MAILBOX_ADDRESSES for address in recipients):
+        return None
+    body_match = re.search(
+        r"(?:writing to apply for|emailing to apply for|applying for|application for)\s+the\s+(.+?)\s+position\s+(?:with|at)\s+(.+?)(?:\.|,|\n)",
+        body,
+        re.I | re.S,
+    )
     role = ""
     company = ""
     if body_match:
@@ -218,7 +300,8 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         return None
 
     extracted = (
-        _extract_qiddiya_workable(subject, body, sender)
+        _extract_workable_receipt(subject, body, sender)
+        or _extract_oracle_taleo(subject, body, sender)
         or _extract_buro_happold(subject, body, sender)
         or _extract_workable(subject, body, urls)
         or _extract_workday(subject, body)
@@ -228,8 +311,7 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         or _extract_sent(message, subject, body)
     )
     if not extracted:
-        if not any(phrase in lowered for phrase in SUBMISSION_PHRASES):
-            return None
+        # Phrase-only messages are counted as ambiguous by the reconcile loop.
         return None
 
     return {
@@ -277,6 +359,77 @@ def _matches_external(record: dict[str, Any], external: str) -> bool:
     ))
 
 
+_ATS_FAMILY_TOKENS = (
+    ("workable.com", "workable"),
+    ("candidates.workablemail.com", "workable"),
+    ("icims.com", "icims"),
+    ("boards.greenhouse.io", "greenhouse"),
+    ("greenhouse.io", "greenhouse"),
+    ("lever.co", "lever"),
+    ("smartrecruiters.com", "smartrecruiters"),
+    ("myworkdayjobs.com", "workday"),
+    ("successfactors", "successfactors"),
+    ("oraclecloud.com", "oracle"),
+    ("applytojob", "applytojob"),
+    ("gulftalent.com", "gulftalent"),
+    ("freehire.me", "freehire"),
+    ("jobvite", "jobvite"),
+    ("linkedin.com/jobs", "linkedin"),
+)
+
+
+def _ats_families(urls: Any) -> set[str]:
+    families: set[str] = set()
+    for value in urls or []:
+        url = str(value or "").lower().split("?", 1)[0]
+        if url.startswith("linkedin-job:"):
+            families.add("linkedin")
+            continue
+        if not url.startswith(("http://", "https://")):
+            continue
+        for token, family in _ATS_FAMILY_TOKENS:
+            if token in url:
+                families.add(family)
+    return families
+
+
+_ACTIVE_APPLICATION_STATES = {"applied", "submitted", "sent"}
+
+
+def _record_has_active_application(record: dict[str, Any]) -> bool:
+    job = record.get("job") or {}
+    if _key(job.get("processing_status")) == "applied":
+        return True
+    return _key(job.get("application_status")) in _ACTIVE_APPLICATION_STATES
+
+
+def _resolve_company_role_ambiguity(
+    matches: list[dict[str, Any]], evidence: dict[str, Any]
+) -> tuple[str, str]:
+    """Narrow same-company/same-role duplicates without weakening matching globally.
+
+    1. Exactly one candidate record holds a real application state
+       (applied/submitted/sent): a confirmation email proves an application
+       exists, so it belongs to that record.
+    2. Otherwise the evidence job URLs identify a single ATS family present
+       among the candidates: resolve to the record of that ATS.
+    3. Otherwise stay ambiguous for manual review.
+    """
+    active = [record for record in matches if _record_has_active_application(record)]
+    if len(active) == 1:
+        return str(active[0]["job"]["job_id"]), "company_role_active_record"
+    evidence_families = _ats_families(evidence.get("urls"))
+    if evidence_families:
+        family_matches = [
+            record
+            for record in matches
+            if evidence_families & _ats_families(_record_urls(record))
+        ]
+        if len(family_matches) == 1:
+            return str(family_matches[0]["job"]["job_id"]), "company_role_url_family"
+    return "", "ambiguous_company_role"
+
+
 def match_submission_to_tracker(tracker: Any, evidence: dict[str, Any]) -> tuple[str, str]:
     records = _tracker_records(tracker)
     external = _text(evidence.get("external_job_id"))
@@ -313,7 +466,7 @@ def match_submission_to_tracker(tracker: Any, evidence: dict[str, Any]) -> tuple
         if len(matches) == 1:
             return str(matches[0]["job"]["job_id"]), "company_role"
         if len(matches) > 1:
-            return "", "ambiguous_company_role"
+            return _resolve_company_role_ambiguity(matches, evidence)
     return "", "unmatched"
 
 
