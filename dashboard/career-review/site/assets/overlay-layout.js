@@ -47,6 +47,54 @@
     }
   };
 
+  /* A generate button is a document-rebuild operation, not a free-form CV edit.
+     The rebuild backend owns deterministic render + dashboard republish, so using
+     it here prevents the UI from reporting success while still serving stale
+     document metadata/assets. Keep legacy edit_cv requests visible as active so a
+     pre-fix request cannot be duplicated while it is still processing. */
+  ownerActivePackageRequest = function ownerPublishedPackageRequest(role) {
+    return aiRequestsForRole(role.key).find(record => {
+      const data = dataOf(record);
+      return ['rebuild_documents', 'edit_cv'].includes(data.request_type)
+        && ['pending', 'processing'].includes(data.state || 'pending');
+    }) || null;
+  };
+
+  ownerQueuePackageGeneration = async function ownerPublishedPackageGeneration(role, templateId = selectedTemplateFor(role)) {
+    const active = ownerActivePackageRequest(role);
+    if (active) {
+      showToast('This job package is already being generated.');
+      setupAiPolling(role);
+      return active;
+    }
+    const prompt = [
+      `Rebuild and validate the Career Engine package for this exact job. The selected submission CV is ${templateLabel(templateId)} (${templateId}).`,
+      'Generate/rerender the role-specific CV PDF/DOCX and the evidence-grounded cover letter PDF/DOCX when applicable.',
+      'Republish the private dashboard so the generated files and their metadata are immediately available after reload.',
+      'Do not invent claims, do not use generic placeholder cover text, and do not send or submit anything.'
+    ].join(' ');
+    const record = await createRecord('ai_requests', {
+      role_key: role.key,
+      request_type: 'rebuild_documents',
+      prompt,
+      state: 'pending'
+    }, `rebuild-package-${role.key}-${templateId}-${Date.now()}`);
+    const normalized = { id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt };
+    state.aiRequests.push(normalized);
+    if (record.id) sessionStorage.setItem(`career-generation-owned:${role.key}`, record.id);
+    await createRecord('history', {
+      role_key: role.key,
+      event: 'package_generation_requested',
+      note: `Rebuild selected CV and package: ${templateLabel(templateId)}`
+    }, `history-rebuild-${role.key}-${Date.now()}`);
+    renderOverlayAi(role);
+    renderOverlayTemplate(role);
+    renderOverlayResumePreview(role);
+    renderOverlayDocuments(role);
+    setupAiPolling(role);
+    return normalized;
+  };
+
   /* bulk-table.js already owns the persistent stage select, including the
      special Rebuild CV & cover letter action. Reuse that one source of behavior
      and only relocate it to the far right of the metadata strip. */
@@ -190,10 +238,53 @@
       .detail-stage-inline.owner-overlay-status-control { width: 100%; margin-left: 0 !important; justify-content: flex-end; }
       .overlay-meta-strip { flex-wrap: wrap !important; }
     }
+
+    /* Mobile must keep the selected CV viewer between the selector and the
+       application utilities. Force one explicit vertical flow instead of
+       relying on overlapping grid/flex rules from the desktop layout. */
+    @media (max-width: 900px) {
+      .overlay-workspace {
+        display: flex !important;
+        flex-direction: column !important;
+        overflow-y: auto !important;
+      }
+      .resume-workspace {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 0 0 auto !important;
+        order: 1 !important;
+        min-height: auto !important;
+        overflow: visible !important;
+      }
+      .owner-resume-selector,
+      .resume-viewer-head,
+      .resume-viewer {
+        flex: 0 0 auto !important;
+      }
+      .resume-viewer-head {
+        display: flex !important;
+      }
+      .resume-viewer {
+        display: block !important;
+        height: 65dvh !important;
+        min-height: 65dvh !important;
+      }
+      #ov-resume-frame:not([hidden]),
+      #ov-resume-empty:not([hidden]) {
+        display: block !important;
+      }
+      .detail-utility {
+        order: 2 !important;
+        flex: 0 0 auto !important;
+      }
+    }
+
     @media (max-width: 680px) {
       .owner-resume-selector #ov-template-options { grid-template-columns: 1fr; }
       .detail-stage-inline.owner-overlay-status-control { justify-content: stretch; }
       .detail-stage-inline.owner-overlay-status-control .detail-stage-select { flex: 1 1 auto; max-width: none; }
+      .resume-file-actions { flex-wrap: wrap !important; }
+      .resume-viewer { height: 62dvh !important; min-height: 62dvh !important; }
     }
   `;
   document.head.append(style);
