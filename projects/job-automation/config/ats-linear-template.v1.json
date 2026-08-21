@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "template_id": "ats-linear",
-  "version": "1.0",
-  "effective_date": "2026-08-04",
-  "description": "Single-column, ATS-optimized linear resume. No sidebar, headshot, tables, text boxes, floating objects or columns. Conventional section headings, standard bullets, readable fonts and fully selectable/searchable text. Every factual sentence is claim-cited generated content or a verified fact already carried by the approved Modern Executive Sidebar template and the canonical Vault profile.",
+  "version": "1.1",
+  "effective_date": "2026-08-21",
+  "description": "Single-column, ATS-optimized linear resume. No sidebar, headshot, tables, text boxes, floating objects or columns. Conventional section headings, standard bullets, readable fonts and fully selectable/searchable text. ATS parser-oriented profile, skills, software and education labels are included in the verified sections so portal systems can extract the same facts exposed by the canonical master ATS CV.",
   "route_recommendation": {
     "default_route": "portal",
     "portal": "ats-linear",
@@ -58,33 +58,37 @@
     "current_role_bullets": "generated_application.current_role_bullets (7, claim-cited)",
     "earlier_role_bullets": "generated_application.earlier_role_bullets (11, claim-cited)",
     "career_chronology": "generation_packet.career_chronology (verified employers, titles, locations, dates)",
-    "education": "verified_sections.education below - mirrors approved executive template and verified-career-profile-2026-08-01.md",
+    "education": "verified_sections.education below - parser-oriented rendering of verified master-CV education facts",
+    "profile_skills_tools": "verified_sections.credentials below - ATS parser labels derived from the verified master ATS CV and canonical career evidence",
     "credentials": "verified_sections.credentials below - mirrors approved executive template and verified-career-profile-2026-08-01.md",
     "languages_nationality": "generation_packet.identity (languages, nationalities)"
   },
   "verified_sections": {
     "education": [
       {
-        "degree": "Global Master's in Construction Project Management",
-        "institution": "Zigurat Institute / Barcelona University, Spain",
-        "year": "2022"
+        "degree": "Master's Degree | Degree: Global Master's in Construction Project Management",
+        "institution": "Field of Study: Construction Project Management / Construction Management | School: Zigurat Global Institute of Technology | Program Partner: Universitat de Barcelona | Location: Barcelona, Spain | Dates: Nov 2021 - Nov 2022 | Graduated: Yes",
+        "year": "Completion Date: Nov 2022"
       },
       {
-        "degree": "Master of Business Administration (MBA), GPA 3.93/4.00, with honors",
-        "institution": "New York Institute of Technology, USA",
-        "year": "2010"
+        "degree": "Master's Degree | Degree: Master of Business Administration (MBA)",
+        "institution": "Field of Study: Business Administration and Management | School: New York Institute of Technology | Location: New York, USA | Dates: 2008 - Aug 2010 | Graduated: Yes | GPA: 3.93/4.00, with honors",
+        "year": "Completion Date: Aug 2010"
       },
       {
-        "degree": "Bachelor of Science in Architectural Engineering, GPA 3.14/4.00",
-        "institution": "University of Jordan, Jordan",
-        "year": "2004"
+        "degree": "Bachelor's Degree | Degree: Bachelor of Science in Architectural Engineering",
+        "institution": "Field of Study: Architectural Engineering | School: University of Jordan | Location: Amman, Jordan | Dates: 1999 - Aug 2004 | Graduated: Yes | GPA: 3.14/4.00",
+        "year": "Completion Date: Aug 2004"
       }
     ],
     "credentials": [
-      "Saudi Council of Engineers (SCE): Consultant (مستشار) classification, Architectural Engineering, valid to Nov 2027",
-      "Contracts Management Professional (CMP), Engineers Training Center",
-      "Engineering Consultant for Off-Plan Sales Projects, Saudi Real Estate Institute",
-      "Jordanian Engineers Association (JEA): Member"
+      "PROFILE DETAILS | Current Title: District Manager | Current Employer: Arab Sustainable Architecture / Tubaila Team Workshop (TTW) | Experience: 22+ years | Current Location: Riyadh, Saudi Arabia | SCE Classification: Consultant, Architectural Engineering",
+      "CORE SKILLS | Design Management | Project Management | Construction Management | Architectural Design | Technical Leadership | Multidisciplinary Coordination | Client & Stakeholder Management | Contract Administration | FIDIC | Value Engineering | Constructability | Risk Management | QA/QC | Regulatory Compliance | Authority Approvals | BIM/Revit | RFP/RFQ/TOR | Tendering & Procurement | HSE Oversight | Business Development | Proposal Management | Team Leadership | Project Controls",
+      "SOFTWARE & TOOLS | Autodesk Revit | AutoCAD | Microsoft Project | Microsoft Office | Adobe Photoshop",
+      "License / Classification: Saudi Council of Engineers (SCE) - Consultant, Architectural Engineering | Valid to Nov 2027",
+      "Certification: Contracts Management Professional (CMP) | Issuing Organization: Engineers Training Center",
+      "Certification: Engineering Consultant for Off-Plan Sales Projects | Issuing Organization: Saudi Real Estate Institute",
+      "Professional Affiliation: Jordanian Engineers Association (JEA) - Member"
     ]
   },
   "outward_filename_pattern": "Abdelhamid_Farah_CV_<Target_Role>_ATS.pdf/.docx"
