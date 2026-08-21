@@ -21,13 +21,16 @@ def test_overlay_close_preserves_board_scroll_and_focus_does_not_scroll() -> Non
     assert "card.focus({ preventScroll: true })" in source
 
 
-def test_status_is_always_visible_on_right_side_of_metadata_strip() -> None:
+def test_status_reuses_existing_control_and_moves_it_to_right() -> None:
     source = _text("dashboard/career-review/site/assets/overlay-layout.js")
-    assert "owner-overlay-status-control" in source
-    assert "owner-overlay-stage-select" in source
-    assert "meta.append(control)" in source
-    assert "margin-left: auto" in source
-    assert "await moveRole(role, nextStage, nextStage === 'applied')" in source
+    bulk = _text("dashboard/career-review/site/assets/bulk-table.js")
+    assert "ensureOverlayStageSelect()" in source
+    assert "querySelector('.detail-stage-inline')" in source
+    assert "strip.append(status)" in source
+    assert "margin-left: auto !important" in source
+    assert "document.createElement('select')" not in source
+    assert "REBUILD_DOCUMENTS_ACTION" in bulk
+    assert "ensureRebuildDocumentsOption(select)" in bulk
 
 
 def test_submission_cv_selector_is_expanded_above_resume_and_old_menu_removed() -> None:
