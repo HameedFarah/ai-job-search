@@ -106,13 +106,13 @@
       "submission_package_present": false
     }
   ],
-  "generated_at": "2026-08-21T21:18:25+00:00",
+  "generated_at": "2026-08-21T23:30:29+00:00",
   "gmail": {
-    "ambiguous_messages_manual_review": 0,
-    "application_confirmations_matched": 0,
-    "application_confirmations_unmatched": 3,
+    "ambiguous_messages_manual_review": 7,
+    "application_confirmations_matched": 14,
+    "application_confirmations_unmatched": 2,
     "application_instruction_messages": 0,
-    "application_states_changed": 0,
+    "application_states_changed": 14,
     "application_status_messages": 1,
     "authenticated": true,
     "candidate_jobs_extracted": 802,
@@ -120,8 +120,9 @@
     "errors": [],
     "interview_or_assessment_messages": 3,
     "job_alert_messages": 33,
-    "jobs_matched_existing": 0,
-    "jobs_new_after_deduplication": 105,
+    "jobs_discovered_from_gmail": 105,
+    "jobs_matched_existing": 16,
+    "jobs_new_after_deduplication": 89,
     "messages_scanned": 150,
     "platform_counts": {
       "direct_employer": 1,
@@ -152,14 +153,14 @@
   "projection_type": "career_engine_daily_review",
   "reconciliation": {
     "gmail_submission": {
-      "ambiguous_manual_review": 0,
-      "application_states_changed": 0,
+      "ambiguous_manual_review": 7,
+      "application_states_changed": 14,
       "error_present": false,
       "gmail_mutations": 0,
-      "messages_scanned": 10,
+      "messages_scanned": 117,
       "schema_version": 1,
       "send_or_submit": false,
-      "submission_messages_classified": 3
+      "submission_messages_classified": 17
     },
     "owner_feedback_calibration": {
       "active_patterns": 0,
@@ -184,6 +185,7 @@
   },
   "scan": {
     "bundle_hash": "09c6792f0d23808bce5e9c1126f7c4f8d9e4e3c89243c3429985e7eac16e8bf4",
+    "current_source_sha": "015303d3ddc197b92f5ad3ad2c17b6b7d6417711",
     "existing_jobs": 415,
     "generation_candidates": 5,
     "jobs_discovered": 504,
@@ -193,6 +195,8 @@
     "paths_failed": 1,
     "paths_scanned": 25,
     "paths_total": 31,
+    "scan_sha_matches_current_source": false,
+    "scan_source_sha": "3f354bea742a9fdd32d5aa6b28c1bab4a6183f88",
     "scanned_at": "2026-08-21T21:15:04+00:00",
     "scanner_id": "hermes_scanner",
     "weak_or_blocked": 290
@@ -213,9 +217,9 @@
   },
   "send_or_submit": false,
   "source": {
-    "head": "3f354bea742a9fdd32d5aa6b28c1bab4a6183f88",
+    "head": "015303d3ddc197b92f5ad3ad2c17b6b7d6417711",
     "head_matches_origin_master": true,
-    "origin_master": "3f354bea742a9fdd32d5aa6b28c1bab4a6183f88"
+    "origin_master": "015303d3ddc197b92f5ad3ad2c17b6b7d6417711"
   },
   "source_coverage": [
     {
@@ -595,26 +599,25 @@
   "tracker": {
     "application_status_counts": {
       "applied": 4,
-      "not_submitted": 2123,
+      "not_submitted": 2122,
       "sent": 4,
-      "submitted": 24,
-      "submitted_pending_response": 1
+      "submitted": 30
     },
     "processing_status_counts": {
-      "applied": 28,
-      "awaiting_owner_approval": 10,
+      "applied": 33,
+      "awaiting_owner_approval": 11,
       "blocked": 559,
       "generated_content_rejected": 1,
-      "generated_content_valid": 3,
+      "generated_content_valid": 2,
       "generation_ready": 25,
       "inactive": 10,
       "ingested": 11,
       "manual_review_needed": 340,
-      "rejected": 987,
+      "rejected": 986,
       "render_rejected": 6,
       "superseded": 176
     },
-    "total_jobs": 2156
+    "total_jobs": 2160
   },
   "trend": {
     "rolling_7d": {
