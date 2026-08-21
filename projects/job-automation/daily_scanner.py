@@ -452,7 +452,7 @@ def _publish_review_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Process discovered jobs through the central Career Engine")
-    parser.add_argument("--input", required=True, help="JSON file produced by discovery connectors")
+    parser.add_argument("--input", required=False, help="JSON file produced by discovery connectors")
     parser.add_argument("--output", default="", help="Optional structured scan report path")
     parser.add_argument("--scanner-id", choices=tuple(SCANNER_ACTORS), default="hermes_scanner")
     parser.add_argument("--consultants", action="store_true", help="Include active consultant bookmarks via official JSON-LD probes")
@@ -479,6 +479,8 @@ def main(argv: list[str] | None = None) -> int:
         report["review_bundle_publication"] = _publish_review_bundle(review_bundle)
         print(json.dumps(report, ensure_ascii=False, indent=2), end="")
         return 0
+    if not args.input:
+        parser.error("--input is required unless --republish is used")
     source_path = Path(args.input)
     consultant_report = None
     if args.consultants:
