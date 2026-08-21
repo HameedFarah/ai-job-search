@@ -135,7 +135,7 @@ def test_render_ats_docx_creates_linear_document(job_payload: dict, engine_root:
     # Credentials
     assert "Saudi Council of Engineers" in rendered
     assert "Contracts Management Professional" in rendered
-    assert "Consultant (مستشار)" in rendered
+    assert "SCE Classification: Consultant" in rendered
 
 
 def test_render_ats_docx_is_ats_safe(job_payload: dict, engine_root: Path) -> None:
