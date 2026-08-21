@@ -28,6 +28,7 @@ jobs:
           node --check dashboard/career-review/scripts/deploy_cloudflare_access.js
           node --check dashboard/career-review/worker.js
           node --check dashboard/career-review/site/assets/shared.js
+          node --check dashboard/career-review/site/assets/overlay-layout.js
           node --check scripts/career-cloudflare-access-20260818-plan.mjs
       - name: Access policy self-test
         run: node dashboard/career-review/scripts/deploy_cloudflare_access.js --self-test
