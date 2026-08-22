@@ -11,11 +11,28 @@ ROOT = Path(__file__).parents[1]
 def test_provider_result_requires_evidence_and_provenance():
     assert not result("tomba", "candidate", value="x@y.com", source_url="https://x").usable
     item = recruitment_contact("tomba", "x@y.com", "https://x/careers", "Recruitment page", official=True, cost_status="trial")
-    assert item.usable and item.provider == "tomba" and item.retrieved_at and item.cost_status == "trial"
+    assert item.usable and item.outreach_ready
+    assert item.provider == "tomba" and item.retrieved_at and item.cost_status == "trial"
+
+def test_candidate_contact_keeps_evidence_but_is_not_outreach_ready():
+    item = recruitment_contact(
+        "outscraper",
+        "person@example.com",
+        "https://provider.example/contact/123",
+        "Provider returned a professional contact for the company domain.",
+        official=False,
+        cost_status="free-tier",
+    )
+    assert item.status == "candidate"
+    assert item.usable
+    assert item.evidence
+    assert not item.official_recruitment
+    assert not item.outreach_ready
 
 def test_generic_contact_cannot_be_promoted():
     item = recruitment_contact("outscraper", "info@example.com", "https://example.com", "", official=False)
     assert item.status == "candidate" and not item.usable and item.evidence == ""
+    assert not item.outreach_ready
 
 def test_probe_output_is_value_free_and_missing_credentials_do_not_call_network():
     env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY") and k != "APIFY_USER_ID"}
