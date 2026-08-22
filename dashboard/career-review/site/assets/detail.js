@@ -541,7 +541,7 @@ async function refreshTimeline() {
 }
 
 async function loadDetailData() {
-  const records = await loadCollection('workflow');
+  const records = await loadCollectionAll('workflow');
   for (const record of records) {
     const data = dataOf(record);
     const stage = data.stage === 'approved' ? 'ready_review' : data.stage;

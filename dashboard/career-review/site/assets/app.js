@@ -43,7 +43,7 @@ async function loadComments() {
 }
 
 async function loadWorkflow() {
-  const records = await loadCollection('workflow');
+  const records = await loadCollectionAll('workflow');
   records.sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
   for (const record of records) {
     const data = dataOf(record);
