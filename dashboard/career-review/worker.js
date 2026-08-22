@@ -30,9 +30,25 @@ function siteDataTarget(url) {
   return target;
 }
 
-async function proxySiteData(request, env) {
+async function isAuthorizedAccess(request, ctx) {
   const owner = String(request.headers.get('cf-access-authenticated-user-email') || '').trim().toLowerCase();
-  if (owner !== OWNER_EMAIL) return jsonError(403, 'Owner authentication required');
+  if (owner === OWNER_EMAIL) return true;
+  if (!ctx?.access) return false;
+  try {
+    const identity = await ctx.access.getIdentity();
+    const email = String(identity?.email || '').trim().toLowerCase();
+    if (email === OWNER_EMAIL) return true;
+    return identity?.service_token_status === true
+      && Boolean(String(identity?.service_token_id || '').trim());
+  } catch {
+    return false;
+  }
+}
+
+async function proxySiteData(request, env, ctx) {
+  if (!await isAuthorizedAccess(request, ctx)) {
+    return jsonError(403, 'Owner or approved Cloudflare Access service token required');
+  }
   if (!env.HERENOW_API_KEY) return jsonError(503, 'Site Data proxy is not configured');
   if (!ALLOWED_METHODS.has(request.method)) return jsonError(405, 'Method not allowed');
 
@@ -70,9 +86,9 @@ async function proxySiteData(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname.startsWith(DATA_PREFIX)) return proxySiteData(request, env);
+    if (url.pathname.startsWith(DATA_PREFIX)) return proxySiteData(request, env, ctx);
     return env.ASSETS.fetch(request);
   }
 };

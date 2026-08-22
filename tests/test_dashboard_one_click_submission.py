@@ -58,12 +58,16 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertIn(".add-job-progress-step", css)
         self.assertIn("@keyframes add-job-spin", css)
 
-    def test_private_worker_proxies_only_known_site_data_collections_for_owner(self):
+    def test_private_worker_proxies_only_known_site_data_collections_for_owner_or_access_service(self):
         source = (ROOT / "dashboard/career-review/worker.js").read_text(encoding="utf-8")
         self.assertIn("/.herenow/data/", source)
         self.assertIn("HERENOW_API_KEY", source)
         self.assertIn("cf-access-authenticated-user-email", source)
         self.assertIn("hameedo@gmail.com", source)
+        self.assertIn("ctx.access.getIdentity()", source)
+        self.assertIn("service_token_status === true", source)
+        self.assertIn("service_token_id", source)
+        self.assertIn("Owner or approved Cloudflare Access service token required", source)
         self.assertIn("Authorization: `Bearer ${env.HERENOW_API_KEY}`", source)
         for collection in ("workflow", "comments", "history", "ai_requests", "preferences"):
             self.assertIn(f"'{collection}'", source)
