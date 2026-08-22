@@ -31,6 +31,34 @@ def test_workable_submission_confirmation_is_classified() -> None:
     assert result["route"] == "portal"
 
 
+def test_linkedin_confirmation_uses_first_applied_job_not_recommendations() -> None:
+    applied = "https://www.linkedin.com/jobs/view/9876543210/"
+    recommended = "https://www.linkedin.com/jobs/view/1111111111/"
+    result = classify_submission_message(message(
+        subject="Abdelhamid, your application was sent to Khatib & Alami",
+        sender="LinkedIn <jobs-noreply@linkedin.com>",
+        urls=[applied, recommended],
+        body=(f"{applied}\nSenior Architect\nKhatib & Alami · Riyadh (On-site)\n"
+              "Applied on August 22, 2026\nRecommended for you\n" + recommended + "\nOther Role"),
+    ))
+    assert result is not None
+    assert result["company"] == "Khatib & Alami"
+    assert result["role"] == "Senior Architect"
+    assert result["external_job_id"] == "9876543210"
+    assert result["application_url"] == applied
+    assert result["applied_date"] == "August 22, 2026"
+    assert result["urls"] == [applied]
+
+
+def test_linkedin_alert_without_submission_confirmation_is_ignored() -> None:
+    assert classify_submission_message(message(
+        subject="Jobs you may be interested in",
+        sender="LinkedIn <jobalerts-noreply@linkedin.com>",
+        urls=["https://www.linkedin.com/jobs/view/1111111111/"],
+        body="Recommended jobs for you",
+    )) is None
+
+
 def test_qiddiya_workable_application_confirmation_is_classified() -> None:
     result = classify_submission_message(message(
         subject="Senior Director - Design - Qiddiya Investment Company",
@@ -184,6 +212,45 @@ def test_workday_submission_confirmation_is_classified() -> None:
     assert result is not None
     assert result["company"] == "Parsons"
     assert result["role"] == "Architectural Design Manager"
+
+
+def test_atkinsrealis_workday_receipt_uses_explicit_sender_company() -> None:
+    result = classify_submission_message(message(
+        subject="Application for the position of Senior Architectural Engineer - Madinah",
+        sender='"Workday.Admin AtkinsRealis" slihrms@myworkday.com',
+        body="Dear Abdelhamid, Thank you for submitting your application. Our Recruitment team will review your application.",
+    ))
+    assert result is not None
+    assert result["company"] == "AtkinsRealis"
+    assert result["role"] == "Senior Architectural Engineer - Madinah"
+
+
+def test_nova_korn_ferry_receipt_extracts_explicit_company_and_role() -> None:
+    result = classify_submission_message(message(
+        subject="Thank you for applying to Nova International General Contracting",
+        body="Dear Abdelhamid, Thank you for applying for the Project Director position at Nova International General Contracting. Your application has been received successfully.",
+    ))
+    assert result is not None
+    assert result["company"] == "Nova International General Contracting"
+    assert result["role"] == "Project Director"
+
+
+def test_omrania_egis_receipt_extracts_subject_company_and_body_role() -> None:
+    result = classify_submission_message(message(
+        subject="Thank you for applying to Omrania",
+        body="Dear Abdelhamid, Thank you for submitting your application for the position of Senior Architect. Your application is queued for review... Best regards, Omrania Hiring Team",
+    ))
+    assert result is not None
+    assert result["company"] == "Omrania"
+    assert result["role"] == "Senior Architect"
+
+
+def test_generic_affiliate_application_is_not_classified() -> None:
+    assert classify_submission_message(message(
+        subject="Thank you for applying",
+        sender="Hostinger Offers <offers@hostinger.example>",
+        body="Thank you for applying. Explore our partner offers and earn rewards.",
+    )) is None
 
 
 def test_successfactors_requisition_is_preserved() -> None:

@@ -53,7 +53,7 @@ def fetch_markdown(url: str) -> tuple[str, str]:
             endpoint = "https://api.firecrawl.dev/v1/scrape"
             headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
             payload = {"url": url, "formats": ["markdown", "html"], "onlyMainContent": False, "waitFor": 1500}
-            with httpx.Client(timeout=45) as client:
+            with httpx.Client(timeout=15) as client:
                 resp = client.post(endpoint, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
@@ -66,7 +66,7 @@ def fetch_markdown(url: str) -> tuple[str, str]:
             pass
     # direct
     headers = {"User-Agent": "Mozilla/5.0 (compatible; REGA-enrichment/1.0)"}
-    with httpx.Client(timeout=20, follow_redirects=True, headers=headers) as client:
+    with httpx.Client(timeout=8, follow_redirects=True, headers=headers) as client:
         resp = client.get(url)
         resp.raise_for_status()
         html = resp.text
@@ -178,17 +178,12 @@ def extract_fields(company: CompanyRecord, official_url: str) -> tuple[dict[str,
         verification_method="hostname_token_match",
     ))
 
-    # Fetch homepage and common paths
+    # Fetch homepage and common paths — minimal for REGA to avoid hanging on slow Cloudflare sites
+    # Only homepage and careers are needed for official_website/careers/ATS; other pages on-demand
     pages_to_fetch = {
         "homepage": official_url,
-        "contact": urljoin(official_url, "/contact"),
-        "contact_us": urljoin(official_url, "/contact-us"),
-        "about": urljoin(official_url, "/about"),
         "careers": urljoin(official_url, "/careers"),
         "jobs": urljoin(official_url, "/jobs"),
-        "join_us": urljoin(official_url, "/join-us"),
-        "supplier": urljoin(official_url, "/supplier"),
-        "vendors": urljoin(official_url, "/vendors"),
     }
     page_contents: dict[str, tuple[str, str]] = {}
     for key, url in pages_to_fetch.items():

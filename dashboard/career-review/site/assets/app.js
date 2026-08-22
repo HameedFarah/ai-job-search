@@ -43,7 +43,7 @@ async function loadComments() {
 }
 
 async function loadWorkflow() {
-  const records = await loadCollection('workflow');
+  const records = await loadCollectionAll('workflow');
   records.sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
   for (const record of records) {
     const data = dataOf(record);
@@ -677,7 +677,7 @@ function setupGlobalOperationPolling() {
   if (!active) return;
   state.operationPollTimer = setInterval(async () => {
     try {
-      const records = await loadCollection('ai_requests');
+      const records = await loadCollection('ai_requests', 300, true, true);
       state.aiRequests = records.map(record => ({ id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt }));
       renderGlobalOperationStatus();
       if (!globalOperations().some(record => ['pending', 'processing'].includes(dataOf(record).state || 'pending'))) {
@@ -1731,7 +1731,7 @@ function setupAiPolling(role) {
     const pending = aiRequestsForRole(role.key).some(record => ['pending', 'processing'].includes(dataOf(record).state || 'pending'));
     if (!pending) { clearInterval(state.aiPollTimer); state.aiPollTimer = null; return; }
     try {
-      const records = await loadCollection('ai_requests');
+      const records = await loadCollection('ai_requests', 300, true, true);
       state.aiRequests = records.map(record => ({ id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt }));
       renderOverlayAi(role);
     } catch (error) { console.warn('AI request refresh unavailable', error); }

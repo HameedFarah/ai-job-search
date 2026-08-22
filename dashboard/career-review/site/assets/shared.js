@@ -188,7 +188,7 @@ function invalidateCollectionCache(name) {
   }
 }
 
-async function loadCollection(name, limit = 300, fresh = false) {
+async function loadCollection(name, limit = 300, fresh = false, throwOnError = false) {
   const cacheKey = `${name}:${limit}`;
   const cacheable = !fresh && name !== 'ai_requests';
   if (cacheable && COLLECTION_CACHE.has(cacheKey)) return COLLECTION_CACHE.get(cacheKey);
@@ -200,6 +200,40 @@ async function loadCollection(name, limit = 300, fresh = false) {
       return Array.isArray(payload.records) ? payload.records : [];
     } catch (error) {
       console.warn(`loadCollection(${name})`, error);
+      if (throwOnError) throw error;
+      return [];
+    }
+  })();
+  if (cacheable) COLLECTION_CACHE.set(cacheKey, request);
+  return request;
+}
+
+/* Site Data lists are cursor-paginated. Workflow persistence must read the
+   complete collection because an old record that is PATCHed does not become a
+   newly-created row and can therefore sit beyond the first page after reload. */
+async function loadCollectionAll(name, pageSize = 300, fresh = false, maxRecords = 25000) {
+  const cacheKey = `${name}:all:${pageSize}:${maxRecords}`;
+  const cacheable = !fresh && name !== 'ai_requests';
+  if (cacheable && COLLECTION_CACHE.has(cacheKey)) return COLLECTION_CACHE.get(cacheKey);
+  const request = (async () => {
+    try {
+      const records = [];
+      let cursor = '';
+      while (records.length < maxRecords) {
+        const params = new URLSearchParams({ limit: String(Math.min(pageSize, maxRecords - records.length)) });
+        if (cursor) params.set('cursor', cursor);
+        const response = await fetch(`./.herenow/data/${name}?${params.toString()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`${name} unavailable (${response.status})`);
+        const payload = await response.json();
+        const page = Array.isArray(payload.records) ? payload.records : [];
+        records.push(...page);
+        const nextCursor = String(payload.nextCursor || '');
+        if (!nextCursor || page.length === 0) break;
+        cursor = nextCursor;
+      }
+      return records;
+    } catch (error) {
+      console.warn(`loadCollectionAll(${name})`, error);
       return [];
     }
   })();

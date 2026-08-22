@@ -84,6 +84,21 @@ def git_sha(repo_root: Path | None = None) -> str:
     except Exception:
         return "unknown"
 
+def _credentials_configured() -> bool:
+    if os.getenv("FIRECRAWL_API_KEY"):
+        return True
+    for p in [Path("/home/hameedo/.hermes/.env"), Path.home() / ".hermes" / ".env"]:
+        if p.is_file():
+            try:
+                for line in p.read_text(errors="ignore").splitlines():
+                    if line.strip().startswith("FIRECRAWL_API_KEY="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val and not val.startswith("#"):
+                            return True
+            except Exception:
+                pass
+    return False
+
 def freeze_manifest(input_path: Path) -> dict:
     return {
         "pipeline_version": PIPELINE_VERSION,
@@ -92,6 +107,10 @@ def freeze_manifest(input_path: Path) -> dict:
         "model_version": MODEL_VERSION,
         "backend_version": BACKEND_VERSION,
         "hermes_web_backend": HERMES_WEB_BACKEND,
+        "search_backend": "searxng-qwant",
+        "search_provider": "searxng",
+        "fetch_provider": "firecrawl",
+        "credentials_configured": _credentials_configured(),
         "skill_version": SKILL_VERSION,
         "git_sha": git_sha(),
         "input_sha256": canonical_input_sha(input_path) if input_path.exists() else None,

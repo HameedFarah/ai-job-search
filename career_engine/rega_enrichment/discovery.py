@@ -1,7 +1,8 @@
-"""Discovery via Hermes-maintained web backend (Firecrawl).
+"""Discovery via SearXNG Qwant (local) with persistent cache.
 
-Never hand-scrape Bing/Qwant HTML. Use the configured Hermes web backend
-(Firecrawl). Every request/result carries immutable company_id, license_no, query_id.
+REGA discovery prefers low-cost/local SearXNG Qwant; Firecrawl is reserved for
+fetching/verifying shortlisted candidate sites to conserve credits.
+Every request/result carries immutable company_id, license_no, query_id.
 Concurrency must never rely on result order — results are keyed by IDs.
 """
 
@@ -20,7 +21,7 @@ from .config import QUERY_TEMPLATES
 from .models import CandidateResult, CompanyRecord, QuerySpec
 
 FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v1/search"
-# Fallback to Hermes plugin if direct API not available handled via direct httpx
+# Discovery now uses SearXNG Qwant-only; Firecrawl search kept as optional fallback for fetch stage
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -165,37 +166,79 @@ def firecrawl_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
         })
     return normalized
 
-def searxng_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Optional fallback via local SearXNG (loopback). Used only if Firecrawl fails."""
+def searxng_qwant_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Primary REGA discovery via local SearXNG Qwant-only (low-cost, deterministic)."""
     base = os.getenv("SEARXNG_URL", "http://127.0.0.1:8888").rstrip("/")
     try:
         with httpx.Client(timeout=15) as client:
-            resp = client.get(f"{base}/search", params={"q": query, "format": "json", "engines": "qwant,bing"}, headers={"Accept": "application/json"})
+            # Qwant-only per spec — disable Bing which returns unrelated for Arabic/long legal queries
+            resp = client.get(f"{base}/search", params={"q": query, "format": "json", "engines": "qwant"}, headers={"Accept": "application/json"})
             resp.raise_for_status()
             data = resp.json()
         results = data.get("results", [])[:limit]
         out = []
         for r in results:
-            out.append({"url": r.get("url",""), "title": r.get("title",""), "description": r.get("content","")[:2000], "engine": ",".join(r.get("engines",[])) or "searxng"})
+            out.append({"url": r.get("url",""), "title": r.get("title",""), "description": r.get("content","")[:2000], "engine": "searxng-qwant"})
         return out
     except Exception:
         return []
 
-def discover_company(company: CompanyRecord, limit_per_query: int = 5, delay_s: float = 0.8) -> list[CandidateResult]:
+def searxng_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    # Backward compat alias — now Qwant-only
+    return searxng_qwant_search(query, limit=limit)
+
+def discover_company(
+    company: CompanyRecord,
+    limit_per_query: int = 5,
+    delay_s: float = 0.4,
+    use_cache: bool = True,
+    refresh: bool = False,
+    cache_dir: Path | None = None,
+) -> list[CandidateResult]:
+    from .cache import load_cached, store_cache
     queries = generate_queries(company)
     candidates: list[CandidateResult] = []
     seen_urls: set[str] = set()
     for qs in queries:
         raw_results: list[dict[str, Any]] = []
-        try:
-            raw_results = firecrawl_search(qs.query_text, limit=limit_per_query)
-        except Exception as e:
-            # Firecrawl rate limit / error — try SearXNG fallback for this query, then continue
-            # Do not fail entire company on one query failure
+        # Cache keyed by query_id — deterministic, backend-aware
+        normalized = " ".join(qs.query_text.strip().lower().split())
+        cached = None
+        if use_cache and not refresh:
+            cached = load_cached(qs.query_id, normalized, cache_dir=cache_dir)
+        if cached is not None:
+            raw_results = cached.get("results", [])
+            backend = cached.get("backend", "cache")
+        else:
+            # REGA prefers low-cost SearXNG Qwant for discovery; Firecrawl reserved for fetch/verify
             try:
-                raw_results = searxng_search(qs.query_text, limit=limit_per_query)
+                raw_results = searxng_qwant_search(qs.query_text, limit=limit_per_query)
+                backend = "searxng-qwant"
             except Exception:
                 raw_results = []
+                backend = "searxng-qwant"
+            # Fallback to Firecrawl search only if Qwant returns none and quota allows (optional)
+            if not raw_results:
+                try:
+                    raw_results = firecrawl_search(qs.query_text, limit=limit_per_query)
+                    backend = "firecrawl"
+                except Exception:
+                    pass
+            # Store normalized result set in cache
+            if use_cache:
+                try:
+                    store_cache(
+                        query_id=qs.query_id,
+                        company_id=qs.company_id,
+                        license_no=qs.license_no,
+                        query_text=qs.query_text,
+                        normalized_query=normalized,
+                        backend=backend,
+                        results=raw_results,
+                        cache_dir=cache_dir,
+                    )
+                except Exception:
+                    pass
         ts = utc_now()
         for pos, item in enumerate(raw_results, 1):
             url = item.get("url","").strip()

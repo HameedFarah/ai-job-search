@@ -249,6 +249,8 @@ def test_ambiguous_confirmation_does_not_change_state(engine_root: Path) -> None
 def test_classification_covers_recruiter_interview_status() -> None:
     assert classify_message_category(_message(subject="Interview invitation - Senior Architect at NEOM", body="We would like to invite you for an interview", sender="talent@neom.com")) == "interview_assessment"
     assert classify_message_category(_message(subject="Application update", body="Your application status has been updated")) == "application_status"
+    assert classify_message_category(_message(subject="Your application was viewed by Confidential", sender="LinkedIn <jobs-noreply@linkedin.com>")) == "application_status"
+    assert classify_message_category(_message(subject="Interview assessment invitation", sender="LinkedIn <jobs-noreply@linkedin.com>")) == "interview_assessment"
     assert classify_message_category(_message(subject="Recruiter reached out", sender="John Recruiter <recruiter@parsons.com>")) == "recruiter"
     assert classify_message_category(_message(subject="You may be a fit for Senior Architect at ElMassri", sender="LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>")) == "job_alert"
     assert classify_message_category(_message(subject="Thank you for applying to Qiddiya Investment Company", body="application for the Senior Manager job was submitted successfully", sender="qiddiya@workable.com", urls=["https://apply.workable.com/j/123"])) == "submission_confirmation"

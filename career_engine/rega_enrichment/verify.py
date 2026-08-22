@@ -82,7 +82,7 @@ def fetch_direct(url: str) -> tuple[str, str]:
     headers = {"User-Agent": "Mozilla/5.0 (compatible; REGA-enrichment/1.0; +https://farahdigital.com)"}
     # Try httpx first
     try:
-        with httpx.Client(timeout=20, follow_redirects=True, headers=headers) as client:
+        with httpx.Client(timeout=8, follow_redirects=True, headers=headers) as client:
             resp = client.get(url)
             resp.raise_for_status()
             text = resp.text
@@ -100,8 +100,8 @@ def fetch_direct(url: str) -> tuple[str, str]:
     try:
         import subprocess
         result = subprocess.run(
-            ["curl", "-sL", "-A", "Mozilla/5.0 (compatible; REGA-enrichment/1.0)", "--max-time", "20", url],
-            capture_output=True, text=True, timeout=25
+            ["curl", "-sL", "-A", "Mozilla/5.0 (compatible; REGA-enrichment/1.0)", "--max-time", "10", url],
+            capture_output=True, text=True, timeout=12
         )
         if result.returncode == 0 and result.stdout:
             text = result.stdout
@@ -134,48 +134,97 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     # Hostname normalized
     host_norm = hostname_tokens(host)
 
-    # Fetch page — prefer direct (saves Firecrawl quota), fallback to Firecrawl for JS-heavy, final fallback to snippet
-    title = ""
-    content = ""
-    source_type = "direct_fetch"
-    try:
-        t, md = fetch_direct(url)
-        title = t or candidate.title
-        content = md or candidate.description
-        if not content or len(content) < 200:
-            # Try Firecrawl for JS-rendered or short content
+    # Fast path: snippet-only if discovery already gives strong identity (saves quota, avoids hang on makkiyoon.com)
+    title_snippet = candidate.title or ""
+    desc_snippet = candidate.description or ""
+    host_norm_snippet = host_norm
+    eng_tokens_snippet = eng_tokens
+    quick_score = 0
+    for tok in eng_tokens_snippet:
+        # Fuzzy host check for transliteration (makkyoon vs makkiyoon)
+        host_hit = tok in host_norm_snippet
+        if not host_hit and len(tok) >= 5:
+            for i in range(len(tok)):
+                if tok[:i] + tok[i+1:] in host_norm_snippet:
+                    host_hit = True
+                    break
+            if not host_hit:
+                for i in range(len(tok)+1):
+                    for c in "abcdefghijklmnopqrstuvwxyz":
+                        if tok[:i] + c + tok[i:] in host_norm_snippet:
+                            host_hit = True
+                            break
+                    if host_hit:
+                        break
+        if host_hit:
+            quick_score += 8
+        if tok in title_snippet.lower():
+            quick_score += 4
+    if any(tok in desc_snippet.lower() for tok in eng_tokens_snippet):
+        quick_score += 1
+    if ".sa" in host.lower():
+        quick_score += 3
+    # Use fuzzy host check for snippet path as well
+    def _host_hit_fuzzy(host_norm, toks):
+        for tok in toks:
+            if tok in host_norm:
+                return True
+            if len(tok) >= 5:
+                for i in range(len(tok)):
+                    if tok[:i] + tok[i+1:] in host_norm:
+                        return True
+                for i in range(len(tok)+1):
+                    for c in "abcdefghijklmnopqrstuvwxyz":
+                        if tok[:i] + c + tok[i:] in host_norm:
+                            return True
+        return False
+    if quick_score >= 12 and _host_hit_fuzzy(host_norm_snippet, eng_tokens_snippet):
+        title = title_snippet
+        content = desc_snippet
+        source_type = "discovery_snippet"
+    else:
+        # Fetch page — prefer direct (saves Firecrawl quota), fallback to Firecrawl for JS-heavy, final fallback to snippet
+        title = ""
+        content = ""
+        source_type = "direct_fetch"
+        try:
+            t, md = fetch_direct(url)
+            title = t or candidate.title
+            content = md or candidate.description
+            if not content or len(content) < 200:
+                # Try Firecrawl for JS-rendered or short content
+                try:
+                    t2, md2, _ = fetch_via_firecrawl_extract(url)
+                    if md2 and len(md2) > len(content):
+                        title = t2 or title
+                        content = md2
+                        source_type = "firecrawl_extract"
+                except Exception:
+                    # keep direct result
+                    pass
+        except Exception as e:
+            # Direct failed, try Firecrawl
             try:
                 t2, md2, _ = fetch_via_firecrawl_extract(url)
-                if md2 and len(md2) > len(content):
-                    title = t2 or title
-                    content = md2
-                    source_type = "firecrawl_extract"
-            except Exception:
-                # keep direct result
-                pass
-    except Exception as e:
-        # Direct failed, try Firecrawl
-        try:
-            t2, md2, _ = fetch_via_firecrawl_extract(url)
-            title = t2 or candidate.title
-            content = md2 or candidate.description
-            source_type = "firecrawl_extract"
-        except Exception as e2:
-            # Final fallback: use discovery snippet as content if no fetch possible
-            # Allows verification on snippet alone with lower confidence (e.g., when Firecrawl quota exhausted)
-            title = candidate.title or ""
-            content = candidate.description or ""
-            source_type = "discovery_snippet"
-            # Do not immediately reject if snippet has at least title or description with tokens
-            # Proceed to scoring with snippet; only reject if both empty
-            if not title and not content:
-                candidate.verification_status = "rejected"
-                candidate.verification_method = "rejected_unrelated"
-                candidate.verification_score = -10
-                candidate.verification_evidence = f"Fetch failed: {type(e).__name__}: {e} / {type(e2).__name__}: {e2}"
-                return candidate
-            # Keep at least snippet for scoring; mark source_type so verification knows it's snippet
-            # Continue to scoring below
+                title = t2 or candidate.title
+                content = md2 or candidate.description
+                source_type = "firecrawl_extract"
+            except Exception as e2:
+                # Final fallback: use discovery snippet as content if no fetch possible
+                # Allows verification on snippet alone with lower confidence (e.g., when Firecrawl quota exhausted)
+                title = candidate.title or ""
+                content = candidate.description or ""
+                source_type = "discovery_snippet"
+                # Do not immediately reject if snippet has at least title or description with tokens
+                # Proceed to scoring with snippet; only reject if both empty
+                if not title and not content:
+                    candidate.verification_status = "rejected"
+                    candidate.verification_method = "rejected_unrelated"
+                    candidate.verification_score = -10
+                    candidate.verification_evidence = f"Fetch failed: {type(e).__name__}: {e} / {type(e2).__name__}: {e2}"
+                    return candidate
+                # Keep at least snippet for scoring; mark source_type so verification knows it's snippet
+                # Continue to scoring below
 
     title_l = title.lower()
     content_l = content.lower()

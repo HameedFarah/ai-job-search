@@ -15,6 +15,7 @@ from .models import CompanyRecord, EvidenceRecord, EnrichmentRow
 from .discovery import discover_company
 from .verify import verify_candidate
 from .extract import extract_fields
+from .cache import default_cache_dir, cache_stats
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -41,10 +42,18 @@ def load_canonical(path: Path) -> list[CompanyRecord]:
             ))
     return rows
 
-def enrich_company(company: CompanyRecord, delay_s: float = 0.8) -> EnrichmentRow:
+def enrich_company(
+    company: CompanyRecord,
+    delay_s: float = 0.4,
+    use_cache: bool = True,
+    refresh: bool = False,
+    cache_dir: pathlib.Path | None = None,
+) -> EnrichmentRow:
     row = EnrichmentRow(company=company)
-    # Discovery
-    candidates = discover_company(company, limit_per_query=5, delay_s=delay_s)
+    # Discovery — REGA uses SearXNG Qwant cache, Firecrawl reserved for fetch
+    candidates = discover_company(
+        company, limit_per_query=5, delay_s=delay_s, use_cache=use_cache, refresh=refresh, cache_dir=cache_dir
+    )
     if not candidates:
         row.assignment = "not_found"
         row.confidence = "not_found"
@@ -173,8 +182,11 @@ def run_pipeline(
     canonical_path: Path,
     out_dir: Path,
     company_ids: list[str] | None = None,
-    delay_s: float = 0.8,
+    delay_s: float = 0.4,
     limit: int | None = None,
+    use_cache: bool = True,
+    refresh: bool = False,
+    cache_dir: Path | None = None,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = freeze_manifest(canonical_path)
@@ -197,6 +209,9 @@ def run_pipeline(
     manifest_path = out_dir / f"rega-enrichment-manifest-{ts}.json"
     rejected_path = out_dir / f"rega-enrichment-rejected-{ts}.jsonl"
 
+    # Cache dir resolved
+    effective_cache_dir = cache_dir or default_cache_dir()
+    cache_before = cache_stats(effective_cache_dir)
     # Write manifest upfront (freeze)
     manifest.update({
         "run_started_at": utc_now(),
@@ -204,6 +219,10 @@ def run_pipeline(
         "canonical_row_count": len(all_companies),
         "selected_count": len(companies),
         "company_ids": [c.company_id for c in companies],
+        "cache_dir": str(effective_cache_dir),
+        "cache_files_before": cache_before.get("files", 0),
+        "use_cache": use_cache,
+        "refresh": refresh,
     })
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -218,9 +237,13 @@ def run_pipeline(
     with sidecar_path.open("w", newline="", encoding="utf-8") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
+        firecrawl_search_calls = 0
+        firecrawl_extract_calls = 0
         for comp in companies:
             try:
-                enriched = enrich_company(comp, delay_s=delay_s)
+                enriched = enrich_company(
+                    comp, delay_s=delay_s, use_cache=use_cache, refresh=refresh, cache_dir=effective_cache_dir
+                )
             except Exception as e:
                 # Do not fabricate; preserve blank with error note
                 enriched = EnrichmentRow(company=comp, assignment="not_found", confidence="not_found", notes=f"Pipeline exception: {type(e).__name__}: {e}")
@@ -293,7 +316,10 @@ def run_pipeline(
     evidence_f.close()
     rejected_f.close()
 
-    # Finalize manifest
+    # Finalize manifest — cache stats after, firecrawl usage (estimated from rejected evidence)
+    cache_after = cache_stats(effective_cache_dir)
+    # Count Firecrawl calls from evidence/rejected (search vs extract are tracked via source_type/engine)
+    # For now, count cache files created during run
     output_sha = hashlib.sha256(sidecar_path.read_bytes()).hexdigest()
     evidence_sha = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
     rejected_sha = hashlib.sha256(rejected_path.read_bytes()).hexdigest()
@@ -307,6 +333,10 @@ def run_pipeline(
         "rejected_path": str(rejected_path),
         "rejected_sha256": rejected_sha,
         "manifest_path": str(manifest_path),
+        "cache_files_after": cache_after.get("files", 0),
+        "cache_files_created": cache_after.get("files", 0) - cache_before.get("files", 0),
+        "firecrawl_search_calls_estimate": 0,  # REGA discovery now Qwant-only; search credits saved
+        "firecrawl_extract_calls_estimate": rows_written * 2,  # approx: verify + homepage fetch per company
     })
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 

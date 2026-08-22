@@ -463,7 +463,7 @@ function renderAiRequests() {
 }
 
 async function refreshAiRequests() {
-  const records = await loadCollection('ai_requests');
+  const records = await loadCollection('ai_requests', 300, true, true);
   state.aiRequests = records.filter(record => dataOf(record).role_key === state.role.key);
   renderAiRequests();
   refreshTimeline();
@@ -541,7 +541,7 @@ async function refreshTimeline() {
 }
 
 async function loadDetailData() {
-  const records = await loadCollection('workflow');
+  const records = await loadCollectionAll('workflow');
   for (const record of records) {
     const data = dataOf(record);
     const stage = data.stage === 'approved' ? 'ready_review' : data.stage;

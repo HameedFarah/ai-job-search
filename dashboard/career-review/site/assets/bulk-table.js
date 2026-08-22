@@ -592,7 +592,7 @@ function pollDocumentRebuild(role, requestId) {
   const timer = setInterval(async () => {
     attempts += 1;
     try {
-      const records = await loadCollection('ai_requests', 300, true);
+      const records = await loadCollection('ai_requests', 300, true, true);
       const record = records.find(item => item.id === requestId);
       if (!record) return;
       const normalized = updateAiRequestState(record);

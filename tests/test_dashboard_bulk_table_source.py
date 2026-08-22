@@ -61,6 +61,16 @@ class DashboardBulkTableSourceTests(unittest.TestCase):
         self.assertIn("detail-stage-select", source)
         self.assertIn("bulk-hidden-stage-menu", source)
 
+    def test_workflow_reload_reads_all_cursor_pages(self) -> None:
+        shared = (SITE / "assets/shared.js").read_text(encoding="utf-8")
+        app = (SITE / "assets/app.js").read_text(encoding="utf-8")
+        detail = (SITE / "assets/detail.js").read_text(encoding="utf-8")
+        self.assertIn("async function loadCollectionAll", shared)
+        self.assertIn("payload.nextCursor", shared)
+        self.assertIn("params.set('cursor', cursor)", shared)
+        self.assertIn("loadCollectionAll('workflow')", app)
+        self.assertIn("loadCollectionAll('workflow')", detail)
+
 
 if __name__ == "__main__":
     unittest.main()

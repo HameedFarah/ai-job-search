@@ -1,7 +1,9 @@
 import inspect
 import shutil
 import subprocess
+import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -10,6 +12,131 @@ from tools import career_dashboard_assistant as assistant
 
 
 class DashboardRebuildDocumentsStatusTest(unittest.TestCase):
+    def test_rebuild_emits_actual_package_phases_and_omits_unsupported_eta(self):
+        progress = []
+
+        def generate(**kwargs):
+            kwargs["progress_callback"]("generating")
+            kwargs["progress_callback"]("validating")
+            kwargs["progress_callback"]("rendering")
+            return "generated_and_rendered"
+
+        def refresh(repo, website_root, progress_callback=None):
+            progress_callback("refreshing_metadata")
+            progress_callback("publishing")
+
+        with mock.patch.object(assistant, "_ensure_rebuild_generation_packet"), mock.patch.object(
+            assistant, "_generate_application_package", side_effect=generate
+        ), mock.patch.object(assistant, "_refresh_dashboard_site", side_effect=refresh):
+            assistant.run_rebuild_documents(
+                repo=Path("/tmp/rebuild-test"),
+                dispatcher=Path("/tmp/dispatcher.py"),
+                website_root=Path("/tmp/site"),
+                job_id="abcdef1234567890",
+                progress_callback=progress.append,
+            )
+
+        assert [item["phase"] for item in progress] == [
+            "queued",
+            "preparing",
+            "generating",
+            "validating",
+            "rendering",
+            "refreshing_metadata",
+            "publishing",
+            "complete",
+        ]
+        assert all(item["kind"] == "package_progress" for item in progress)
+        assert all("label" in item and "percent" in item and "elapsed_seconds" in item for item in progress)
+        assert all("eta_seconds" not in item for item in progress)
+        assert progress[-1]["percent"] == 100
+
+    def test_rebuild_uses_median_eta_only_with_enough_successful_history(self):
+        now = datetime.now(timezone.utc)
+        history = []
+        for index, seconds in enumerate((100, 200, 300)):
+            created = now - timedelta(hours=index + 1)
+            history.append({
+                "id": f"old-{index}",
+                "createdAt": created.isoformat(),
+                "updatedAt": (created + timedelta(seconds=seconds)).isoformat(),
+                "data": {"request_type": "rebuild_documents", "state": "done"},
+            })
+        progress = []
+
+        with mock.patch.object(assistant, "_ensure_rebuild_generation_packet"), mock.patch.object(
+            assistant,
+            "_generate_application_package",
+            side_effect=lambda **kwargs: kwargs["progress_callback"]("rendering") or "rendered_existing",
+        ), mock.patch.object(
+            assistant, "_refresh_dashboard_site", side_effect=lambda repo, website_root, progress_callback=None: (
+                progress_callback("refreshing_metadata"), progress_callback("publishing")
+            )
+        ):
+            assistant.run_rebuild_documents(
+                repo=Path("/tmp/rebuild-test"),
+                dispatcher=Path("/tmp/dispatcher.py"),
+                website_root=Path("/tmp/site"),
+                job_id="abcdef1234567890",
+                progress_callback=progress.append,
+                historical_requests=history,
+            )
+
+        assert all("eta_seconds" in item for item in progress)
+        assert progress[0]["eta_seconds"] >= 0
+
+    def test_existing_package_skips_generation_and_completes_only_after_publish(self):
+        progress = []
+        published = []
+
+        def generate(**kwargs):
+            kwargs["progress_callback"]("rendering")
+            return "rendered_existing"
+
+        def refresh(repo, website_root, progress_callback=None):
+            progress_callback("refreshing_metadata")
+            published.append(True)
+            progress_callback("publishing")
+
+        with mock.patch.object(assistant, "_ensure_rebuild_generation_packet"), mock.patch.object(
+            assistant, "_generate_application_package", side_effect=generate
+        ), mock.patch.object(assistant, "_refresh_dashboard_site", side_effect=refresh):
+            assistant.run_rebuild_documents(
+                repo=Path("/tmp/rebuild-test"),
+                dispatcher=Path("/tmp/dispatcher.py"),
+                website_root=Path("/tmp/site"),
+                job_id="abcdef1234567890",
+                progress_callback=progress.append,
+            )
+
+        assert "generating" not in [item["phase"] for item in progress]
+        assert "validating" not in [item["phase"] for item in progress]
+        assert published == [True]
+        assert progress[-1]["phase"] == "complete"
+
+    def test_publish_failure_never_emits_terminal_complete(self):
+        progress = []
+
+        with mock.patch.object(assistant, "_ensure_rebuild_generation_packet"), mock.patch.object(
+            assistant,
+            "_generate_application_package",
+            side_effect=lambda **kwargs: kwargs["progress_callback"]("rendering") or "rendered_existing",
+        ), mock.patch.object(
+            assistant,
+            "_refresh_dashboard_site",
+            side_effect=assistant.AssistantError("publish failed: here.now unavailable"),
+        ):
+            with self.assertRaises(assistant.AssistantError):
+                assistant.run_rebuild_documents(
+                    repo=Path("/tmp/rebuild-test"),
+                    dispatcher=Path("/tmp/dispatcher.py"),
+                    website_root=Path("/tmp/site"),
+                    job_id="abcdef1234567890",
+                    progress_callback=progress.append,
+                )
+
+        self.assertNotIn("complete", [item["phase"] for item in progress])
+
     def test_status_action_is_not_a_lifecycle_stage(self):
         path = Path("dashboard/career-review/site/assets/bulk-table.js")
         text = path.read_text(encoding="utf-8")
@@ -122,7 +249,7 @@ class DashboardRebuildDocumentsStatusTest(unittest.TestCase):
         ), mock.patch.object(
             assistant,
             "_refresh_dashboard_site",
-            side_effect=lambda repo, website_root: published.append((repo, website_root)),
+            side_effect=lambda repo, website_root, progress_callback=None: published.append((repo, website_root)),
         ):
             answer = assistant.run_rebuild_documents(
                 repo=Path("/tmp/rebuild-test"),
@@ -133,6 +260,50 @@ class DashboardRebuildDocumentsStatusTest(unittest.TestCase):
         self.assertFalse(generated[0]["force_regenerate"])
         self.assertEqual(published, [(Path("/tmp/rebuild-test"), Path("/tmp/site"))])
         self.assertIn("dashboard was republished", answer)
+
+    def test_progress_telemetry_patch_failure_does_not_abort_and_final_answer_wins(self):
+        request = {"id": "request-1", "data": {"role_key": "tracker-1", "state": "pending"}}
+        patches = []
+
+        def patch_request(**kwargs):
+            fields = kwargs["fields"]
+            patches.append(fields)
+            if fields.get("answer", "").startswith('{"kind":'):
+                raise assistant.AssistantError("telemetry PATCH failed")
+
+        def answer_request(**kwargs):
+            kwargs["progress_callback"]({"kind": "package_progress", "phase": "generating"})
+            return "tracker-1", "authoritative final answer", {
+                "validation_status": "success",
+                "owner_input_needed": False,
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            assistant, "archive_confirmed_submissions", return_value={"archived": 0, "existing": 0, "unresolved": []}
+        ), mock.patch.object(
+            assistant, "ai_request_records", return_value=[]
+        ), mock.patch.object(
+            assistant, "pending_requests", return_value=[request]
+        ), mock.patch.object(
+            assistant, "patch_request", side_effect=patch_request
+        ), mock.patch.object(
+            assistant, "answer_request", side_effect=answer_request
+        ), mock.patch.object(
+            assistant, "create_response_comment"
+        ):
+            result = assistant.process_once(
+                repo=Path(temp_dir),
+                dispatcher=Path(temp_dir) / "dispatcher.py",
+                website_root=Path(temp_dir) / "site",
+                slug="test-site",
+                api_key="test-key",
+                limit=1,
+            )
+
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(patches[-1]["state"], "done")
+        self.assertEqual(patches[-1]["answer"], "authoritative final answer")
 
 
 if __name__ == "__main__":

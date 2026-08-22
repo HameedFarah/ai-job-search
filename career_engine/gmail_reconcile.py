@@ -20,11 +20,13 @@ SUBMISSION_PHRASES = (
     "confirm receipt of your application",
     "confirm receipt of your resume",
     "thank you for applying",
+    "thank you for submitting your application",
     "thank you for your application",
     "received your job application",
     "writing to apply",
     "application confirmation",
     "application was sent to",
+    "application for the position",
 )
 
 _COMPANY_ALIASES = {
@@ -179,6 +181,34 @@ def _extract_workday(subject: str, body: str) -> dict[str, str] | None:
     return {"company": company, "role": role, "external_job_id": "", "route": "portal", "signal": "workday_submission_confirmation"}
 
 
+def _extract_workday_receipt(subject: str, body: str, sender: str) -> dict[str, str] | None:
+    if not re.search(r"@myworkday\.com\b", sender, re.I):
+        return None
+    subject_match = re.match(r"^Application for the position of\s+(.+)$", subject, re.I)
+    if not subject_match or not re.match(r"Dear\b.+?Thank you for submitting your application\.", body, re.I):
+        return None
+    quoted_display = re.match(r'^\s*"([^"]+)"', sender)
+    if quoted_display:
+        display = _text(quoted_display.group(1))
+    else:
+        display = _text(re.sub(r"\s*<?[\w.+-]+@[\w.-]+>?\s*$", "", sender)).strip('"')
+    display = re.sub(r"^Workday\.Admin\s+", "", display, flags=re.I)
+    if not display or "@" in display or _key(display) == "workday admin":
+        return None
+    return {"company": display, "role": _text(subject_match.group(1)), "external_job_id": "", "route": "portal", "signal": "workday_application_receipt"}
+
+
+def _extract_explicit_receipt(subject: str, body: str) -> dict[str, str] | None:
+    nova = re.search(r"Thank you for applying for the\s+(.+?)\s+position at\s+(.+?)\.\s+Your application has been received successfully", body, re.I | re.S)
+    if nova and re.search(r"Thank you for applying to\s+.+$", subject, re.I):
+        return {"company": _text(nova.group(2)), "role": _text(nova.group(1)), "external_job_id": "", "route": "portal", "signal": "explicit_application_receipt"}
+    omrania = re.match(r"^Thank you for applying to\s+(.+)$", subject, re.I)
+    role = re.search(r"Thank you for submitting your application for the position of\s+(.+?)\.\s+Your application is queued for review", body, re.I | re.S)
+    if omrania and role and re.search(r"Best regards,\s*Omrania Hiring Team", body, re.I):
+        return {"company": _text(omrania.group(1)), "role": _text(role.group(1)), "external_job_id": "", "route": "portal", "signal": "explicit_application_receipt"}
+    return None
+
+
 def _extract_successfactors(subject: str, body: str) -> dict[str, str] | None:
     match = re.search(r"^(.+?)\s+Careers\s*[–—-]\s*Application Confirmation\s*-\s*([A-Za-z0-9_-]+)$", subject, re.I)
     if not match:
@@ -247,12 +277,37 @@ def _extract_linkedin(subject: str, body: str, urls: list[str]) -> dict[str, Any
         return None
     company = _text(match.group(1))
     primary = next((url for url in urls if re.search(r"linkedin\.com/(?:comm/)?jobs/view/", url, re.I)), "")
-    role = ""
-    body_match = re.search(r"Your application was sent to\s+(.+?)\s+(.+?)\s+\1\s+(?:Riyadh|Jeddah|Dubai|Abu Dhabi|KSA)\b", body, re.I)
-    if body_match:
-        company = _text(body_match.group(1))
-        role = _text(body_match.group(2))
-    return {"company": company, "role": role, "external_job_id": "", "route": "portal", "signal": "linkedin_submission_confirmation", "evidence_urls": [primary] if primary else []}
+    if not primary:
+        found = re.search(r"https?://(?:www\.)?linkedin\.com/(?:comm/)?jobs/view/\d+[^\s<>\"']*", body, re.I)
+        primary = found.group(0).rstrip(".,);]") if found else ""
+    id_match = re.search(r"linkedin\.com/(?:comm/)?jobs/view/(?:[^/?#]*-)?(\d+)", primary, re.I)
+    external = id_match.group(1) if id_match else ""
+    if not external:
+        return None
+    # The first applied-job block ends at the confirmation date; later URLs
+    # are recommendations and must never become submission evidence.
+    before_date = re.split(r"\bApplied on\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}\b", body, maxsplit=1, flags=re.I)[0]
+    start = before_date.lower().find(primary.lower()) if primary else -1
+    block = before_date[start + len(primary):] if start >= 0 else before_date
+    company_match = re.search(re.escape(company), block, re.I)
+    role = _text(block[:company_match.start()]) if company_match else ""
+    role = re.sub(r"^[\s|•·>:-]+|[\s|•·>:-]+$", "", role)
+    location = ""
+    if company_match:
+        location_match = re.search(r"\s*[·•]\s*(.+?)(?:\s*\([^)]*\))?\s*$", block[company_match.end():])
+        location = _text(location_match.group(1)) if location_match else ""
+    applied_match = re.search(r"\bApplied on\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})", body, re.I)
+    if not role:
+        return None
+    result: dict[str, Any] = {"company": company, "role": role, "external_job_id": external,
+        "route": "portal", "signal": "linkedin_submission_confirmation",
+        "evidence_urls": [primary], "application_url": primary,
+        "evidence_provenance": "linkedin_native_submission_confirmation_email"}
+    if location:
+        result["location"] = location
+    if applied_match:
+        result["applied_date"] = _text(applied_match.group(1))
+    return result
 
 
 _OWN_MAILBOX_ADDRESSES = {"hameedo@gmail.com", "hameedfarah@gmail.com"}
@@ -292,7 +347,8 @@ def _extract_sent(message: dict[str, Any], subject: str, body: str) -> dict[str,
 
 def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | None:
     subject = _text(message.get("subject"))
-    body = _text(message.get("body"))
+    body_raw = str(message.get("body") or "")
+    body = _text(body_raw)
     sender = _text(message.get("from"))
     urls = [str(value) for value in message.get("urls", []) if value]
     lowered = f"{subject}\n{body}".lower()
@@ -304,10 +360,12 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         or _extract_oracle_taleo(subject, body, sender)
         or _extract_buro_happold(subject, body, sender)
         or _extract_workable(subject, body, urls)
+        or _extract_workday_receipt(subject, body, sender)
+        or _extract_explicit_receipt(subject, body)
         or _extract_workday(subject, body)
         or _extract_successfactors(subject, body)
         or _extract_icims(subject, body, sender)
-        or _extract_linkedin(subject, body, urls)
+        or _extract_linkedin(subject, body_raw, urls)
         or _extract_sent(message, subject, body)
     )
     if not extracted:
@@ -322,6 +380,9 @@ def classify_submission_message(message: dict[str, Any]) -> dict[str, Any] | Non
         "sender": sender,
         "date": _message_day(message),
         "urls": extracted.get("evidence_urls", urls),
+        "application_url": extracted.get("application_url", ""),
+        "applied_date": extracted.get("applied_date", ""),
+        "evidence_provenance": extracted.get("evidence_provenance", ""),
     }
 
 
@@ -578,6 +639,9 @@ def _append_submission_evidence(tracker: Any, job_id: str, evidence: dict[str, A
         "match_reason": match_reason,
         "external_job_id": evidence.get("external_job_id", ""),
         "urls": list(evidence.get("urls") or []),
+        "application_url": evidence.get("application_url", ""),
+        "applied_date": evidence.get("applied_date", ""),
+        "evidence_provenance": evidence.get("evidence_provenance", ""),
     })
     package["gmail_evidence"] = gmail_evidence
     package["status_source"] = "gmail_submission_reconciliation"
@@ -649,7 +713,9 @@ def reconcile_submission_mail(
     query = (
         f"after:{after} before:{before} -in:spam -in:trash "
         "{application applying \"submitted successfully\" \"thank you for applying\" "
-        "\"application confirmation\" from:hameedfarah@gmail.com}"
+        "\"thank you for submitting your application\" \"application for the position\" "
+        "\"application confirmation\" \"application was sent to\" "
+        "from:(linkedin.com) from:hameedfarah@gmail.com}"
     )
     messages = search_messages(query, max_results=max_results)
     _, paths = load_config(root)
