@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).parents[1]
 SPEC = importlib.util.spec_from_file_location("reconcile_scheduler", ROOT / "tools/reconcile_career_scheduler.py")
@@ -51,6 +53,7 @@ def test_run_hermes_pins_profile_explicitly(tmp_path, monkeypatch):
     agency = hermes / "profiles" / "agency"
     agency.mkdir(parents=True)
     monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/local/bin/hermes")
     calls = []
 
     def fake_run(args, **kwargs):
@@ -62,10 +65,30 @@ def test_run_hermes_pins_profile_explicitly(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
     mod.run_hermes(hermes, "pause", "legacy")
     mod.run_hermes(agency, "resume", "current")
-    assert calls[0][0][:4] == ["hermes", "--profile", "default", "cron"]
-    assert calls[1][0][:4] == ["hermes", "--profile", "agency", "cron"]
+    assert calls[0][0][:4] == ["/usr/local/bin/hermes", "--profile", "default", "cron"]
+    assert calls[1][0][:4] == ["/usr/local/bin/hermes", "--profile", "agency", "cron"]
     assert calls[0][1]["env"]["HERMES_HOME"] == str(hermes)
     assert calls[1][1]["env"]["HERMES_HOME"] == str(agency)
+
+
+def test_resolve_hermes_uses_maintained_fallback(tmp_path, monkeypatch):
+    hermes = tmp_path / ".hermes"
+    executable = hermes / "hermes-agent" / "venv" / "bin" / "hermes"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+    monkeypatch.delenv(mod.HERMES_EXECUTABLE_ENV, raising=False)
+    assert mod.resolve_hermes() == str(executable)
+
+
+def test_resolve_hermes_fails_clearly_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, "DEFAULT_HERMES", tmp_path / ".hermes")
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+    monkeypatch.delenv(mod.HERMES_EXECUTABLE_ENV, raising=False)
+    with pytest.raises(FileNotFoundError, match="Hermes CLI not found"):
+        mod.resolve_hermes()
 
 
 def test_apply_create_uses_create_supported_arguments(tmp_path, monkeypatch):

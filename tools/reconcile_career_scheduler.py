@@ -15,6 +15,37 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "projects/job-automation/config/career-engine-scheduler.v1.json"
 DEFAULT_HERMES = Path.home() / ".hermes"
 GLOBAL_SKILLS = DEFAULT_HERMES / "skills"
+HERMES_EXECUTABLE_ENV = "HERMES_EXECUTABLE"
+
+
+def resolve_hermes() -> str:
+    """Resolve Hermes deterministically for interactive, cron, and systemd callers."""
+    def is_executable(candidate: Path) -> bool:
+        try:
+            return candidate.is_file() and bool(candidate.stat().st_mode & 0o111)
+        except OSError:
+            return False
+
+    override = os.environ.get(HERMES_EXECUTABLE_ENV)
+    if override:
+        candidate = Path(override).expanduser()
+        if is_executable(candidate):
+            return str(candidate)
+        raise FileNotFoundError(
+            f"{HERMES_EXECUTABLE_ENV} does not point to an executable: {candidate}"
+        )
+
+    discovered = shutil.which("hermes")
+    if discovered:
+        return discovered
+
+    candidate = DEFAULT_HERMES / "hermes-agent" / "venv" / "bin" / "hermes"
+    if is_executable(candidate):
+        return str(candidate)
+    raise FileNotFoundError(
+        "Hermes CLI not found: set HERMES_EXECUTABLE, install hermes on PATH, "
+        f"or provide the maintained install at {candidate}"
+    )
 
 
 def profile_home(profile: str | None) -> Path:
@@ -66,7 +97,7 @@ def run_hermes(home: Path, *args: str) -> None:
     env["HERMES_HOME"] = str(home)
     profile = profile_name_for_home(home)
     subprocess.run(
-        ["hermes", "--profile", profile, "cron", *args],
+        [resolve_hermes(), "--profile", profile, "cron", *args],
         env=env,
         check=True,
         capture_output=True,
