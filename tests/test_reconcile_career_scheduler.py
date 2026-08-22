@@ -81,6 +81,7 @@ def test_apply_create_uses_create_supported_arguments(tmp_path, monkeypatch):
     data["source_script"] = "source.py"
     monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
     monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "provision_skills", lambda manifest, target: None)
     calls = []
 
     def fake_run(home, *args):
@@ -102,3 +103,23 @@ def test_apply_create_uses_create_supported_arguments(tmp_path, monkeypatch):
     assert "--prompt" not in create
     assert "--agent" not in create
     assert result["status"] == "ok"
+
+
+def test_manifest_skill_sources_resolve_in_fresh_profile(tmp_path, monkeypatch):
+    data = manifest()
+    hermes = tmp_path / ".hermes"
+    target = hermes / "profiles" / "agency"
+    (target / "cron").mkdir(parents=True)
+    (target / "cron/jobs.json").write_text(json.dumps({"jobs": []}))
+    repo = tmp_path / "repo"
+    global_skills = tmp_path / "global-skills"
+    for skill, entry in data["skill_sources"].items():
+        root = repo if entry["kind"] == "repo" else global_skills
+        source = root / entry["path"]
+        source.mkdir(parents=True)
+        (source / "SKILL.md").write_text(f"---\nname: {skill}\n---\n")
+    monkeypatch.setattr(mod, "ROOT", repo)
+    monkeypatch.setattr(mod, "GLOBAL_SKILLS", global_skills)
+    mod.provision_skills(data, target)
+    assert sorted(p.name for p in (target / "skills").iterdir()) == sorted(data["skills"])
+    assert all((target / "skills" / skill / "SKILL.md").is_file() for skill in data["skills"])

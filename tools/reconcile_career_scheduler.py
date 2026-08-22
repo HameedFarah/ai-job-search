@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "projects/job-automation/config/career-engine-scheduler.v1.json"
 DEFAULT_HERMES = Path.home() / ".hermes"
+GLOBAL_SKILLS = DEFAULT_HERMES / "skills"
 
 
 def profile_home(profile: str | None) -> Path:
@@ -85,6 +86,30 @@ def atomic_copy(source: Path, target: Path) -> None:
     os.replace(tmp_path, target)
 
 
+def skill_source(manifest: dict, skill: str) -> Path:
+    entry = manifest["skill_sources"][skill]
+    root = ROOT if entry["kind"] == "repo" else GLOBAL_SKILLS
+    return root / entry["path"]
+
+
+def provision_skills(manifest: dict, target: Path) -> None:
+    """Expose manifest-owned skill sources to Hermes without copying authorities."""
+    for skill in manifest["skills"]:
+        source = skill_source(manifest, skill)
+        if not (source / "SKILL.md").is_file():
+            raise FileNotFoundError(f"maintained skill source missing: {skill}: {source}")
+        link = target / "skills" / skill
+        if link.is_symlink() and link.resolve() == source.resolve():
+            continue
+        if link.exists() or link.is_symlink():
+            if link.is_dir() and not link.is_symlink():
+                shutil.rmtree(link)
+            else:
+                link.unlink()
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(source, target_is_directory=True)
+
+
 def inspect(manifest: dict, target: Path) -> dict:
     target_store = target / "cron/jobs.json"
     target_jobs = jobs(target_store)
@@ -103,6 +128,7 @@ def inspect(manifest: dict, target: Path) -> dict:
 
 
 def apply(manifest: dict, target: Path) -> dict:
+    provision_skills(manifest, target)
     source = ROOT / manifest["source_script"]
     runtime = target / "scripts" / manifest["runtime_script"]
     if not runtime.exists() or runtime.read_bytes() != source.read_bytes():
