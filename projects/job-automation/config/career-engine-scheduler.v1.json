@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "authority_key": "career-engine.hermes.scheduler.v1",
+  "name": "Career Engine Daily Scan",
+  "schedule": "0 9 * * *",
+  "timezone": "Asia/Riyadh",
+  "prompt": "Authority order: 1 Vault master projects/agent-ops/model-routing.md for inference, 2 career-engine.v1.json, 3 runtime bundle, 4 central rules, 5 Vault Career Engine contract/truth, 6 owner/dashboard, 7 review diff lessons. Run doctor+bundle status. Use bundle threshold. Sync tracker/dashboard. Inspect authorized alerts. Never send/contact/submit.",
+  "skills": ["career-engine", "linkedin-search", "freehire-search", "research", "hameedo-email-triage", "himalaya"],
+  "script": "projects/job-automation/hermes/career-engine-daily-context.py",
+  "no_agent": false,
+  "deliver": "local",
+  "workdir": "/home/hameedo/projects/ai-job-search"
+}
