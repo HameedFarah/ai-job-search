@@ -56,21 +56,50 @@ def enrich_company(company: CompanyRecord, delay_s: float = 0.8) -> EnrichmentRo
         if c.url not in dedup:
             dedup[c.url] = c
     unique_cands = list(dedup.values())
-    # Verify each candidate — deterministic order sorted by url
-    unique_cands.sort(key=lambda x: x.url)
+    # Pre-score candidates by discovery signals to prioritize verification and save quota
+    # Deterministic pre-sort: host contains distinctive token -> higher priority
+    from .config import GENERIC_TOKENS as _GT
+    from .models import distinctive_tokens as _dt, hostname_tokens as _ht
+    from urllib.parse import urlsplit as _us
+    def _pre_score(c):
+        host = (_us(c.url).hostname or "").lower()
+        host_norm = _ht(host)
+        toks = _dt(company.english_name, _GT)
+        s = 0
+        for tok in toks:
+            if tok in host_norm:
+                s += 10
+            if tok in c.title.lower():
+                s += 5
+        # Prefer earlier discovery position (lower) and Firecrawl over SearXNG Bing
+        if "firecrawl" in c.engine:
+            s += 2
+        if ".sa" in host:
+            s += 3
+        s -= (c.position or 5)
+        return -s  # negative for sort ascending
+    unique_cands.sort(key=lambda x: (_pre_score(x), x.url))
+    # Limit verification to top 8 to preserve Firecrawl quota and determinism (still carry all rejected as not_found)
+    to_verify = unique_cands[:8]
+    remaining = unique_cands[8:]
     verified: list[Any] = []
     rejected: list[Any] = []
-    for cand in unique_cands:
+    for cand in to_verify:
         v = verify_candidate(cand, company)
         if v.verification_status in ("confirmed", "candidate"):
             verified.append(v)
         elif v.verification_status == "unconfirmed":
-            # keep as weak candidate for reporting but not for promotion
             rejected.append(v)
         else:
             rejected.append(v)
-        # Respect provider rate limits between verifications (Firecrawl extract)
-        time.sleep(0.6)
+        time.sleep(0.4)
+    # Remaining beyond top 8 are treated as rejected without fetch (to avoid quota)
+    for cand in remaining:
+        cand.verification_status = "rejected"
+        cand.verification_method = "rejected_unrelated"
+        cand.verification_score = -5
+        cand.verification_evidence = "Not verified — beyond top-8 pre-score cutoff; discovery only"
+        rejected.append(cand)
 
     # Sort verified by score desc, then confirmed first
     verified.sort(key=lambda x: (0 if x.verification_status=="confirmed" else 1, -x.verification_score, x.url))
