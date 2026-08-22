@@ -34,15 +34,22 @@ Every projection declares the privacy exclusions and `contains_secret_values=fal
 
 ## Scheduled-review acceptance
 
-The scheduled ChatGPT review must read current Vault/repo canon first, then read `latest.json` explicitly from branch `career-review-runtime`. Accept the runtime evidence only when:
+The scheduled ChatGPT review must read current Vault/repo canon first, then read `latest.json` explicitly from branch `career-review-runtime`.
+
+At the normal 10:00 Asia/Riyadh review, a projection counts as the completed natural morning scan only when all of the following are true:
 
 1. `operation_date` is the expected current Riyadh review date;
 2. `scan.scanner_id` is `hermes_scanner`;
-3. the recorded bundle hash is consistent with current accepted Career Engine state;
-4. `source.head_matches_origin_master=true` unless current canon documents a deliberate exception;
-5. `privacy.contains_secret_values=false` and all exclusion flags remain false as defined above;
-6. publication is fresh enough to represent the completed morning scan.
+3. `scan.scanned_at`, converted to `Asia/Riyadh`, is on the current date and falls in the bounded morning acceptance window `08:45 <= scanned_at <= 10:00`;
+4. the recorded bundle hash is consistent with the accepted Career Engine state used for that scan;
+5. `source.head_matches_origin_master=true` at projection-publication time unless current canon documents a deliberate exception;
+6. `privacy.contains_secret_values=false` and all exclusion flags remain false as defined above;
+7. Gmail/reconciliation and source-path statistics are internally consistent.
 
-A missing, stale, malformed, privacy-unsafe, or source-drifted projection must be reported as PARTIAL/UNVERIFIED. The reviewer must never manufacture zero counts from missing runtime evidence.
+A same-date projection created before 08:45 is a prior controlled/manual run and must not be accepted as proof that the natural 09:00 run occurred. The reviewer may use it as historical context only.
+
+`scan.scan_source_sha` records the source HEAD on which the scan actually ran. `scan.current_source_sha`/`source.head` record source state at review-projection publication time. Source may legitimately advance after a scan. A mismatch between scan and current source is therefore reported as drift and is not, by itself, evidence that the completed scan is invalid. The identities must never be conflated.
+
+A missing, stale, malformed, privacy-unsafe projection, or a projection outside the morning acceptance window, must be reported as PARTIAL/UNVERIFIED. The reviewer must distinguish `09:00 scan evidence missing` from `09:00 review publication missing` when connected evidence permits that distinction, and must never manufacture zero counts from missing runtime evidence.
 
 Gmail is independently inspected by the scheduled ChatGPT task for alerts, recruiter messages, confirmations, and replies. Gmail evidence may corroborate or challenge the projection, but it does not replace CareerTracker and cannot silently override an owner decision.
