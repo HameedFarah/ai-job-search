@@ -177,10 +177,10 @@ def apply(manifest: dict, target: Path) -> dict:
         "--agent",
         "--model", "",
         "--provider", "",
-        "--clear-skills",
     ]
     for skill in manifest["skills"]:
-        edit_args += ["--add-skill", skill]
+        edit_args += ["--skill", skill]
+    primary_id = job.get("id") if job else None
     if job:
         run_hermes(target, "edit", job["id"], *edit_args)
         if not job.get("enabled"):
@@ -196,13 +196,16 @@ def apply(manifest: dict, target: Path) -> dict:
         for skill in manifest["skills"]:
             create_args += ["--skill", skill]
         run_hermes(target, *create_args)
+        primary_id = next((j.get("id") for j in jobs(target / "cron/jobs.json")
+                           if j.get("name") == manifest["name"] and j.get("enabled")), None)
     target_store = target / "cron/jobs.json"
-    kept = next((j.get("id") for j in jobs(target_store)
-                 if j.get("name") == manifest["name"] and j.get("enabled") and matching(j, manifest)), None)
     for store in stores():
-        for job in jobs(store):
-            if job.get("name") == manifest["name"] and job.get("enabled") and not (store == target_store and job.get("id") == kept):
-                run_hermes(store.parents[1], "pause", job["id"])
+        for candidate in jobs(store):
+            if candidate.get("name") != manifest["name"] or not candidate.get("enabled"):
+                continue
+            if store == target_store and candidate.get("id") == primary_id:
+                continue
+            run_hermes(store.parents[1], "pause", candidate["id"])
     return inspect(manifest, target)
 
 

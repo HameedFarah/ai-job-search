@@ -128,6 +128,42 @@ def test_apply_create_uses_create_supported_arguments(tmp_path, monkeypatch):
     assert result["status"] == "ok"
 
 
+def test_apply_edit_replaces_skills_without_self_pausing_on_drift(tmp_path, monkeypatch):
+    data = manifest()
+    hermes = tmp_path / ".hermes"
+    agency = hermes / "profiles" / "agency"
+    (agency / "cron").mkdir(parents=True)
+    existing = {
+        "id": "current", "name": data["name"], "prompt": data["prompt"],
+        "skills": ["old-skill"], "script": data["runtime_script"], "no_agent": False,
+        "deliver": data["deliver"], "workdir": data["workdir"], "model": None, "provider": None,
+        "schedule": {"expr": data["schedule"]}, "schedule_display": data["schedule"], "enabled": True,
+    }
+    (agency / "cron/jobs.json").write_text(json.dumps({"jobs": [existing]}))
+    (hermes / "active_profile").write_text("agency\n")
+    source = tmp_path / "source.py"
+    source.write_text("print('ok')\n")
+    data["source_script"] = "source.py"
+    monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "provision_skills", lambda manifest, target: None)
+    calls = []
+
+    def fake_run(home, *args):
+        calls.append((home, args))
+        # Deliberately leave the stored job mismatched to exercise fail-visible
+        # drift without allowing reconciliation to pause its primary target.
+
+    monkeypatch.setattr(mod, "run_hermes", fake_run)
+    result = mod.apply(data, agency)
+    edit = next(args for _, args in calls if args[0] == "edit")
+    assert "--clear-skills" not in edit
+    assert "--add-skill" not in edit
+    assert edit.count("--skill") == len(data["skills"])
+    assert not any(args[0] == "pause" and args[1] == "current" for _, args in calls)
+    assert result["status"] == "drift"
+
+
 def test_manifest_skill_sources_resolve_in_fresh_profile(tmp_path, monkeypatch):
     data = manifest()
     hermes = tmp_path / ".hermes"
