@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import tempfile
 import time
@@ -136,17 +137,67 @@ def _data_of(record: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else record
 
 
-def pending_requests(*, slug: str, api_key: str, limit: int) -> list[dict[str, Any]]:
+def ai_request_records(*, slug: str, api_key: str, limit: int = 100) -> list[dict[str, Any]]:
     result = _request_json(
         _site_api(slug, REQUEST_COLLECTION) + f"?limit={max(1, min(limit, 100))}",
         api_key=api_key,
     )
-    records = result.get("records") or []
+    return list(result.get("records") or [])
+
+
+def pending_requests(*, slug: str, api_key: str, limit: int) -> list[dict[str, Any]]:
+    records = ai_request_records(slug=slug, api_key=api_key, limit=limit)
     return [
         record
         for record in records
         if str(_data_of(record).get("state", "pending")).lower() == "pending"
     ]
+
+
+def _request_timestamp(record: dict[str, Any], *names: str) -> datetime | None:
+    for name in names:
+        value = record.get(name)
+        if value is None:
+            value = _data_of(record).get(name)
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+        except ValueError:
+            continue
+    return None
+
+
+def _historical_rebuild_duration_seconds(records: list[dict[str, Any]], *, minimum_samples: int = 3) -> float | None:
+    """Return a robust duration from recent successful rebuild requests.
+
+    Site Data timestamps are the only persisted timing evidence available to
+    the assistant. Keep the estimate deliberately conservative until enough
+    completed rebuilds exist to make a median useful.
+    """
+    durations: list[float] = []
+    successful = [
+        record
+        for record in records
+        if str(_data_of(record).get("request_type", "")).lower() == "rebuild_documents"
+        and str(_data_of(record).get("state", "")).lower() == "done"
+    ]
+    successful.sort(
+        key=lambda record: _request_timestamp(record, "updatedAt", "updated_at") or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    for record in successful[:20]:
+        created = _request_timestamp(record, "createdAt", "created_at")
+        updated = _request_timestamp(record, "updatedAt", "updated_at")
+        if created is None or updated is None:
+            continue
+        duration = (updated - created).total_seconds()
+        if 0 < duration <= 6 * 60 * 60:
+            durations.append(duration)
+    if len(durations) < minimum_samples:
+        return None
+    return float(statistics.median(durations))
 
 
 def history_records(*, slug: str, api_key: str, limit: int = 500) -> list[dict[str, Any]]:
@@ -564,8 +615,16 @@ def _latest_hermes_run(repo: Path) -> tuple[str, str]:
     return (parts[0], parts[1]) if len(parts) >= 2 else ("", "")
 
 
-def _refresh_dashboard_site(repo: Path, website_root: Path) -> None:
+def _refresh_dashboard_site(
+    repo: Path,
+    website_root: Path,
+    progress_callback: Callable[[str], None] | None = None,
+) -> None:
+    if progress_callback:
+        progress_callback("refreshing_metadata")
     _run_engine(repo, ["dashboard", "--sync"], timeout=180)
+    if progress_callback:
+        progress_callback("publishing")
     _run_command(["/usr/bin/node", "scripts/build_site.js"], cwd=website_root, timeout=300)
     _run_command(["/usr/bin/node", "scripts/publish_here_now.js"], cwd=website_root, timeout=300)
     _run_command(
@@ -704,9 +763,12 @@ def _generate_application_package(
     dispatcher: Path,
     job_id: str,
     force_regenerate: bool = False,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> str:
     context = load_job_context(repo, job_id)
     if context["application"] and not force_regenerate:
+        if progress_callback:
+            progress_callback("rendering")
         render_result = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
         if not render_result.get("valid"):
             raise AssistantError(f"render failed for {job_id}")
@@ -729,6 +791,8 @@ def _generate_application_package(
     repair_used = False
     try:
         dispatch_error: AssistantError | None = None
+        if progress_callback:
+            progress_callback("generating")
         try:
             run_dispatcher(
                 dispatcher=dispatcher,
@@ -745,6 +809,8 @@ def _generate_application_package(
                 raise dispatch_error
             raise AssistantError(f"generation produced no candidate for {job_id}")
         _stamp_generated_application_contract(candidate, context["packet"])
+        if progress_callback:
+            progress_callback("validating")
         imported = json.loads(_run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(candidate)], timeout=180))
         if not imported.get("valid"):
             findings = imported.get("findings") or []
@@ -779,6 +845,8 @@ def _generate_application_package(
                     raise repair_error
                 raise AssistantError(f"validation repair produced no candidate for {job_id}")
             _stamp_generated_application_contract(repair_candidate, context["packet"])
+            if progress_callback:
+                progress_callback("validating")
             imported = json.loads(
                 _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(repair_candidate)], timeout=180)
             )
@@ -792,6 +860,8 @@ def _generate_application_package(
 
         render_error = ""
         try:
+            if progress_callback:
+                progress_callback("rendering")
             rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
             if not rendered.get("valid"):
                 render_error = json.dumps(rendered.get("findings") or rendered, ensure_ascii=False)
@@ -831,6 +901,8 @@ def _generate_application_package(
                     raise repair_error
                 raise AssistantError(f"render/QA repair produced no candidate for {job_id}")
             _stamp_generated_application_contract(repair_candidate, context["packet"])
+            if progress_callback:
+                progress_callback("validating")
             imported = json.loads(
                 _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(repair_candidate)], timeout=180)
             )
@@ -842,6 +914,8 @@ def _generate_application_package(
                 )
             repair_used = True
             try:
+                if progress_callback:
+                    progress_callback("rendering")
                 rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
             except AssistantError as exc:
                 raise AssistantError(f"render/QA failed after one bounded repair for {job_id}: {exc}") from exc
@@ -857,10 +931,14 @@ def _generate_application_package(
                     encoding="utf-8",
                 )
                 _stamp_generated_application_contract(fallback_candidate, context["packet"])
+                if progress_callback:
+                    progress_callback("validating")
                 imported = json.loads(
                     _run_engine(repo, ["generate", "import", "--job-id", job_id, "--file", str(fallback_candidate)], timeout=180)
                 )
                 if imported.get("valid"):
+                    if progress_callback:
+                        progress_callback("rendering")
                     rendered = json.loads(_run_engine(repo, ["render", "--job-id", job_id], timeout=360))
                     if rendered.get("valid"):
                         return "preserved_existing_after_regeneration_failure"
@@ -1016,7 +1094,52 @@ def run_rebuild_documents(
     dispatcher: Path,
     website_root: Path,
     job_id: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    historical_requests: list[dict[str, Any]] | None = None,
 ) -> str:
+    started = time.monotonic()
+    historical_duration = _historical_rebuild_duration_seconds(historical_requests or [])
+    progress_percent = {
+        "queued": 0,
+        "preparing": 10,
+        "generating": 30,
+        "validating": 45,
+        "rendering": 65,
+        "refreshing_metadata": 78,
+        "publishing": 90,
+        "complete": 100,
+    }
+    progress_labels = {
+        "queued": "Queued",
+        "preparing": "Preparing package",
+        "generating": "Generating CV and cover letter",
+        "validating": "Validating CV and cover letter",
+        "rendering": "Rendering CV + cover letter",
+        "refreshing_metadata": "Refreshing document metadata",
+        "publishing": "Publishing dashboard/assets",
+        "complete": "Package ready",
+    }
+    last_progress_percent = 0
+
+    def emit_progress(phase: str) -> None:
+        nonlocal last_progress_percent
+        if progress_callback is None:
+            return
+        last_progress_percent = max(last_progress_percent, progress_percent[phase])
+        payload: dict[str, Any] = {
+            "kind": "package_progress",
+            "phase": phase,
+            "label": progress_labels[phase],
+            "percent": last_progress_percent,
+            "elapsed_seconds": int(round(time.monotonic() - started)),
+        }
+        if historical_duration is not None:
+            elapsed = time.monotonic() - started
+            payload["eta_seconds"] = max(0, int(round(historical_duration - elapsed)))
+        progress_callback(payload)
+
+    emit_progress("queued")
+    emit_progress("preparing")
     _ensure_rebuild_generation_packet(repo=repo, job_id=job_id)
     try:
         # Prefer deterministic rerendering when validated application content
@@ -1027,6 +1150,7 @@ def run_rebuild_documents(
             dispatcher=dispatcher,
             job_id=job_id,
             force_regenerate=False,
+            progress_callback=emit_progress,
         )
     except AssistantError:
         action = _generate_application_package(
@@ -1034,8 +1158,10 @@ def run_rebuild_documents(
             dispatcher=dispatcher,
             job_id=job_id,
             force_regenerate=True,
+            progress_callback=emit_progress,
         )
-    _refresh_dashboard_site(repo, website_root)
+    _refresh_dashboard_site(repo, website_root, progress_callback=emit_progress)
+    emit_progress("complete")
     return (
         f"CV and cover letter rebuilt ({action}) and the dashboard was republished. "
         "External action remains blocked pending owner submission."
@@ -1113,6 +1239,7 @@ def answer_request(
     website_root: Path,
     record: dict[str, Any],
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    historical_requests: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     data = _data_of(record)
     role_key = str(data.get("role_key", ""))
@@ -1157,6 +1284,8 @@ def answer_request(
             dispatcher=dispatcher,
             website_root=website_root,
             job_id=job_id,
+            progress_callback=progress_callback,
+            historical_requests=historical_requests,
         )
         return role_key, answer, {
             "validation_status": "success",
@@ -1224,6 +1353,7 @@ def process_once(
         if submission_sync["archived"]:
             _refresh_dashboard_site(repo, website_root)
 
+        historical_requests = ai_request_records(slug=slug, api_key=api_key, limit=100)
         for record in pending_requests(slug=slug, api_key=api_key, limit=limit):
             record_id = str(record.get("id", ""))
             data = _data_of(record)
@@ -1238,12 +1368,19 @@ def process_once(
                     fields={"state": "processing"},
                 )
                 def progress_callback(progress: dict[str, Any]) -> None:
-                    patch_request(
-                        slug=slug,
-                        api_key=api_key,
-                        record_id=record_id,
-                        fields={"state": "processing", "answer": json.dumps(progress, ensure_ascii=False)},
-                    )
+                    # Progress is best-effort telemetry. A transient Site Data
+                    # PATCH must not abort the generation that is already
+                    # running; the final request PATCH below remains the
+                    # authoritative ai_requests.answer.
+                    try:
+                        patch_request(
+                            slug=slug,
+                            api_key=api_key,
+                            record_id=record_id,
+                            fields={"state": "processing", "answer": json.dumps(progress, ensure_ascii=False)},
+                        )
+                    except Exception:  # noqa: BLE001 - telemetry must not fail the request
+                        pass
 
                 response_role_key, response, metadata = answer_request(
                     repo=repo,
@@ -1251,6 +1388,7 @@ def process_once(
                     website_root=website_root,
                     record=record,
                     progress_callback=progress_callback,
+                    historical_requests=historical_requests,
                 )
                 create_response_comment(
                     slug=slug,

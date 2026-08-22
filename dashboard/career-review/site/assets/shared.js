@@ -188,7 +188,7 @@ function invalidateCollectionCache(name) {
   }
 }
 
-async function loadCollection(name, limit = 300, fresh = false) {
+async function loadCollection(name, limit = 300, fresh = false, throwOnError = false) {
   const cacheKey = `${name}:${limit}`;
   const cacheable = !fresh && name !== 'ai_requests';
   if (cacheable && COLLECTION_CACHE.has(cacheKey)) return COLLECTION_CACHE.get(cacheKey);
@@ -200,6 +200,7 @@ async function loadCollection(name, limit = 300, fresh = false) {
       return Array.isArray(payload.records) ? payload.records : [];
     } catch (error) {
       console.warn(`loadCollection(${name})`, error);
+      if (throwOnError) throw error;
       return [];
     }
   })();

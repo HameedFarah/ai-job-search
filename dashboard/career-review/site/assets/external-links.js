@@ -206,11 +206,15 @@ async function ownerQueuePackageGeneration(role, templateId = selectedTemplateFo
   const normalized = { id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt };
   state.aiRequests.push(normalized);
   if (record.id) sessionStorage.setItem(`career-generation-owned:${role.key}`, record.id);
-  await createRecord('history', {
-    role_key: role.key,
-    event: 'package_generation_requested',
-    note: `Generate selected CV and package: ${templateLabel(templateId)}`
-  }, `history-generate-${role.key}-${Date.now()}`);
+  try {
+    await createRecord('history', {
+      role_key: role.key,
+      event: 'package_generation_requested',
+      note: `Generate selected CV and package: ${templateLabel(templateId)}`
+    }, `history-generate-${role.key}-${Date.now()}`);
+  } catch (error) {
+    console.warn('Package generation history unavailable', error);
+  }
   renderOverlayAi(role);
   renderOverlayTemplate(role);
   renderOverlayResumePreview(role);
@@ -317,7 +321,7 @@ setupAiPolling = function ownerSetupAiPolling(role) {
   state.aiPollTimer = setInterval(async () => {
     if (!state.overlayOpen || state.overlayKey !== role.key) return;
     try {
-      const records = await loadCollection('ai_requests');
+      const records = await loadCollection('ai_requests', 300, true, true);
       state.aiRequests = records.map(record => ({ id: record.id, ...dataOf(record), createdAt: record.createdAt, updatedAt: record.updatedAt }));
       renderOverlayAi(role);
       renderOverlayTemplate(role);

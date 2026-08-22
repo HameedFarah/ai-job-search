@@ -463,7 +463,7 @@ function renderAiRequests() {
 }
 
 async function refreshAiRequests() {
-  const records = await loadCollection('ai_requests');
+  const records = await loadCollection('ai_requests', 300, true, true);
   state.aiRequests = records.filter(record => dataOf(record).role_key === state.role.key);
   renderAiRequests();
   refreshTimeline();

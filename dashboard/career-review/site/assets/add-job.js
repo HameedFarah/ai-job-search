@@ -192,7 +192,7 @@ function finishAddJobNavigation(requestId, jobKey, message) {
 async function pollAddJobRequest() {
   if (!activeAddJobRequestId) return;
   try {
-    const records = await loadCollection('ai_requests');
+    const records = await loadCollection('ai_requests', 300, true, true);
     const record = records.find(item => item.id === activeAddJobRequestId);
     if (!record) return;
     const data = dataOf(record);
