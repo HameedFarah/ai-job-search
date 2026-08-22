@@ -62,7 +62,15 @@ JOB_ALERT_SUBJECT = (
 VACANCY_SUBJECT = ("vacancy", "vacancies", "new vacancy", "career opportunity")
 RECRUITER_SUBJECT = ("recruiter", "talent acquisition", "hiring for")
 INTERVIEW_TERMS = ("interview", "assessment", "technical test", "hirevue")
-STATUS_TERMS = ("application update", "status update", "shortlisted", "not selected", "rejected")
+STATUS_TERMS = (
+    "application viewed",
+    "application was viewed",
+    "application update",
+    "status update",
+    "shortlisted",
+    "not selected",
+    "rejected",
+)
 
 
 def _text(value: Any) -> str:
@@ -92,13 +100,13 @@ def classify_message_category(message: dict[str, Any]) -> str:
     if any(phrase in combined for phrase in SUBMISSION_PHRASES):
         # handled as submission in reconcile; discovery counts it separately below
         return "submission_confirmation"
-    # LinkedIn job alert sender is deterministic even without subject phrase
-    if "jobalerts-noreply" in sender or "jobs-noreply" in sender or "job-alerts" in sender:
-        return "job_alert"
     if any(term in combined for term in INTERVIEW_TERMS):
         return "interview_assessment"
     if any(term in combined for term in STATUS_TERMS):
         return "application_status"
+    # LinkedIn job alert sender is deterministic even without subject phrase
+    if "jobalerts-noreply" in sender or "jobs-noreply" in sender or "job-alerts" in sender:
+        return "job_alert"
     if any(term in sender for term in ("recruiter", "talent acquisition", "hiring manager")):
         return "recruiter"
     if any(term in subject for term in JOB_ALERT_SUBJECT):
@@ -218,7 +226,7 @@ def discover_job_mail(
     *,
     start: date | None = None,
     end_inclusive: date | None = None,
-    max_results: int = 150,
+    max_results: int = 500,
 ) -> dict[str, Any]:
     """Bounded Gmail discovery for job alerts / vacancy notifications.
 
