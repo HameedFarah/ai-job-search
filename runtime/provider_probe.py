@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-NAMES = ("DATAFORSEO_API_KEY", "TOMBA_API_KEY", "APIFY_API_KEY", "APIFY_USER_ID",
+NAMES = ("DATAFORSEO_API_KEY", "TOMBA_API_KEY", "TOMBA_API_SECRET", "APIFY_API_KEY", "APIFY_USER_ID",
          "OUTSCRAPER_API_KEY", "ANYMAILFINDER_API_KEY", "ZEROBOUNCE_API_KEY")
 
 def probe(name: str, url: str, headers: dict[str, str] | None = None) -> dict[str, object]:
@@ -39,15 +39,15 @@ def main() -> int:
     present = {name: bool(os.environ.get(name, "").strip()) for name in NAMES}
     results: list[dict[str, object]] = []
     if present["DATAFORSEO_API_KEY"]:
-        results.append(probe("dataforseo", "https://api.dataforseo.com/v3/serp/google/locations", _dataforseo_headers(os.environ["DATAFORSEO_API_KEY"])))
-    if present["TOMBA_API_KEY"]:
-        results.append(probe("tomba", "https://api.tomba.io/v1/account", {"X-Api-Key": os.environ["TOMBA_API_KEY"]}))
+        results.append(probe("dataforseo", "https://api.dataforseo.com/v3/appendix/user_data", _dataforseo_headers(os.environ["DATAFORSEO_API_KEY"])))
+    if present["TOMBA_API_KEY"] and present["TOMBA_API_SECRET"]:
+        results.append(probe("tomba", "https://api.tomba.io/v1/account", {"X-Tomba-Key": os.environ["TOMBA_API_KEY"], "X-Tomba-Secret": os.environ["TOMBA_API_SECRET"]}))
     if present["APIFY_API_KEY"]:
         results.append(probe("apify", "https://api.apify.com/v2/users/me", {"Authorization": "Bearer " + os.environ["APIFY_API_KEY"]}))
     if present["OUTSCRAPER_API_KEY"]:
         results.append(probe("outscraper", "https://api.app.outscraper.com/api/v1/account", {"X-API-KEY": os.environ["OUTSCRAPER_API_KEY"]}))
     if present["ANYMAILFINDER_API_KEY"]:
-        results.append(probe("anymailfinder", "https://api.anymailfinder.com/v5/account", {"X-Api-Key": os.environ["ANYMAILFINDER_API_KEY"]}))
+        results.append(probe("anymailfinder", "https://api.anymailfinder.com/v5.1/account", {"Authorization": os.environ["ANYMAILFINDER_API_KEY"]}))
     if present["ZEROBOUNCE_API_KEY"]:
         url = "https://api.zerobounce.net/v2/getcredits?api_key=" + urllib.parse.quote(os.environ["ZEROBOUNCE_API_KEY"], safe="")
         results.append(probe("zerobounce", url))
