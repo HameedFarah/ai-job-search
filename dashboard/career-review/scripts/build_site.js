@@ -531,7 +531,7 @@ function isFixtureJob(job) {
   const sourceHost = sourceUrl.replace(/^https?:\/\//, '').split('/')[0];
   if (sourceHost === 'example.com' || sourceHost === 'example.org' || sourceHost === 'example.net') return true;
   if (sourceUrl.includes('boards.example.greenhouse.io') || sourceUrl.includes('example.com/test')) return true;
-  if (/(^|[/._-])test([/._-]|$)|fixture|dummy|placeholder|sample[-_]?job|boards\.example/.test(sourceUrl)) return true;
+  if (/(^|[/._-])(test|fixture|dummy|placeholder)([/._-]|$)|sample[-_]?job|boards\.example/.test(sourceUrl)) return true;
   if (company === 'oasis development co') return true;
   if (/\b(test|fixture|dummy|placeholder|sample)\s+(job|role|position|vacancy)\b/.test(`${company} ${role}`)) return true;
   if (/^(test|fixture|dummy|sample)[-_]/.test(externalId)) return true;
@@ -729,4 +729,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { canonicalIdentity, mergeUniqueRoles, itemsFromManifest };
+module.exports = { canonicalIdentity, mergeUniqueRoles, itemsFromManifest, isFixtureJob };
