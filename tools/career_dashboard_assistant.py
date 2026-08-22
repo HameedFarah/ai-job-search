@@ -41,6 +41,7 @@ HERMES_CAREER_CRON_JOB = "edc36e531637"
 HERMES_EXECUTABLE = Path("/home/hameedo/.hermes/hermes-agent/venv/bin/hermes")
 HERMES_CRON_JOBS = Path("/home/hameedo/.hermes/cron/jobs.json")
 HERMES_REFRESH_TIMEOUT_SECONDS = 90 * 60
+PUBLISH_TIMEOUT_SECONDS = 15 * 60
 GLOBAL_ROLE_KEY = "__career_engine__"
 ADD_JOB_ROLE_KEY = "__career_engine_add_job__"
 RESPONSE_COMMENT_TYPE = "assistant_response"
@@ -626,7 +627,11 @@ def _refresh_dashboard_site(
     if progress_callback:
         progress_callback("publishing")
     _run_command(["/usr/bin/node", "scripts/build_site.js"], cwd=website_root, timeout=300)
-    _run_command(["/usr/bin/node", "scripts/publish_here_now.js"], cwd=website_root, timeout=300)
+    _run_command(
+        ["/usr/bin/node", "scripts/publish_here_now.js"],
+        cwd=website_root,
+        timeout=PUBLISH_TIMEOUT_SECONDS,
+    )
     _run_command(
         [
             "/home/hameedo/vps-infra-dev/scripts/operations/cloudflare-with-infisical-runtime.sh",

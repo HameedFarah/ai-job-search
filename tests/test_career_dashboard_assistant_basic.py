@@ -1,5 +1,8 @@
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from career_engine.cli import build_parser
 from tools import career_dashboard_assistant as assistant
@@ -398,7 +401,7 @@ def test_refresh_dashboard_republishes_here_now_and_private_cloudflare_worker(mo
 
     assert engine_calls == [(repo, ["dashboard", "--sync"], 180)]
     assert command_calls[0] == (["/usr/bin/node", "scripts/build_site.js"], website_root, 300)
-    assert command_calls[1] == (["/usr/bin/node", "scripts/publish_here_now.js"], website_root, 300)
+    assert command_calls[1] == (["/usr/bin/node", "scripts/publish_here_now.js"], website_root, assistant.PUBLISH_TIMEOUT_SECONDS)
     assert command_calls[2] == (
         [
             "/home/hameedo/vps-infra-dev/scripts/operations/cloudflare-with-infisical-runtime.sh",
@@ -409,6 +412,19 @@ def test_refresh_dashboard_republishes_here_now_and_private_cloudflare_worker(mo
         repo,
         900,
     )
+
+
+def test_refresh_dashboard_publish_timeout_remains_terminal(monkeypatch, tmp_path):
+    def fail_publish(command, cwd, timeout=240):
+        if command[-1].endswith("publish_here_now.js"):
+            raise subprocess.TimeoutExpired(command, timeout)
+        return None
+
+    monkeypatch.setattr(assistant, "_run_engine", lambda *args, **kwargs: None)
+    monkeypatch.setattr(assistant, "_run_command", fail_publish)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        assistant._refresh_dashboard_site(tmp_path, tmp_path / "site")
 
 
 def test_refresh_reuses_existing_running_hermes_scan(monkeypatch, tmp_path):
