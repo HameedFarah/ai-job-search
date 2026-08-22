@@ -16,7 +16,8 @@ def test_career_scheduler_manifest_is_reproducible_desired_state():
     assert manifest["no_agent"] is False
     assert manifest["deliver"] == "local"
     assert manifest["workdir"] == "/home/hameedo/projects/ai-job-search"
-    assert (ROOT / manifest["script"]).is_file()
+    assert (ROOT / manifest["source_script"]).is_file()
+    assert manifest["runtime_script"] == "career-engine-daily-context.py"
     assert "model" not in manifest and "provider" not in manifest
     assert "runtime_job_id" not in manifest
     assert "Never send/contact/submit." in manifest["prompt"]
