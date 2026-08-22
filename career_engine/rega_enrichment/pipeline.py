@@ -286,6 +286,7 @@ def run_pipeline(
             rows_written += 1
             evidence_f.flush()
             rejected_f.flush()
+            csvfile.flush()
             # Deterministic delay between companies
             time.sleep(0.5)
 

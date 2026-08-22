@@ -277,6 +277,32 @@ def extract_fields(company: CompanyRecord, official_url: str) -> tuple[dict[str,
         if not values["ats_url"] and any(ats in careers_text.lower() for ats in ["successfactors","workday","taleo","oracle"]):
             # keep blank but note
             debug["ats_text_hint"] = "ATS hint in careers page but no link extracted"
+    # Filter out third-party / binary artifact emails before classification
+    # Blocklist for known non-company domains that appear in embedded assets
+    _EMAIL_BLOCKED_DOMAINS = {"adobe.com", "cai-ops.adobe.com", "example.com", "test.com", "google.com", "no-reply.com"}
+    filtered_emails_ctx: list[tuple[str, str]] = []
+    for e, c in emails_ctx:
+        host_part = e.split("@")[-1].lower()
+        if host_part in _EMAIL_BLOCKED_DOMAINS:
+            continue
+        # Require email domain to be .sa or match official host, or context contains official host hint
+        # For general_email we are strict; for recruitment we allow explicit context even if domain differs
+        if not (host_part == host_display or host_part.endswith("." + host_display) or host_part.endswith(".sa") or "saudi" in c.lower() or host_display in c.lower()):
+            # If context has strong recruitment/procurement keywords, keep it for those classifications
+            if not any(k in c.lower() for k in RECRUITMENT_KEYWORDS + PROCUREMENT_KEYWORDS + BD_KEYWORDS):
+                # Skip likely artifact email
+                if host_part not in (host_display, host_display.replace("www.", "")):
+                    # Allow .com if host is .com and domain matches host exactly
+                    if host_display not in host_part and host_part not in host_display:
+                        # Check if email appears in binary blob (contains non-printable) — skip
+                        if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in c):
+                            continue
+                        # If email is from Adobe/Google etc. and not company, skip for general
+                        if host_part in {"adobe.com", "google.com", "microsoft.com", "facebook.com"}:
+                            continue
+        filtered_emails_ctx.append((e, c))
+    emails_ctx = filtered_emails_ctx
+
     # Emails classification — use combined_text + careers_text
     all_text_for_emails = combined_text + "\n" + careers_text
     for email, ctx in emails_ctx:
@@ -336,8 +362,10 @@ def extract_fields(company: CompanyRecord, official_url: str) -> tuple[dict[str,
                 ))
                 break
 
-    # Phone extraction from combined
-    phones = PHONE_RE.findall(combined_text)
+    # Normalize phone regex — capture full Saudi numbers, prefer 9200 and +966
+    # Use tighter pattern to avoid truncation: capture 9-10 digits after 9200 or 5x
+    PHONE_RE_STRICT = re.compile(r"(\+966[\s\-]?5\d[\s\-]?\d{3}[\s\-]?\d{4}|\+966[\s\-]?9200[\s\-]?\d{5}|9200[\s\-]?\d{5}|5\d[\s\-]?\d{3}[\s\-]?\d{4})")
+    phones = PHONE_RE_STRICT.findall(combined_text)
     # also from contact pages specifically
     if phones:
         # Normalize first phone
