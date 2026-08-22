@@ -894,8 +894,8 @@ async function deployBasicAuth() {
       const { zoneId } = auth();
       await api('PATCH', `/zones/${zoneId}/dns_records/${before.dns.id}`, { proxied: true });
     }
-    deployWorker();
     putBasicAuthSecret(credentials);
+    deployWorker();
     const access = await removeCareerAccessApp();
     const acceptance = await verifyBasicAuth(credentials);
     return {
