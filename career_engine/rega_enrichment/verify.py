@@ -35,6 +35,9 @@ def _read_hermes_env(key: str) -> str:
     return ""
 
 def api_key() -> str:
+    # Firecrawl remains disabled until credential rotation is explicitly proven.
+    if os.getenv("FIRECRAWL_ROTATED_CONFIRMED", "").strip().lower() not in {"1", "true", "yes"}:
+        return ""
     import os
     try:
         import importlib.util
@@ -53,6 +56,18 @@ def api_key() -> str:
 def is_blocked(host: str) -> bool:
     h = host.lower()
     return any(b in h for b in BLOCKED_HOSTS)
+
+def _hostname_labels(host: str) -> list[str]:
+    return [re.sub(r"[^a-z0-9]", "", label) for label in host.lower().split(".") if label]
+
+def _label_matches_token(label: str, token: str) -> bool:
+    if label == token:
+        return True
+    if len(token) < 5:
+        return False
+    return any(token[:i] + token[i + 1:] == label for i in range(len(token))) or any(
+        token[:i] + c + token[i:] == label for i in range(len(token) + 1) for c in "abcdefghijklmnopqrstuvwxyz"
+    )
 
 def fetch_via_firecrawl_extract(url: str) -> tuple[str, str, str]:
     """Fetch via Firecrawl extract, returns (title, markdown, html)."""
@@ -133,6 +148,7 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     arabic_name = company.arabic_name.strip()
     # Hostname normalized
     host_norm = hostname_tokens(host)
+    host_labels = _hostname_labels(host)
 
     # Fast path: snippet-only if discovery already gives strong identity (saves quota, avoids hang on makkiyoon.com)
     title_snippet = candidate.title or ""
@@ -142,7 +158,7 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     quick_score = 0
     for tok in eng_tokens_snippet:
         # Fuzzy host check for transliteration (makkyoon vs makkiyoon)
-        host_hit = tok in host_norm_snippet
+        host_hit = any(_label_matches_token(label, tok) for label in host_labels)
         if not host_hit and len(tok) >= 5:
             for i in range(len(tok)):
                 if tok[:i] + tok[i+1:] in host_norm_snippet:
@@ -167,7 +183,7 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     # Use fuzzy host check for snippet path as well
     def _host_hit_fuzzy(host_norm, toks):
         for tok in toks:
-            if tok in host_norm:
+            if any(_label_matches_token(label, tok) for label in host_labels):
                 return True
             if len(tok) >= 5:
                 for i in range(len(tok)):
@@ -236,7 +252,7 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
 
     # Host token matches — strongest signal (with fuzzy for transliteration variants like makkyoon vs makkiyoon)
     def _fuzzy_in(host_norm: str, tok: str) -> bool:
-        if tok in host_norm:
+        if any(_label_matches_token(label, tok) for label in host_labels):
             return True
         # Allow edit distance 1 for tokens >=5 (e.g., makkyoon vs makkiyoon)
         if len(tok) >= 5:

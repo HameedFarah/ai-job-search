@@ -1,0 +1,9 @@
+{
+  "contains_secret_values": false,
+  "service": "career-provider-probes",
+  "folder": "services",
+  "keys": [
+    "DATAFORSEO_API_KEY", "TOMBA_API_KEY", "APIFY_API_KEY", "APIFY_USER_ID",
+    "OUTSCRAPER_API_KEY", "ANYMAILFINDER_API_KEY", "ZEROBOUNCE_API_KEY"
+  ]
+}
