@@ -46,10 +46,32 @@ def matching(job: dict, manifest: dict) -> bool:
             and job.get("workdir") == manifest["workdir"] and not job.get("model") and not job.get("provider"))
 
 
+def profile_name_for_home(home: Path) -> str:
+    if home.resolve() == DEFAULT_HERMES.resolve():
+        return "default"
+    profiles_root = (DEFAULT_HERMES / "profiles").resolve()
+    try:
+        rel = home.resolve().relative_to(profiles_root)
+    except ValueError as exc:
+        raise ValueError(f"unsupported Hermes profile home: {home}") from exc
+    if len(rel.parts) != 1:
+        raise ValueError(f"unsupported Hermes profile home: {home}")
+    return rel.parts[0]
+
+
 def run_hermes(home: Path, *args: str) -> None:
+    """Run Hermes against one explicit profile without changing sticky state."""
     env = os.environ.copy()
     env["HERMES_HOME"] = str(home)
-    subprocess.run(["hermes", "cron", *args], env=env, check=True, capture_output=True, text=True, timeout=30)
+    profile = profile_name_for_home(home)
+    subprocess.run(
+        ["hermes", "--profile", profile, "cron", *args],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
 
 
 def atomic_copy(source: Path, target: Path) -> None:
@@ -88,16 +110,35 @@ def apply(manifest: dict, target: Path) -> dict:
     target_jobs = jobs(target / "cron/jobs.json")
     named = [j for j in target_jobs if j.get("name") == manifest["name"]]
     job = next((j for j in named if matching(j, manifest)), None) or (named[0] if named else None)
-    common = ["--name", manifest["name"], "--prompt", manifest["prompt"], "--deliver", manifest["deliver"],
-              "--script", manifest["runtime_script"], "--workdir", manifest["workdir"], "--agent"]
+    edit_args = [
+        "--schedule", manifest["schedule"],
+        "--name", manifest["name"],
+        "--prompt", manifest["prompt"],
+        "--deliver", manifest["deliver"],
+        "--script", manifest["runtime_script"],
+        "--workdir", manifest["workdir"],
+        "--agent",
+        "--model", "",
+        "--provider", "",
+        "--clear-skills",
+    ]
     for skill in manifest["skills"]:
-        common += ["--skill", skill]
+        edit_args += ["--add-skill", skill]
     if job:
-        run_hermes(target, "edit", job["id"], "--schedule", manifest["schedule"], *common, "--model", "", "--provider", "")
+        run_hermes(target, "edit", job["id"], *edit_args)
         if not job.get("enabled"):
             run_hermes(target, "resume", job["id"])
     else:
-        run_hermes(target, "create", manifest["schedule"], *common)
+        create_args = [
+            "create", manifest["schedule"], manifest["prompt"],
+            "--name", manifest["name"],
+            "--deliver", manifest["deliver"],
+            "--script", manifest["runtime_script"],
+            "--workdir", manifest["workdir"],
+        ]
+        for skill in manifest["skills"]:
+            create_args += ["--skill", skill]
+        run_hermes(target, *create_args)
     target_store = target / "cron/jobs.json"
     kept = next((j.get("id") for j in jobs(target_store)
                  if j.get("name") == manifest["name"] and j.get("enabled") and matching(j, manifest)), None)
