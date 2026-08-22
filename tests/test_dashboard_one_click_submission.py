@@ -58,16 +58,17 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertIn(".add-job-progress-step", css)
         self.assertIn("@keyframes add-job-spin", css)
 
-    def test_private_worker_proxies_only_known_site_data_collections_for_owner_or_access_service(self):
+    def test_private_worker_proxies_only_known_site_data_collections_after_basic_auth(self):
         source = (ROOT / "dashboard/career-review/worker.js").read_text(encoding="utf-8")
         self.assertIn("/.herenow/data/", source)
         self.assertIn("HERENOW_API_KEY", source)
-        self.assertIn("cf-access-authenticated-user-email", source)
-        self.assertIn("hameedo@gmail.com", source)
-        self.assertIn("ctx.access.getIdentity()", source)
-        self.assertIn("service_token_status === true", source)
-        self.assertIn("service_token_id", source)
-        self.assertIn("Owner or approved Cloudflare Access service token required", source)
+        self.assertIn("CAREER_BASIC_AUTH_PASSWORD", source)
+        self.assertIn("BASIC_AUTH_USER = 'hameed'", source)
+        self.assertIn("www-authenticate", source)
+        self.assertIn("Basic realm=", source)
+        self.assertIn("isAuthorizedBasic", source)
+        self.assertNotIn("cf-access-authenticated-user-email", source)
+        self.assertNotIn("ctx.access.getIdentity()", source)
         self.assertIn("Authorization: `Bearer ${env.HERENOW_API_KEY}`", source)
         for collection in ("workflow", "comments", "history", "ai_requests", "preferences"):
             self.assertIn(f"'{collection}'", source)
@@ -78,15 +79,15 @@ class DashboardOneClickSubmissionTest(unittest.TestCase):
         self.assertIn("'DELETE'", source)
         self.assertIn("env.ASSETS.fetch(request)", source)
 
-    def test_wrangler_runs_worker_only_for_site_data_path(self):
+    def test_wrangler_runs_worker_first_for_entire_basic_auth_site(self):
         config = json.loads((ROOT / "dashboard/career-review/wrangler.jsonc").read_text(encoding="utf-8"))
         self.assertEqual(config["main"], "./worker.js")
         self.assertFalse(config["workers_dev"])
         self.assertFalse(config["preview_urls"])
         self.assertEqual(config["assets"]["directory"], "./site")
         self.assertEqual(config["assets"]["binding"], "ASSETS")
-        self.assertEqual(config["assets"]["run_worker_first"], ["/.herenow/data/*"])
-        self.assertEqual(config["secrets"]["required"], ["HERENOW_API_KEY"])
+        self.assertTrue(config["assets"]["run_worker_first"])
+        self.assertEqual(config["secrets"]["required"], ["HERENOW_API_KEY", "CAREER_BASIC_AUTH_PASSWORD"])
         self.assertEqual(config["routes"], [{
             "pattern": "career.farahdigital.com/*",
             "zone_name": "farahdigital.com",

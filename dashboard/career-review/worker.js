@@ -2,7 +2,8 @@
 
 const HERE_API = 'https://here.now/api/v1';
 const SITE_SLUG = 'gilded-timber-xfj7';
-const OWNER_EMAIL = 'hameedo@gmail.com';
+const BASIC_AUTH_USER = 'hameed';
+const BASIC_AUTH_REALM = 'Career Engine staging';
 const DATA_PREFIX = '/.herenow/data/';
 const ALLOWED_COLLECTIONS = new Set(['workflow', 'comments', 'history', 'ai_requests', 'preferences']);
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'DELETE']);
@@ -30,25 +31,36 @@ function siteDataTarget(url) {
   return target;
 }
 
-async function isAuthorizedAccess(request, ctx) {
-  const owner = String(request.headers.get('cf-access-authenticated-user-email') || '').trim().toLowerCase();
-  if (owner === OWNER_EMAIL) return true;
-  if (!ctx?.access) return false;
+function unauthorized() {
+  return new Response('Authentication required', {
+    status: 401,
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-store',
+      'www-authenticate': `Basic realm="${BASIC_AUTH_REALM}", charset="UTF-8"`,
+      'x-content-type-options': 'nosniff'
+    }
+  });
+}
+
+function isAuthorizedBasic(request, env) {
+  const password = String(env.CAREER_BASIC_AUTH_PASSWORD || '');
+  if (!password) return false;
+  const header = String(request.headers.get('authorization') || '');
+  if (!header.startsWith('Basic ')) return false;
   try {
-    const identity = await ctx.access.getIdentity();
-    const email = String(identity?.email || '').trim().toLowerCase();
-    if (email === OWNER_EMAIL) return true;
-    return identity?.service_token_status === true
-      && Boolean(String(identity?.service_token_id || '').trim());
+    const decoded = atob(header.slice(6));
+    const separator = decoded.indexOf(':');
+    if (separator < 0) return false;
+    const username = decoded.slice(0, separator);
+    const suppliedPassword = decoded.slice(separator + 1);
+    return username === BASIC_AUTH_USER && suppliedPassword === password;
   } catch {
     return false;
   }
 }
 
-async function proxySiteData(request, env, ctx) {
-  if (!await isAuthorizedAccess(request, ctx)) {
-    return jsonError(403, 'Owner or approved Cloudflare Access service token required');
-  }
+async function proxySiteData(request, env) {
   if (!env.HERENOW_API_KEY) return jsonError(503, 'Site Data proxy is not configured');
   if (!ALLOWED_METHODS.has(request.method)) return jsonError(405, 'Method not allowed');
 
@@ -86,9 +98,10 @@ async function proxySiteData(request, env, ctx) {
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
+    if (!isAuthorizedBasic(request, env)) return unauthorized();
     const url = new URL(request.url);
-    if (url.pathname.startsWith(DATA_PREFIX)) return proxySiteData(request, env, ctx);
+    if (url.pathname.startsWith(DATA_PREFIX)) return proxySiteData(request, env);
     return env.ASSETS.fetch(request);
   }
 };

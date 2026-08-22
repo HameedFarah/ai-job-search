@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const nodeCrypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '../../..');
@@ -22,6 +23,8 @@ const ACCESS_SERVICE_POLICY_NAME = 'Career Engine automation service';
 const ACCESS_SERVICE_TOKEN_DURATION = '8760h';
 const ACCESS_SERVICE_CREDENTIALS = path.join(RUNTIME, 'cloudflare-access-service-token.json');
 const ACCESS_SERVICE_CREDENTIALS_SCOPE = 'account_self_hosted_access_apps';
+const BASIC_AUTH_CREDENTIALS = path.join(RUNTIME, 'career-basic-auth.json');
+const BASIC_AUTH_USER = 'hameed';
 const OWNER_EMAIL = 'hameedo@gmail.com';
 
 function die(message) {
@@ -32,6 +35,33 @@ function envValue(name) {
   const value = String(process.env[name] || '').trim();
   if (!value) die(`${name} is not configured`);
   return value;
+}
+
+function loadOrCreateBasicAuthCredentials() {
+  fs.mkdirSync(RUNTIME, { recursive: true });
+  if (fs.existsSync(BASIC_AUTH_CREDENTIALS)) {
+    const stat = fs.statSync(BASIC_AUTH_CREDENTIALS);
+    if ((stat.mode & 0o077) !== 0) die('Basic Auth credential file permissions are too broad');
+    const parsed = JSON.parse(fs.readFileSync(BASIC_AUTH_CREDENTIALS, 'utf8'));
+    const username = String(parsed.username || '').trim();
+    const password = String(parsed.password || '');
+    if (username !== BASIC_AUTH_USER || password.length < 16) die('Basic Auth credential file is invalid');
+    return { username, password, created: false };
+  }
+  const password = nodeCrypto.randomBytes(18).toString('base64url');
+  fs.writeFileSync(BASIC_AUTH_CREDENTIALS, `${JSON.stringify({
+    schema_version: 1,
+    created_at: new Date().toISOString(),
+    hostname: HOSTNAME,
+    username: BASIC_AUTH_USER,
+    password,
+  }, null, 2)}\n`, { mode: 0o600 });
+  fs.chmodSync(BASIC_AUTH_CREDENTIALS, 0o600);
+  return { username: BASIC_AUTH_USER, password, created: true };
+}
+
+function basicAuthHeader(credentials) {
+  return `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`, 'utf8').toString('base64')}`;
 }
 
 function auth() {
@@ -475,6 +505,25 @@ function run(command, args, timeout = 180000) {
   });
 }
 
+function runWithInput(command, args, input, timeout = 180000) {
+  execFileSync(command, args, {
+    cwd: REPO,
+    env: process.env,
+    input,
+    stdio: ['pipe', 'inherit', 'inherit'],
+    timeout,
+  });
+}
+
+function putBasicAuthSecret(credentials) {
+  runWithInput(
+    'npx',
+    ['--yes', 'wrangler@4', 'secret', 'put', 'CAREER_BASIC_AUTH_PASSWORD', '--config', CONFIG],
+    `${credentials.password}\n`,
+    300000
+  );
+}
+
 function prepareSite() {
   run('./career-engine', ['doctor']);
   run('./career-engine', ['bundle', 'status']);
@@ -748,6 +797,121 @@ async function deploy() {
   }
 }
 
+async function removeCareerAccessApp() {
+  const { accountId } = auth();
+  const state = await inspect({ requireProxied: false });
+  if (!state.app) return { removed: false };
+  if (!isManagedPolicySet(state.policies)) {
+    die('Career Engine Access application contains unmanaged policies; refusing deletion');
+  }
+  await api('DELETE', `/accounts/${accountId}/access/apps/${state.app.id}`);
+  return { removed: true, access_app_id: state.app.id };
+}
+
+async function probeBasicUnauthenticated() {
+  const response = await fetch(`https://${HOSTNAME}/`, { redirect: 'manual', headers: { 'cache-control': 'no-cache' } });
+  const body = await response.text();
+  const challenge = String(response.headers.get('www-authenticate') || '');
+  const leaked = /Career Application Review|Career Application Board|data\/jobs\.json/i.test(body);
+  if (response.status !== 401 || !/^Basic\b/i.test(challenge) || leaked) {
+    die(`Basic Auth unauthenticated probe failed (HTTP ${response.status})`);
+  }
+  return { status: response.status, basic_challenge: true, dashboard_content_exposed: false };
+}
+
+async function basicRequest(credentials, method, pathname, body) {
+  const headers = {
+    authorization: basicAuthHeader(credentials),
+    'cache-control': 'no-cache',
+  };
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const response = await fetch(`https://${HOSTNAME}${pathname}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    redirect: 'manual',
+  });
+  const text = await response.text();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { /* non-JSON asset */ }
+  return { response, text, parsed };
+}
+
+async function probeBasicAuthenticated(credentials) {
+  const root = await basicRequest(credentials, 'GET', '/');
+  if (root.response.status !== 200 || !/Career Application Review|Career Application Board/i.test(root.text)) {
+    die(`Basic-authenticated dashboard probe failed (HTTP ${root.response.status})`);
+  }
+
+  const marker = `basic-auth-acceptance-${Date.now()}`;
+  const created = await basicRequest(credentials, 'POST', '/.herenow/data/preferences', { key: marker, value: 'probe' });
+  if (![200, 201].includes(created.response.status)) die(`Basic-authenticated Site Data create failed (HTTP ${created.response.status})`);
+  const record = created.parsed?.record || created.parsed || {};
+  const recordId = String(record.id || record.recordId || '');
+  if (!/^rec_[A-Za-z0-9]+$/.test(recordId)) die('Basic-authenticated Site Data create returned no record id');
+
+  try {
+    const patched = await basicRequest(credentials, 'PATCH', `/.herenow/data/preferences/${recordId}`, { value: 'patched' });
+    if (patched.response.status !== 200) die(`Basic-authenticated Site Data patch failed (HTTP ${patched.response.status})`);
+    const readBack = await basicRequest(credentials, 'GET', `/.herenow/data/preferences/${recordId}`);
+    if (readBack.response.status !== 200 || !JSON.stringify(readBack.parsed || {}).includes('patched')) {
+      die(`Basic-authenticated Site Data readback failed (HTTP ${readBack.response.status})`);
+    }
+  } finally {
+    const deleted = await basicRequest(credentials, 'DELETE', `/.herenow/data/preferences/${recordId}`);
+    if (![200, 204].includes(deleted.response.status)) die(`Basic-authenticated Site Data cleanup failed (HTTP ${deleted.response.status})`);
+  }
+
+  return { dashboard_status: 200, site_data_create_patch_read_delete: true };
+}
+
+async function verifyBasicAuth(credentials = loadOrCreateBasicAuthCredentials()) {
+  const state = await inspect();
+  if (state.app) die('Cloudflare Access application still exists for Career Engine');
+  if (!state.worker) die('Career Engine Worker is missing');
+  if (!state.route || state.route.script !== WORKER_NAME) die(`Worker route ${ROUTE_PATTERN} is missing or targets another script`);
+  if (!state.subdomain || state.subdomain.enabled || state.subdomain.previews_enabled) {
+    die('workers.dev or Worker preview URLs are enabled');
+  }
+  return {
+    mode: 'basic-auth-verify',
+    state: safeState(state),
+    unauthenticated_probe: await probeBasicUnauthenticated(),
+    authenticated_probe: await probeBasicAuthenticated(credentials),
+    username: credentials.username,
+    credentials_file: BASIC_AUTH_CREDENTIALS,
+    credentials_permissions: '0600',
+  };
+}
+
+async function deployBasicAuth() {
+  const before = await inspect({ requireProxied: false });
+  const backup = writeBackup(before);
+  const credentials = loadOrCreateBasicAuthCredentials();
+  prepareSite();
+  try {
+    if (!before.dns.proxied) {
+      const { zoneId } = auth();
+      await api('PATCH', `/zones/${zoneId}/dns_records/${before.dns.id}`, { proxied: true });
+    }
+    deployWorker();
+    putBasicAuthSecret(credentials);
+    const access = await removeCareerAccessApp();
+    const acceptance = await verifyBasicAuth(credentials);
+    return {
+      mode: 'basic-auth-deploy',
+      backup,
+      dns_proxy_changed: !before.dns.proxied,
+      access_removed: access.removed,
+      preserved_shared_service_token: true,
+      credentials_created: credentials.created,
+      ...acceptance,
+    };
+  } catch (error) {
+    throw new Error(`${error.message}; Basic Auth credentials remain at ${BASIC_AUTH_CREDENTIALS}; Cloudflare backup: ${backup}`);
+  }
+}
+
 function selfTest() {
   const owner = ownerPolicyBody();
   const service = servicePolicyBody('svc-test');
@@ -782,8 +946,10 @@ async function main() {
   else if (mode === '--service-auth-verify') result = await verifyServiceAuth();
   else if (mode === '--service-auth-account-setup') result = await setupAccountServiceAuth();
   else if (mode === '--service-auth-account-verify') result = await verifyAccountServiceAuth();
+  else if (mode === '--basic-auth-deploy') result = await deployBasicAuth();
+  else if (mode === '--basic-auth-verify') result = await verifyBasicAuth();
   else if (mode === '--rollback') result = await rollbackFromSnapshot(argument);
-  else die('Usage: deploy_cloudflare_access.js --self-test|--preflight|--deploy|--verify|--service-auth-setup|--service-auth-verify|--service-auth-account-setup|--service-auth-account-verify|--rollback <backup.json>');
+  else die('Usage: deploy_cloudflare_access.js --self-test|--preflight|--deploy|--verify|--service-auth-setup|--service-auth-verify|--service-auth-account-setup|--service-auth-account-verify|--basic-auth-deploy|--basic-auth-verify|--rollback <backup.json>');
   console.log(JSON.stringify(result, null, 2));
 }
 
