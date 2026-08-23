@@ -7,6 +7,7 @@ import hashlib
 import json
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -188,7 +189,9 @@ def run_pipeline(
     use_cache: bool = True,
     refresh: bool = False,
     cache_dir: Path | None = None,
+    workers: int = 1,
 ) -> dict[str, Any]:
+    workers = max(1, min(int(workers), 16))
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = freeze_manifest(canonical_path)
     all_companies = load_canonical(canonical_path)
@@ -224,6 +227,7 @@ def run_pipeline(
         "cache_files_before": cache_before.get("files", 0),
         "use_cache": use_cache,
         "refresh": refresh,
+        "workers": workers,
     })
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -234,88 +238,95 @@ def run_pipeline(
     evidence_f = evidence_path.open("w", encoding="utf-8")
     rejected_f = rejected_path.open("w", encoding="utf-8")
 
+    def _safe_enrich(comp: CompanyRecord) -> EnrichmentRow:
+        try:
+            return enrich_company(
+                comp, delay_s=delay_s, use_cache=use_cache, refresh=refresh, cache_dir=effective_cache_dir
+            )
+        except Exception as exc:
+            # Do not fabricate; preserve blank with error note and immutable identity.
+            return EnrichmentRow(
+                company=comp,
+                assignment="not_found",
+                confidence="not_found",
+                notes=f"Pipeline exception: {type(exc).__name__}: {exc}",
+            )
+
     rows_written = 0
-    with sidecar_path.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        firecrawl_search_calls = 0
-        firecrawl_extract_calls = 0
-        for comp in companies:
-            try:
-                enriched = enrich_company(
-                    comp, delay_s=delay_s, use_cache=use_cache, refresh=refresh, cache_dir=effective_cache_dir
-                )
-            except Exception as e:
-                # Do not fabricate; preserve blank with error note
-                enriched = EnrichmentRow(company=comp, assignment="not_found", confidence="not_found", notes=f"Pipeline exception: {type(e).__name__}: {e}")
+    try:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rega-company") as executor:
+            enriched_rows = executor.map(_safe_enrich, companies)
+            with sidecar_path.open("w", newline="", encoding="utf-8") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for enriched in enriched_rows:
+                    # Write evidence
+                    for ev in enriched.evidence:
+                        evidence_f.write(json.dumps({
+                            "company_id": ev.company_id,
+                            "license_no": ev.license_no,
+                            "field": ev.field,
+                            "value": ev.value,
+                            "source_url": ev.source_url,
+                            "source_type": ev.source_type,
+                            "evidence_text": ev.evidence_text,
+                            "verified_at": ev.verified_at,
+                            "confidence": ev.confidence,
+                            "verification_method": ev.verification_method,
+                        }, ensure_ascii=False) + "\n")
+                    # Write rejected candidates
+                    for rc in enriched.rejected_candidates:
+                        rejected_f.write(json.dumps({
+                            "company_id": rc.company_id,
+                            "license_no": rc.license_no,
+                            "query_id": rc.query_id,
+                            "url": rc.url,
+                            "title": rc.title,
+                            "engine": rc.engine,
+                            "verification_status": rc.verification_status,
+                            "verification_score": rc.verification_score,
+                            "verification_method": rc.verification_method,
+                            "verification_evidence": rc.verification_evidence,
+                        }, ensure_ascii=False) + "\n")
 
-            # Write evidence
-            for ev in enriched.evidence:
-                evidence_f.write(json.dumps({
-                    "company_id": ev.company_id,
-                    "license_no": ev.license_no,
-                    "field": ev.field,
-                    "value": ev.value,
-                    "source_url": ev.source_url,
-                    "source_type": ev.source_type,
-                    "evidence_text": ev.evidence_text,
-                    "verified_at": ev.verified_at,
-                    "confidence": ev.confidence,
-                    "verification_method": ev.verification_method,
-                }, ensure_ascii=False) + "\n")
-            # Write rejected candidates
-            for rc in enriched.rejected_candidates:
-                rejected_f.write(json.dumps({
-                    "company_id": rc.company_id,
-                    "license_no": rc.license_no,
-                    "query_id": rc.query_id,
-                    "url": rc.url,
-                    "title": rc.title,
-                    "engine": rc.engine,
-                    "verification_status": rc.verification_status,
-                    "verification_score": rc.verification_score,
-                    "verification_method": rc.verification_method,
-                    "verification_evidence": rc.verification_evidence,
-                }, ensure_ascii=False) + "\n")
-
-            writer.writerow({
-                "company_id": enriched.company.company_id,
-                "License No": enriched.company.license_no,
-                "English Name": enriched.company.english_name,
-                "Arabic Name": enriched.company.arabic_name,
-                "English Location(s)": enriched.company.location,
-                "Career Priority": enriched.company.career_priority,
-                "Research Status": enriched.company.research_status,
-                "official_website": enriched.official_website,
-                "official_domain": enriched.official_domain,
-                "linkedin_company_page": enriched.linkedin_company_page,
-                "general_email": enriched.general_email,
-                "main_phone": enriched.main_phone,
-                "careers_page": enriched.careers_page,
-                "ats_url": enriched.ats_url,
-                "ats_domain": enriched.ats_domain,
-                "recruitment_email": enriched.recruitment_email,
-                "ttw_bd_email": enriched.ttw_bd_email,
-                "procurement_email": enriched.procurement_email,
-                "supplier_registration_url": enriched.supplier_registration_url,
-                "assignment": enriched.assignment,
-                "confidence": enriched.confidence,
-                "best_candidate_url": enriched.best_candidate.url if enriched.best_candidate else "",
-                "best_candidate_title": enriched.best_candidate.title if enriched.best_candidate else "",
-                "best_candidate_engine": enriched.best_candidate.engine if enriched.best_candidate else "",
-                "rejected_count": len(enriched.rejected_candidates),
-                "evidence_count": len(enriched.evidence),
-                "notes": enriched.notes,
-            })
-            rows_written += 1
-            evidence_f.flush()
-            rejected_f.flush()
-            csvfile.flush()
-            # Deterministic delay between companies
-            time.sleep(0.5)
-
-    evidence_f.close()
-    rejected_f.close()
+                    writer.writerow({
+                        "company_id": enriched.company.company_id,
+                        "License No": enriched.company.license_no,
+                        "English Name": enriched.company.english_name,
+                        "Arabic Name": enriched.company.arabic_name,
+                        "English Location(s)": enriched.company.location,
+                        "Career Priority": enriched.company.career_priority,
+                        "Research Status": enriched.company.research_status,
+                        "official_website": enriched.official_website,
+                        "official_domain": enriched.official_domain,
+                        "linkedin_company_page": enriched.linkedin_company_page,
+                        "general_email": enriched.general_email,
+                        "main_phone": enriched.main_phone,
+                        "careers_page": enriched.careers_page,
+                        "ats_url": enriched.ats_url,
+                        "ats_domain": enriched.ats_domain,
+                        "recruitment_email": enriched.recruitment_email,
+                        "ttw_bd_email": enriched.ttw_bd_email,
+                        "procurement_email": enriched.procurement_email,
+                        "supplier_registration_url": enriched.supplier_registration_url,
+                        "assignment": enriched.assignment,
+                        "confidence": enriched.confidence,
+                        "best_candidate_url": enriched.best_candidate.url if enriched.best_candidate else "",
+                        "best_candidate_title": enriched.best_candidate.title if enriched.best_candidate else "",
+                        "best_candidate_engine": enriched.best_candidate.engine if enriched.best_candidate else "",
+                        "rejected_count": len(enriched.rejected_candidates),
+                        "evidence_count": len(enriched.evidence),
+                        "notes": enriched.notes,
+                    })
+                    rows_written += 1
+                    evidence_f.flush()
+                    rejected_f.flush()
+                    csvfile.flush()
+                    if workers == 1:
+                        time.sleep(0.5)
+    finally:
+        evidence_f.close()
+        rejected_f.close()
 
     # Finalize manifest — cache stats after, firecrawl usage (estimated from rejected evidence)
     cache_after = cache_stats(effective_cache_dir)

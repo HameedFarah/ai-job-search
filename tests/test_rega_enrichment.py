@@ -8,7 +8,7 @@ import hashlib
 
 from career_engine.rega_enrichment.models import CompanyRecord, CandidateResult, distinctive_tokens
 from career_engine.rega_enrichment.config import GENERIC_TOKENS, IDENTITY_FIELDS
-from career_engine.rega_enrichment.discovery import generate_queries
+from career_engine.rega_enrichment.discovery import generate_queries, discover_company
 from career_engine.rega_enrichment.verify import verify_candidate
 from career_engine.rega_enrichment.cache import default_cache_dir, load_cached, store_cache, clear_cache
 from career_engine.rega_enrichment.pipeline import load_canonical
@@ -35,6 +35,33 @@ def test_deterministic_query_generation():
         assert qs.company_id == "4"
         assert qs.license_no == "382"
         assert ":" in qs.query_id
+
+def test_dataforseo_fallback_is_q4_only_and_existing_credit_gated(monkeypatch, tmp_path):
+    import career_engine.rega_enrichment.discovery as discovery_mod
+
+    company = _make_company(company_id="7", license_no="777", english_name="Example Development", location="Riyadh")
+    calls = []
+    monkeypatch.setattr(discovery_mod, "searxng_qwant_search", lambda query, limit=5: [])
+    monkeypatch.setattr(discovery_mod, "firecrawl_search", lambda query, limit=5: [])
+
+    def fake_dataforseo(query, limit=5):
+        calls.append(query)
+        return [{
+            "url": "https://example.sa/",
+            "title": "Example Development official website",
+            "description": "Example Development Riyadh Saudi Arabia",
+            "engine": "dataforseo-existing-credit",
+        }]
+
+    monkeypatch.setattr(discovery_mod, "dataforseo_existing_credit_search", fake_dataforseo)
+    rows = discover_company(company, delay_s=0, use_cache=False, cache_dir=tmp_path / "cache")
+    assert len(calls) == 1
+    assert "official website" in calls[0].lower()
+    assert len(rows) == 1
+    assert rows[0].engine == "dataforseo-existing-credit"
+    assert rows[0].company_id == company.company_id
+    assert rows[0].license_no == company.license_no
+
 
 def test_cache_hit_miss_refresh(tmp_path):
     cache_dir = tmp_path / "cache"
@@ -220,6 +247,42 @@ def test_firecrawl_legacy_key_is_fail_closed_without_rotation(monkeypatch, tmp_p
     assert manifest["firecrawl_rotation_confirmed"] is False
     assert manifest["credentials_configured"] is False
     assert manifest["fetch_provider"] == "direct"
+
+
+def test_parallel_pipeline_preserves_deterministic_company_order(monkeypatch, tmp_path):
+    import time as time_mod
+    import career_engine.rega_enrichment.pipeline as pipeline_mod
+    from career_engine.rega_enrichment.models import EnrichmentRow
+
+    canonical = tmp_path / "canonical.csv"
+    canonical.write_text(
+        "License No,Arabic Name,English Name,English Location(s),Career Priority,Research Status\n"
+        "101,شركة ألف,Alpha Engineering,Riyadh,A,Not researched\n"
+        "102,شركة بيتا,Beta Engineering,Riyadh,A,Not researched\n"
+        "103,شركة جاما,Gamma Engineering,Jeddah,B,Not researched\n",
+        encoding="utf-8",
+    )
+
+    def fake_enrich(company, **kwargs):
+        # Force completion out of order; executor.map must still emit canonical order.
+        time_mod.sleep({"1": 0.03, "2": 0.01, "3": 0.0}[company.company_id])
+        return EnrichmentRow(company=company, assignment="not_found", confidence="not_found")
+
+    monkeypatch.setattr(pipeline_mod, "enrich_company", fake_enrich)
+    manifest = pipeline_mod.run_pipeline(
+        canonical,
+        tmp_path / "out",
+        delay_s=0,
+        use_cache=False,
+        cache_dir=tmp_path / "cache",
+        workers=3,
+    )
+    with pathlib.Path(manifest["sidecar_path"]).open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["company_id"] for row in rows] == ["1", "2", "3"]
+    assert [row["License No"] for row in rows] == ["101", "102", "103"]
+    assert manifest["workers"] == 3
+    assert manifest["sidecar_rows"] == 3
 
 
 def test_cache_file_structure(tmp_path):

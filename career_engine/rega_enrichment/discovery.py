@@ -19,6 +19,7 @@ import httpx
 
 from .config import QUERY_TEMPLATES, firecrawl_rotation_confirmed
 from .models import CandidateResult, CompanyRecord, QuerySpec
+from .provider_clients import DataForSEOClient, ProviderBudget
 
 FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v1/search"
 # Discovery now uses SearXNG Qwant-only; Firecrawl search kept as optional fallback for fetch stage
@@ -191,6 +192,43 @@ def searxng_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
     # Backward compat alias — now Qwant-only
     return searxng_qwant_search(query, limit=limit)
 
+
+def dataforseo_existing_credit_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    """One bounded existing-credit SERP fallback; never purchases or tops up credit."""
+    allowed = os.getenv("REGA_ALLOW_DATAFORSEO_EXISTING_CREDIT", "").strip().lower() in {"1", "true", "yes"}
+    credential = os.getenv("DATAFORSEO_API_KEY", "").strip()
+    if not allowed or not credential:
+        return []
+    result = DataForSEOClient(credential).search(
+        query,
+        ProviderBudget(
+            allow_existing_credit=True,
+            max_calls=1,
+            max_credits=1,
+            max_domains=0,
+        ),
+    )
+    normalized: list[dict[str, Any]] = []
+    for row in result:
+        if not isinstance(row, dict):
+            continue
+        meta = row.get("metadata") or {}
+        if not isinstance(meta, dict):
+            continue
+        url = str(meta.get("url") or "").strip()
+        if not url:
+            continue
+        normalized.append({
+            "url": url,
+            "title": str(meta.get("title") or "").strip(),
+            "description": str(meta.get("description") or "").strip()[:2000],
+            "engine": "dataforseo-existing-credit",
+        })
+        if len(normalized) >= limit:
+            break
+    return normalized
+
+
 def discover_company(
     company: CompanyRecord,
     limit_per_query: int = 5,
@@ -221,11 +259,22 @@ def discover_company(
             except Exception:
                 raw_results = []
                 backend = "searxng-qwant"
-            # Fallback to Firecrawl search only if Qwant returns none and quota allows (optional)
+            # If Qwant is unavailable/blocked, use at most one existing-credit
+            # DataForSEO query per company, restricted to the canonical q4
+            # "official website" query. This keeps spend bounded to <=1 call/company.
+            if not raw_results and qs.template_id == "q4":
+                try:
+                    raw_results = dataforseo_existing_credit_search(qs.query_text, limit=limit_per_query)
+                    if raw_results:
+                        backend = "dataforseo-existing-credit"
+                except Exception:
+                    pass
+            # Firecrawl remains an optional fallback only after explicit rotation confirmation.
             if not raw_results:
                 try:
                     raw_results = firecrawl_search(qs.query_text, limit=limit_per_query)
-                    backend = "firecrawl"
+                    if raw_results:
+                        backend = "firecrawl"
                 except Exception:
                     pass
             # Store normalized result set in cache

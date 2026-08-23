@@ -28,6 +28,7 @@ def main() -> None:
     p_run.add_argument("--refresh", action="store_true", help="Bypass cache and refresh search results")
     p_run.add_argument("--no-cache", action="store_true", help="Disable cache entirely")
     p_run.add_argument("--cache-dir", help="Override cache directory")
+    p_run.add_argument("--workers", type=int, default=1, help="Bounded company-level concurrency; default 1, maximum 16")
 
     p_reg = sub.add_parser("regression", help="Run 20-company regression")
     p_reg.add_argument("--input", required=True)
@@ -72,7 +73,7 @@ def main() -> None:
         input_path = CANONICAL_REGA_INPUT if args.canonical_input else Path(args.input)
         manifest = run_pipeline(
             input_path, out, company_ids=ids, limit=args.limit, delay_s=args.delay,
-            use_cache=use_cache, refresh=refresh, cache_dir=cache_dir
+            use_cache=use_cache, refresh=refresh, cache_dir=cache_dir, workers=args.workers
         )
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
 
