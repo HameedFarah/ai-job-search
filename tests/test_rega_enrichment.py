@@ -249,6 +249,62 @@ def test_firecrawl_legacy_key_is_fail_closed_without_rotation(monkeypatch, tmp_p
     assert manifest["fetch_provider"] == "direct"
 
 
+def test_company_id_filter_does_not_match_license_number_collision(monkeypatch, tmp_path):
+    import career_engine.rega_enrichment.pipeline as pipeline_mod
+    from career_engine.rega_enrichment.models import EnrichmentRow
+
+    canonical = tmp_path / "canonical-filter.csv"
+    canonical.write_text(
+        "License No,Arabic Name,English Name,English Location(s),Career Priority,Research Status\n"
+        "201,شركة ألف,Alpha Engineering,Riyadh,A,Not researched\n"
+        "999,شركة بيتا,Beta Engineering,Riyadh,A,Not researched\n"
+        "777,شركة جاما,Gamma Engineering,Jeddah,B,Not researched\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "enrich_company",
+        lambda company, **kwargs: EnrichmentRow(company=company, assignment="not_found", confidence="not_found"),
+    )
+
+    by_id = pipeline_mod.run_pipeline(
+        canonical,
+        tmp_path / "by-id",
+        company_ids=["2"],
+        delay_s=0,
+        use_cache=False,
+        cache_dir=tmp_path / "cache-id",
+    )
+    assert by_id["selected_count"] == 1
+    assert by_id["company_ids"] == ["2"]
+    assert by_id["requested_company_ids"] == ["2"]
+    assert by_id["requested_license_nos"] == []
+
+    collision = pipeline_mod.run_pipeline(
+        canonical,
+        tmp_path / "collision",
+        company_ids=["201"],
+        delay_s=0,
+        use_cache=False,
+        cache_dir=tmp_path / "cache-collision",
+    )
+    assert collision["selected_count"] == 0
+    assert collision["company_ids"] == []
+
+    by_license = pipeline_mod.run_pipeline(
+        canonical,
+        tmp_path / "by-license",
+        license_nos=["201"],
+        delay_s=0,
+        use_cache=False,
+        cache_dir=tmp_path / "cache-license",
+    )
+    assert by_license["selected_count"] == 1
+    assert by_license["company_ids"] == ["1"]
+    assert by_license["requested_company_ids"] == []
+    assert by_license["requested_license_nos"] == ["201"]
+
+
 def test_parallel_pipeline_preserves_deterministic_company_order(monkeypatch, tmp_path):
     import time as time_mod
     import career_engine.rega_enrichment.pipeline as pipeline_mod

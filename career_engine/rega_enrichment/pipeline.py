@@ -184,6 +184,7 @@ def run_pipeline(
     canonical_path: Path,
     out_dir: Path,
     company_ids: list[str] | None = None,
+    license_nos: list[str] | None = None,
     delay_s: float = 0.4,
     limit: int | None = None,
     use_cache: bool = True,
@@ -195,9 +196,13 @@ def run_pipeline(
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = freeze_manifest(canonical_path)
     all_companies = load_canonical(canonical_path)
-    if company_ids is not None:
-        sel = set(company_ids)
-        companies = [c for c in all_companies if c.company_id in sel or c.license_no in sel]
+    if company_ids is not None or license_nos is not None:
+        id_sel = set(company_ids or [])
+        license_sel = set(license_nos or [])
+        companies = [
+            c for c in all_companies
+            if c.company_id in id_sel or c.license_no in license_sel
+        ]
     else:
         companies = all_companies
     if limit:
@@ -223,6 +228,8 @@ def run_pipeline(
         "canonical_row_count": len(all_companies),
         "selected_count": len(companies),
         "company_ids": [c.company_id for c in companies],
+        "requested_company_ids": list(company_ids or []),
+        "requested_license_nos": list(license_nos or []),
         "cache_dir": str(effective_cache_dir),
         "cache_files_before": cache_before.get("files", 0),
         "use_cache": use_cache,

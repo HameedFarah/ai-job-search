@@ -22,7 +22,8 @@ def main() -> None:
     input_group.add_argument("--input", help="Canonical CSV path")
     input_group.add_argument("--canonical-input", action="store_true", help="Use the configured canonical REGA input")
     p_run.add_argument("--out-dir", required=True, help="Output dir for sidecar")
-    p_run.add_argument("--ids", help="Comma-separated company_id or license_no filter")
+    p_run.add_argument("--ids", help="Comma-separated company_id filter only")
+    p_run.add_argument("--license-nos", help="Comma-separated License No filter only")
     p_run.add_argument("--limit", type=int, help="Limit number of companies")
     p_run.add_argument("--delay", type=float, default=0.4)
     p_run.add_argument("--refresh", action="store_true", help="Bypass cache and refresh search results")
@@ -82,12 +83,13 @@ def main() -> None:
     if args.cmd == "run":
         out = Path(args.out_dir)
         ids = [x.strip() for x in args.ids.split(",")] if args.ids else None
+        license_nos = [x.strip() for x in args.license_nos.split(",")] if args.license_nos else None
         cache_dir = Path(args.cache_dir) if getattr(args, "cache_dir", None) else None
         use_cache = not getattr(args, "no_cache", False)
         refresh = getattr(args, "refresh", False)
         input_path = CANONICAL_REGA_INPUT if args.canonical_input else Path(args.input)
         manifest = run_pipeline(
-            input_path, out, company_ids=ids, limit=args.limit, delay_s=args.delay,
+            input_path, out, company_ids=ids, license_nos=license_nos, limit=args.limit, delay_s=args.delay,
             use_cache=use_cache, refresh=refresh, cache_dir=cache_dir, workers=args.workers
         )
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
