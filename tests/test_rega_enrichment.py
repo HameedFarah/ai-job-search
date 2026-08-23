@@ -111,7 +111,8 @@ def test_blocked_unrelated_domains():
 def test_fuzzy_makkyoon():
     c = _make_company(english_name="Makkyoon Urban Developers", arabic_name="شركة مكيون مطورون عمرانيون مساهمة مقفلة", location="Makkah", company_id="2", license_no="365")
     # Official domain uses makkiyoon with i, English has makkyoon without i — should fuzzy match
-    cand = CandidateResult(company_id="2", license_no="365", query_id="2:abc", url="https://makkiyoon.com/", title="مكيون مطورون عمرانيون", description="Makkiyoon Urban Developers - Home", engine="qwant")
+    # Title contains English brand name (as real search snippets do)
+    cand = CandidateResult(company_id="2", license_no="365", query_id="2:abc", url="https://makkiyoon.com/", title="Makkyoon Urban Developers | Saudi Arabia", description="Official website for Makkyoon Urban Developers Saudi Arabia", engine="qwant")
     import career_engine.rega_enrichment.verify as v
     orig_direct = v.fetch_direct
     orig_fire = v.fetch_via_firecrawl_extract
@@ -119,7 +120,7 @@ def test_fuzzy_makkyoon():
     v.fetch_via_firecrawl_extract = lambda url: (_ for _ in ()).throw(RuntimeError("fail 402"))
     try:
         result = verify_candidate(cand, c)
-        # With snippet fallback, should be candidate via fuzzy host
+        # With snippet fallback, should be at least candidate via fuzzy host + title + content
         assert result.verification_status in ("candidate","confirmed")
         assert "hostname_token_match" in result.verification_method
     finally:
@@ -197,6 +198,29 @@ def test_unrelated_lexical_rejected():
     finally:
         v.fetch_direct = orig_direct
         v.fetch_via_firecrawl_extract = orig_fire
+
+def test_firecrawl_legacy_key_is_fail_closed_without_rotation(monkeypatch, tmp_path):
+    from career_engine.rega_enrichment import config as cfg
+    from career_engine.rega_enrichment import discovery as discovery_mod
+    from career_engine.rega_enrichment import extract as extract_mod
+    from career_engine.rega_enrichment import verify as verify_mod
+
+    monkeypatch.delenv("FIRECRAWL_ROTATED_CONFIRMED", raising=False)
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "legacy-key-must-not-be-used")
+
+    assert cfg.firecrawl_rotation_confirmed() is False
+    assert cfg.firecrawl_credentials_configured() is False
+    assert discovery_mod.api_key() == ""
+    assert extract_mod.api_key() == ""
+    assert verify_mod.api_key() == ""
+
+    input_path = tmp_path / "input.csv"
+    input_path.write_text("License No,Arabic Name,English Name,English Location(s)\n1,a,b,Riyadh\n", encoding="utf-8")
+    manifest = cfg.freeze_manifest(input_path)
+    assert manifest["firecrawl_rotation_confirmed"] is False
+    assert manifest["credentials_configured"] is False
+    assert manifest["fetch_provider"] == "direct"
+
 
 def test_cache_file_structure(tmp_path):
     cache_dir = tmp_path / "cache2"

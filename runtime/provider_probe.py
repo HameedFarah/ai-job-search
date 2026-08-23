@@ -41,11 +41,13 @@ def main() -> int:
     if present["DATAFORSEO_API_KEY"]:
         results.append(probe("dataforseo", "https://api.dataforseo.com/v3/appendix/user_data", _dataforseo_headers(os.environ["DATAFORSEO_API_KEY"])))
     if present["TOMBA_API_KEY"] and present["TOMBA_API_SECRET"]:
-        results.append(probe("tomba", "https://api.tomba.io/v1/account", {"X-Tomba-Key": os.environ["TOMBA_API_KEY"], "X-Tomba-Secret": os.environ["TOMBA_API_SECRET"]}))
+        results.append(probe("tomba", "https://api.tomba.io/v1/rate-limits", {"X-Tomba-Key": os.environ["TOMBA_API_KEY"], "X-Tomba-Secret": os.environ["TOMBA_API_SECRET"]}))
+    elif present["TOMBA_API_KEY"]:
+        results.append({"provider": "tomba", "status": "missing_required_secret", "http_status": None})
     if present["APIFY_API_KEY"]:
         results.append(probe("apify", "https://api.apify.com/v2/users/me", {"Authorization": "Bearer " + os.environ["APIFY_API_KEY"]}))
     if present["OUTSCRAPER_API_KEY"]:
-        results.append(probe("outscraper", "https://api.app.outscraper.com/api/v1/account", {"X-API-KEY": os.environ["OUTSCRAPER_API_KEY"]}))
+        results.append(probe("outscraper", "https://api.outscraper.com/profile/balance", {"X-API-KEY": os.environ["OUTSCRAPER_API_KEY"]}))
     if present["ANYMAILFINDER_API_KEY"]:
         results.append(probe("anymailfinder", "https://api.anymailfinder.com/v5.1/account", {"Authorization": os.environ["ANYMAILFINDER_API_KEY"]}))
     if present["ZEROBOUNCE_API_KEY"]:

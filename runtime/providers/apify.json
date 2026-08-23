@@ -1,1 +1,6 @@
-{"provider":"apify","required_env":["APIFY_API_KEY"],"value_free":true,"actors_enabled":false}
+{
+  "contains_secret_values": false,
+  "service": "career-provider-apify",
+  "folder": "services",
+  "keys": ["APIFY_API_KEY"]
+}

@@ -1,1 +1,6 @@
-{"provider":"anymailfinder","required_env":["ANYMAILFINDER_API_KEY"],"value_free":true}
+{
+  "contains_secret_values": false,
+  "service": "career-provider-anymailfinder",
+  "folder": "services",
+  "keys": ["ANYMAILFINDER_API_KEY"]
+}

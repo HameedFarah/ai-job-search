@@ -336,8 +336,8 @@ def run_pipeline(
         "manifest_path": str(manifest_path),
         "cache_files_after": cache_after.get("files", 0),
         "cache_files_created": cache_after.get("files", 0) - cache_before.get("files", 0),
-        "firecrawl_search_calls_estimate": 0,  # REGA discovery now Qwant-only; search credits saved
-        "firecrawl_extract_calls_estimate": rows_written * 2,  # approx: verify + homepage fetch per company
+        "firecrawl_search_calls_estimate": 0,
+        "firecrawl_extract_calls_estimate": rows_written * 2 if manifest.get("credentials_configured") else 0,
     })
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 

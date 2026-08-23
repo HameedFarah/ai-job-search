@@ -12,7 +12,7 @@ import httpx
 from urllib.parse import urlparse, urlsplit
 from datetime import datetime, timezone
 
-from .config import GENERIC_TOKENS, BLOCKED_HOSTS
+from .config import GENERIC_TOKENS, BLOCKED_HOSTS, firecrawl_rotation_confirmed
 from .models import CandidateResult, CompanyRecord, distinctive_tokens, hostname_tokens
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -35,8 +35,10 @@ def _read_hermes_env(key: str) -> str:
     return ""
 
 def api_key() -> str:
-    # Firecrawl remains disabled until credential rotation is explicitly proven.
-    if os.getenv("FIRECRAWL_ROTATED_CONFIRMED", "").strip().lower() not in {"1", "true", "yes"}:
+    # Firecrawl was previously exposed in repository history. Until rotation is
+    # independently evidenced, fail closed even if a legacy environment value
+    # exists. Operators must explicitly attest rotation at runtime.
+    if not firecrawl_rotation_confirmed():
         return ""
     import os
     try:
@@ -58,16 +60,25 @@ def is_blocked(host: str) -> bool:
     return any(b in h for b in BLOCKED_HOSTS)
 
 def _hostname_labels(host: str) -> list[str]:
+    """Return DNS labels without punctuation for identity-safe comparisons."""
     return [re.sub(r"[^a-z0-9]", "", label) for label in host.lower().split(".") if label]
 
 def _label_matches_token(label: str, token: str) -> bool:
+    """Match a whole hostname label, allowing only one-edit transliteration drift."""
     if label == token:
         return True
     if len(token) < 5:
         return False
-    return any(token[:i] + token[i + 1:] == label for i in range(len(token))) or any(
-        token[:i] + c + token[i:] == label for i in range(len(token) + 1) for c in "abcdefghijklmnopqrstuvwxyz"
-    )
+    # One deletion or insertion handles known transliteration variants without
+    # accepting a token embedded in an unrelated brand (e.g. generic-specialties).
+    for i in range(len(token)):
+        if token[:i] + token[i + 1:] == label:
+            return True
+    for i in range(len(token) + 1):
+        for char in "abcdefghijklmnopqrstuvwxyz":
+            if token[:i] + char + token[i:] == label:
+                return True
+    return False
 
 def fetch_via_firecrawl_extract(url: str) -> tuple[str, str, str]:
     """Fetch via Firecrawl extract, returns (title, markdown, html)."""
@@ -185,14 +196,6 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
         for tok in toks:
             if any(_label_matches_token(label, tok) for label in host_labels):
                 return True
-            if len(tok) >= 5:
-                for i in range(len(tok)):
-                    if tok[:i] + tok[i+1:] in host_norm:
-                        return True
-                for i in range(len(tok)+1):
-                    for c in "abcdefghijklmnopqrstuvwxyz":
-                        if tok[:i] + c + tok[i:] in host_norm:
-                            return True
         return False
     if quick_score >= 12 and _host_hit_fuzzy(host_norm_snippet, eng_tokens_snippet):
         title = title_snippet
@@ -252,26 +255,7 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
 
     # Host token matches — strongest signal (with fuzzy for transliteration variants like makkyoon vs makkiyoon)
     def _fuzzy_in(host_norm: str, tok: str) -> bool:
-        if any(_label_matches_token(label, tok) for label in host_labels):
-            return True
-        # Allow edit distance 1 for tokens >=5 (e.g., makkyoon vs makkiyoon)
-        if len(tok) >= 5:
-            # check if tok with one char inserted/deleted/substituted appears
-            for i in range(len(tok)):
-                variant = tok[:i] + tok[i+1:]  # deletion
-                if variant in host_norm and len(variant) >= 4:
-                    return True
-            for i in range(len(tok)+1):
-                for c in "abcdefghijklmnopqrstuvwxyz":
-                    variant = tok[:i] + c + tok[i:]
-                    if variant in host_norm:
-                        return True
-            # simple substring with one char diff: check longest common substring >= len-1
-            # fallback: if host contains tok without one char
-            for i in range(len(tok)):
-                if tok[:i] + tok[i+1:] in host_norm:
-                    return True
-        return False
+        return any(_label_matches_token(label, tok) for label in host_labels)
 
     host_hits = 0
     for tok in eng_tokens:
@@ -357,21 +341,22 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     has_content_token = any(tok in content_l or _fuzzy_in(re.sub(r"[^a-z0-9]", "", content_l), tok) for tok in eng_tokens)
 
     # Determine verification status — allow host+content_token or host+arabic_partial as candidate
+    # Confirmed requires score >= 18 (strong identity); candidate >= 14; below that unconfirmed/rejected
     if has_host and (has_title or has_full_english or has_arabic or has_content_token):
-        if score >= 12:
+        if score >= 18:
             status = "confirmed"
-        elif score >= 8:
+        elif score >= 14:
             status = "candidate"
         else:
             status = "unconfirmed"
     elif has_title and (has_full_english or has_arabic or has_content_token):
-        if score >= 10:
+        if score >= 16:
             status = "candidate"
         else:
             status = "unconfirmed"
-    elif score >= 8 and (has_full_english or has_arabic or has_content_token):
+    elif score >= 14 and (has_full_english or has_arabic or has_content_token):
         status = "candidate"
-    elif score >= 5:
+    elif score >= 8:
         status = "unconfirmed"
     else:
         status = "rejected"

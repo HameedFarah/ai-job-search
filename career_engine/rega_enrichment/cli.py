@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import hashlib
+from dataclasses import asdict
 from pathlib import Path
 
 from .pipeline import run_pipeline, load_canonical, build_regression_set, enrich_company
@@ -47,6 +48,14 @@ def main() -> None:
     p_cache.add_argument("--stats", action="store_true", help="Show cache stats")
     p_cache.add_argument("--clear", action="store_true", help="Clear cache")
     p_cache.add_argument("--cache-dir", help="Override cache directory")
+
+    p_providers = sub.add_parser("providers", help="Run bounded provider candidate discovery for a verified official domain")
+    p_providers.add_argument("--domain", required=True, help="Verified official company domain")
+    p_providers.add_argument(
+        "--allow-existing-credit",
+        action="store_true",
+        help="Permit at most one existing/trial-credit lookup per configured provider; never purchases credits",
+    )
 
     args = parser.parse_args()
 
@@ -134,7 +143,7 @@ def main() -> None:
             "cache_files_after": after.get("files", 0),
             "cache_files_created": after.get("files", 0) - before.get("files", 0),
             "firecrawl_search_calls_estimate": 0,
-            "firecrawl_extract_calls_estimate": len(reg_set) * 2,
+            "firecrawl_extract_calls_estimate": len(reg_set) * 2 if manifest.get("credentials_configured") else 0,
         })
         manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
@@ -219,6 +228,20 @@ def main() -> None:
             n = clear_cache(cache_dir)
             print(f"cleared {n} files")
 
+    elif args.cmd == "providers":
+        from .provider_waterfall import run_configured_domain_waterfall
+        result = run_configured_domain_waterfall(
+            args.domain,
+            allow_existing_credit=args.allow_existing_credit,
+        )
+        print(json.dumps({
+            "domain": args.domain.strip().lower().removeprefix("www."),
+            "provider_statuses": result.provider_statuses,
+            "candidate_contacts": [asdict(contact) for contact in result.contacts],
+            "outreach_ready_count": len(result.official_recruitment_contacts),
+            "official_promotion_performed": False,
+        }, indent=2, ensure_ascii=False))
+
     elif args.cmd == "validate":
         sidecar = Path(args.sidecar)
         with sidecar.open(encoding="utf-8-sig") as f:
@@ -226,3 +249,7 @@ def main() -> None:
         print(f"Rows: {len(rows)}")
         for r in rows[:5]:
             print(r)
+
+
+if __name__ == "__main__":
+    main()

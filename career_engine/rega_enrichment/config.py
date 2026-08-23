@@ -84,7 +84,15 @@ def git_sha(repo_root: Path | None = None) -> str:
     except Exception:
         return "unknown"
 
-def _credentials_configured() -> bool:
+def firecrawl_rotation_confirmed() -> bool:
+    """Return True only after an operator explicitly confirms credential rotation."""
+    return os.getenv("FIRECRAWL_ROTATED_CONFIRMED", "").strip().lower() in {"1", "true", "yes"}
+
+
+def firecrawl_credentials_configured() -> bool:
+    """Report usable Firecrawl credentials without treating a legacy key as authorized."""
+    if not firecrawl_rotation_confirmed():
+        return False
     if os.getenv("FIRECRAWL_API_KEY"):
         return True
     for p in [Path("/home/hameedo/.hermes/.env"), Path.home() / ".hermes" / ".env"]:
@@ -109,8 +117,9 @@ def freeze_manifest(input_path: Path) -> dict:
         "hermes_web_backend": HERMES_WEB_BACKEND,
         "search_backend": "searxng-qwant",
         "search_provider": "searxng",
-        "fetch_provider": "firecrawl",
-        "credentials_configured": _credentials_configured(),
+        "fetch_provider": "firecrawl" if firecrawl_credentials_configured() else "direct",
+        "firecrawl_rotation_confirmed": firecrawl_rotation_confirmed(),
+        "credentials_configured": firecrawl_credentials_configured(),
         "skill_version": SKILL_VERSION,
         "git_sha": git_sha(),
         "input_sha256": canonical_input_sha(input_path) if input_path.exists() else None,

@@ -1,1 +1,6 @@
-{"provider":"outscraper","status":"disabled_unverified_endpoint","required_env":["OUTSCRAPER_API_KEY"]}
+{
+  "contains_secret_values": false,
+  "service": "career-provider-outscraper",
+  "folder": "services",
+  "keys": ["OUTSCRAPER_API_KEY"]
+}

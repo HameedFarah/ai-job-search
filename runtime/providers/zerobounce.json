@@ -1,1 +1,6 @@
-{"provider":"zerobounce","required_env":["ZEROBOUNCE_API_KEY"],"value_free":true}
+{
+  "contains_secret_values": false,
+  "service": "career-provider-zerobounce",
+  "folder": "services",
+  "keys": ["ZEROBOUNCE_API_KEY"]
+}

@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse, urlsplit
 from datetime import datetime, timezone
 import httpx
 
-from .config import RECRUITMENT_KEYWORDS, PROCUREMENT_KEYWORDS, BD_KEYWORDS, ATS_DOMAINS
+from .config import RECRUITMENT_KEYWORDS, PROCUREMENT_KEYWORDS, BD_KEYWORDS, ATS_DOMAINS, firecrawl_rotation_confirmed
 from .models import CompanyRecord, EvidenceRecord
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -31,6 +31,8 @@ def _read_hermes_env(key: str) -> str:
 
 def api_key() -> str:
     import os
+    if not firecrawl_rotation_confirmed():
+        return ""
     try:
         import importlib.util
         if importlib.util.find_spec("hermes_cli.config"):

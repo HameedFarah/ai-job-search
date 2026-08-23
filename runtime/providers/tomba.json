@@ -1,1 +1,6 @@
-{"provider":"tomba","required_env":["TOMBA_API_KEY","TOMBA_API_SECRET"],"value_free":true}
+{
+  "contains_secret_values": false,
+  "service": "career-provider-tomba",
+  "folder": "services",
+  "keys": ["TOMBA_API_KEY", "TOMBA_API_SECRET"]
+}

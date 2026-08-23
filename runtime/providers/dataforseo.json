@@ -1,1 +1,6 @@
-{"provider":"dataforseo","required_env":["DATAFORSEO_API_KEY"],"value_free":true}
+{
+  "contains_secret_values": false,
+  "service": "career-provider-dataforseo",
+  "folder": "services",
+  "keys": ["DATAFORSEO_API_KEY"]
+}

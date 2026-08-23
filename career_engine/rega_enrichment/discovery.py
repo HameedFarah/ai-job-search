@@ -17,7 +17,7 @@ from typing import Any
 import re
 import httpx
 
-from .config import QUERY_TEMPLATES
+from .config import QUERY_TEMPLATES, firecrawl_rotation_confirmed
 from .models import CandidateResult, CompanyRecord, QuerySpec
 
 FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v1/search"
@@ -40,7 +40,11 @@ def _read_hermes_env(key: str) -> str:
     return ""
 
 def api_key() -> str:
-    # Prefer Hermes env via hermes_cli.config.get_env_value, fallback to process env and .env file
+    # A legacy Firecrawl key was exposed in repository history. Fail closed until
+    # independent rotation/revocation has been explicitly confirmed at runtime.
+    if not firecrawl_rotation_confirmed():
+        return ""
+    # Prefer Hermes env via hermes_cli.config.get_env_value, fallback to process env and .env file.
     try:
         import importlib.util
         if importlib.util.find_spec("hermes_cli.config"):
