@@ -62,6 +62,21 @@ def main() -> None:
         help="Permit at most one existing/trial-credit lookup per configured provider; never purchases credits",
     )
 
+    p_provider_batch = sub.add_parser("provider-batch", help="Run candidate-only provider discovery across verified sidecar domains")
+    p_provider_batch.add_argument("--sidecar", required=True, help="Accepted REGA sidecar CSV")
+    p_provider_batch.add_argument("--output", required=True, help="Derived provider candidate JSONL output")
+    p_provider_batch.add_argument(
+        "--allow-existing-credit",
+        action="store_true",
+        help="Permit existing/trial-credit lookups only; never purchases or tops up credits",
+    )
+    p_provider_batch.add_argument(
+        "--include-candidates",
+        action="store_true",
+        help="Also process candidate domains; default is confirmed official domains only",
+    )
+    p_provider_batch.add_argument("--max-domains", type=int, help="Optional bounded unique-domain ceiling")
+
     args = parser.parse_args()
 
     if args.cmd == "run":
@@ -256,6 +271,17 @@ def main() -> None:
             "outreach_ready_count": len(result.official_recruitment_contacts),
             "official_promotion_performed": False,
         }, indent=2, ensure_ascii=False))
+
+    elif args.cmd == "provider-batch":
+        from .provider_batch import run_provider_batch
+        summary = run_provider_batch(
+            Path(args.sidecar),
+            Path(args.output),
+            allow_existing_credit=args.allow_existing_credit,
+            include_candidates=args.include_candidates,
+            max_domains=args.max_domains,
+        )
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
 
     elif args.cmd == "validate":
         sidecar = Path(args.sidecar)
