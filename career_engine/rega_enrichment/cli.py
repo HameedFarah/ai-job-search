@@ -10,7 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .pipeline import run_pipeline, load_canonical, build_regression_set, enrich_company
-from .config import freeze_manifest
+from .config import CANONICAL_REGA_INPUT, freeze_manifest
 from .cache import default_cache_dir, cache_stats
 
 def main() -> None:
@@ -18,7 +18,9 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_run = sub.add_parser("run", help="Run batch enrichment")
-    p_run.add_argument("--input", required=True, help="Canonical CSV path")
+    input_group = p_run.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--input", help="Canonical CSV path")
+    input_group.add_argument("--canonical-input", action="store_true", help="Use the configured canonical REGA input")
     p_run.add_argument("--out-dir", required=True, help="Output dir for sidecar")
     p_run.add_argument("--ids", help="Comma-separated company_id or license_no filter")
     p_run.add_argument("--limit", type=int, help="Limit number of companies")
@@ -49,6 +51,8 @@ def main() -> None:
     p_cache.add_argument("--clear", action="store_true", help="Clear cache")
     p_cache.add_argument("--cache-dir", help="Override cache directory")
 
+    sub.add_parser("input-status", help="Report the configured canonical REGA input identity without modifying it")
+
     p_providers = sub.add_parser("providers", help="Run bounded provider candidate discovery for a verified official domain")
     p_providers.add_argument("--domain", required=True, help="Verified official company domain")
     p_providers.add_argument(
@@ -65,8 +69,9 @@ def main() -> None:
         cache_dir = Path(args.cache_dir) if getattr(args, "cache_dir", None) else None
         use_cache = not getattr(args, "no_cache", False)
         refresh = getattr(args, "refresh", False)
+        input_path = CANONICAL_REGA_INPUT if args.canonical_input else Path(args.input)
         manifest = run_pipeline(
-            Path(args.input), out, company_ids=ids, limit=args.limit, delay_s=args.delay,
+            input_path, out, company_ids=ids, limit=args.limit, delay_s=args.delay,
             use_cache=use_cache, refresh=refresh, cache_dir=cache_dir
         )
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
@@ -227,6 +232,15 @@ def main() -> None:
             from .cache import clear_cache
             n = clear_cache(cache_dir)
             print(f"cleared {n} files")
+
+    elif args.cmd == "input-status":
+        rows = load_canonical(CANONICAL_REGA_INPUT)
+        print(json.dumps({
+            "path": str(CANONICAL_REGA_INPUT),
+            "exists": CANONICAL_REGA_INPUT.is_file(),
+            "rows": len(rows),
+            "sha256": hashlib.sha256(CANONICAL_REGA_INPUT.read_bytes()).hexdigest(),
+        }, indent=2))
 
     elif args.cmd == "providers":
         from .provider_waterfall import run_configured_domain_waterfall

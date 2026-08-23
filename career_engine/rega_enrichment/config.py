@@ -13,7 +13,8 @@ SCHEMA_VERSION = 1
 SCRAPER_VERSION = "firecrawl-v1+scrapegraph-qwen3-35b"
 MODEL_VERSION = "openai/Qwen/Qwen3.6-35B-A3B-FP8"
 BACKEND_VERSION = "searxng:127.0.0.1:8888"  # Firecrawl provider: firecrawl (credentials_configured=true, key not stored in Git)
-HERMES_WEB_BACKEND = "firecrawl"  # currently configured Hermes web backend (from .hermes/.env)
+HERMES_WEB_BACKEND = "firecrawl"  # historical backend label; runtime use remains rotation-gated
+CANONICAL_REGA_INPUT = Path("/home/hameedo/tmp/rega-enrichment/rega-enrichment-queue-canonical.csv")
 # Skill version — freeze at run start
 SKILL_VERSION = "job-automation-data-enrichment:1.0.0 / company-enrichment-discovery:1.0.0"
 
