@@ -571,6 +571,12 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
     has_out_of_lane = any(phrase(term) for term in out_of_lane) or phrase("account manager")
     has_production = any(phrase(term) for term in production)
     has_junior = any(phrase(term) for term in junior)
+    # "Assistant" is usually a junior signal, but senior leadership titles such
+    # as "Assistant Construction Director" are not junior roles. Preserve the
+    # suppression for ordinary assistant roles while allowing assistant-director
+    # titles to be calibrated by their management/function signals.
+    if phrase("assistant") and phrase("director"):
+        has_junior = False
     specialist_out = any(phrase(term) for term in functional_out_of_lane)
     mep_specialist = any(phrase(term) for term in mep_specialist_terms)
     has_out_of_lane = has_out_of_lane or specialist_out or mep_specialist

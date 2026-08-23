@@ -21,6 +21,10 @@ def test_functional_title_calibration_and_positive_controls():
         signals = _role_title_signals(title, tx)
         assert not signals["out_of_lane"], title
         assert signals["has_management"], title
+    assistant_director = _role_title_signals("Assistant Construction Director", tx)
+    assert assistant_director["has_management"]
+    assert not assistant_director["junior"]
+    assert _role_title_signals("Assistant Architect", tx)["junior"]
 
 
 def test_stable_requisition_identity_is_cross_source_but_not_title_only():
