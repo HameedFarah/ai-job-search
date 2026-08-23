@@ -6,6 +6,9 @@ import json
 import re
 import subprocess
 from datetime import date, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
@@ -38,6 +41,108 @@ def run_gws(args: list[str], *, timeout: int = 120) -> dict[str, Any]:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Invalid JSON from gws: {completed.stdout[:500]}") from exc
+
+
+def _gws_oauth_credentials(*, timeout: int = 30) -> dict[str, str]:
+    """Load the already-authorized gws OAuth refresh credentials without logging values."""
+    completed = subprocess.run(
+        ["gws", "auth", "export", "--unmasked"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"gws auth export failed ({completed.returncode})")
+    start = completed.stdout.find("{")
+    if start < 0:
+        raise RuntimeError("gws auth export returned no JSON")
+    try:
+        raw = json.loads(completed.stdout[start:])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("gws auth export returned invalid JSON") from exc
+    required = ("client_id", "client_secret", "refresh_token")
+    creds = {key: str(raw.get(key, "")).strip() for key in required}
+    if any(not creds[key] for key in required):
+        raise RuntimeError("gws OAuth export is missing required credential fields")
+    return creds
+
+
+def _gmail_access_token(*, timeout: int = 30) -> str:
+    creds = _gws_oauth_credentials(timeout=timeout)
+    body = urlencode({
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "refresh_token": creds["refresh_token"],
+        "grant_type": "refresh_token",
+    }).encode("utf-8")
+    request = Request(
+        "https://oauth2.googleapis.com/token",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+    except (HTTPError, URLError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Gmail OAuth token refresh failed: {type(exc).__name__}") from exc
+    token = str(payload.get("access_token", "")).strip()
+    if not token:
+        raise RuntimeError("Gmail OAuth token refresh returned no access token")
+    return token
+
+
+def _gmail_api_json(method: str, url: str, payload: dict[str, Any], *, timeout: int = 120) -> dict[str, Any]:
+    """Call Gmail REST with the existing gws OAuth grant; secrets never enter argv or errors."""
+    token = _gmail_access_token(timeout=min(timeout, 30))
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request = Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method=method,
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8") or "{}")
+    except HTTPError as exc:
+        raise RuntimeError(f"Gmail API request failed ({exc.code})") from exc
+    except (URLError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Gmail API request failed: {type(exc).__name__}") from exc
+
+
+def _save_draft_payload(raw: str, *, existing_draft_id: str = "", timeout: int = 120) -> tuple[dict[str, Any], str]:
+    """Save a draft without placing large MIME JSON on the process argument vector."""
+    payload_obj = {"message": {"raw": raw}}
+    payload = json.dumps(payload_obj, separators=(",", ":"))
+    # Inline gws JSON is convenient for small messages but large PDF attachments can
+    # exceed the OS argv limit. Use the same OAuth grant via Gmail REST in that case.
+    if len(payload.encode("utf-8")) > 32768:
+        if existing_draft_id:
+            saved = _gmail_api_json(
+                "PUT",
+                f"https://gmail.googleapis.com/gmail/v1/users/me/drafts/{existing_draft_id}",
+                payload_obj,
+                timeout=timeout,
+            )
+            return saved, "updated"
+        saved = _gmail_api_json(
+            "POST",
+            "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+            payload_obj,
+            timeout=timeout,
+        )
+        return saved, "created"
+    if existing_draft_id:
+        params = json.dumps({"userId": "me", "id": existing_draft_id}, separators=(",", ":"))
+        return run_gws(["gmail", "users", "drafts", "update", "--params", params, "--json", payload], timeout=timeout), "updated"
+    params = json.dumps({"userId": "me"}, separators=(",", ":"))
+    return run_gws(["gmail", "users", "drafts", "create", "--params", params, "--json", payload], timeout=timeout), "created"
 
 
 def profile() -> dict[str, Any]:
@@ -245,15 +350,7 @@ def save_application_draft(
             raise RuntimeError(f"Multiple matching drafts found: {[item['draft_id'] for item in matching]}")
         if matching:
             existing_draft_id = matching[0]["draft_id"]
-    payload = json.dumps({"message": {"raw": raw}}, separators=(",", ":"))
-    if existing_draft_id:
-        params = json.dumps({"userId": "me", "id": existing_draft_id}, separators=(",", ":"))
-        saved = run_gws(["gmail", "users", "drafts", "update", "--params", params, "--json", payload])
-        action = "updated"
-    else:
-        params = json.dumps({"userId": "me"}, separators=(",", ":"))
-        saved = run_gws(["gmail", "users", "drafts", "create", "--params", params, "--json", payload])
-        action = "created"
+    saved, action = _save_draft_payload(raw, existing_draft_id=existing_draft_id)
     draft_id = saved.get("id", existing_draft_id)
     if not draft_id:
         raise RuntimeError("Gmail did not return a draft ID")
@@ -296,10 +393,13 @@ def verify_draft(
             body_text = content if isinstance(content, str) else str(content)
     labels = saved.get("message", {}).get("labelIds", []) or []
     expected_bytes = expected_pdf.read_bytes()
+    parsed_to = str(parsed.get("To", "")).strip()
+    parsed_from = str(parsed.get("From", "")).strip()
+    parsed_subject = str(parsed.get("Subject", "")).strip()
     verified = (
-        str(parsed.get("To", "")) == expected_recipient
-        and str(parsed.get("From", "")) == expected_sender
-        and str(parsed.get("Subject", "")) == expected_subject
+        parsed_to == expected_recipient.strip()
+        and parsed_from == expected_sender.strip()
+        and parsed_subject == expected_subject.strip()
         and body_text.replace("\r\n", "\n").strip() == expected_body.replace("\r\n", "\n").strip()
         and len(attachments) == 1
         and attachments[0]["filename"] == expected_pdf.name
@@ -312,10 +412,10 @@ def verify_draft(
         "draft_id": saved.get("id", draft_id),
         "message_id": saved.get("message", {}).get("id", ""),
         "thread_id": saved.get("message", {}).get("threadId", ""),
-        "to": str(parsed.get("To", "")),
-        "from": str(parsed.get("From", "")),
+        "to": parsed_to,
+        "from": parsed_from,
         "recipient_source": recipient_source,
-        "subject": str(parsed.get("Subject", "")),
+        "subject": parsed_subject,
         "body_matches": body_text.replace("\r\n", "\n").strip() == expected_body.replace("\r\n", "\n").strip(),
         "attachments": attachments,
         "label_ids": labels,
