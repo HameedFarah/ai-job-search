@@ -74,6 +74,15 @@ def test_large_draft_payload_uses_gmail_rest_not_gws_argv(monkeypatch: pytest.Mo
     assert calls[0][1].endswith("/users/me/drafts")
     assert calls[0][2]["message"]["raw"] == "x" * 40000
 
+def test_large_send_payload_uses_gmail_rest_not_gws_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    monkeypatch.setattr(gmail, "_gmail_api_json", lambda method, url, payload, **kwargs: calls.append((method, url, payload)) or {"id": "sent-large"})
+    monkeypatch.setattr(gmail, "run_gws", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("large send must not use gws argv")))
+    result = gmail.send_application_message(b"x" * 40000)
+    assert result["id"] == "sent-large"
+    assert calls[0][0:2] == ("POST", "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+    assert "raw" in calls[0][2]
+
 
 def test_large_existing_draft_payload_uses_rest_update(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []

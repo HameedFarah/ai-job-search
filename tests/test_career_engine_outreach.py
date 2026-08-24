@@ -1,12 +1,13 @@
 import hashlib, json
+from datetime import datetime
 from pathlib import Path
 import pytest
 from career_engine import gmail
-from career_engine.outreach import confirmation_token, process_queue
+from career_engine.outreach import confirmation_token, process_queue, _riyadh_date
 
 def queue(tmp_path, **changes):
     pdf=tmp_path/'cv.pdf'; pdf.write_bytes(b'%PDF approved')
-    row={'outreach_id':'o-1','company':'Acme','primary_email':'hr@acme.example','verification':{'status':'valid','evidence':'zero-bounce'},'status':'queued','subject':'Interest - Acme','body':'Hello Acme.','cv_pdf_path':str(pdf),'cv_pdf_sha256':hashlib.sha256(pdf.read_bytes()).hexdigest()}
+    row={'outreach_id':'o-1','company':'Acme','priority_tier':1,'primary_email':'hr@acme.example','verification':{'status':'valid','evidence':'zero-bounce'},'status':'queued','subject':'Interest - Acme','body':'Hello Acme.','cv_pdf_path':str(pdf),'cv_pdf_sha256':hashlib.sha256(pdf.read_bytes()).hexdigest()}
     row.update(changes); path=tmp_path/'queue.json'; path.write_text(json.dumps([row])); return path
 
 def test_default_preflight_never_sends(tmp_path, monkeypatch):
@@ -19,6 +20,37 @@ def test_apply_requires_token_and_profile(tmp_path, monkeypatch):
     monkeypatch.setattr(gmail,'verify_authenticated_mailbox',lambda: False)
     with pytest.raises(RuntimeError): process_queue(q,tmp_path/'l.json',apply=True,confirmation=token)
 
+def test_apply_requires_distinct_prior_preflight(tmp_path, monkeypatch):
+    q=queue(tmp_path); token=confirmation_token(hashlib.sha256(q.read_bytes()).hexdigest())
+    monkeypatch.setattr(gmail,'verify_authenticated_mailbox',lambda: True)
+    sent=[]; monkeypatch.setattr(gmail,'send_application_message',lambda raw: sent.append(raw) or {'id':'1'})
+    result=process_queue(q,tmp_path/'l.json',apply=True,confirmation=token)
+    assert result['failed'] == 1 and not sent
+
+def test_preflight_hash_mismatch_fails_closed(tmp_path, monkeypatch):
+    q=queue(tmp_path); ledger=tmp_path/'l.json'; process_queue(q,ledger)
+    rows=json.loads(q.read_text()); rows[0]['body']='changed'; q.write_text(json.dumps(rows))
+    token=confirmation_token(hashlib.sha256(q.read_bytes()).hexdigest())
+    monkeypatch.setattr(gmail,'verify_authenticated_mailbox',lambda: True)
+    sent=[]; monkeypatch.setattr(gmail,'send_application_message',lambda raw: sent.append(raw) or {'id':'1'})
+    result=process_queue(q,ledger,apply=True,confirmation=token)
+    assert result['failed'] == 1 and not sent
+
+@pytest.mark.parametrize('name', ['max_run','max_per_hour','max_day'])
+def test_caps_must_be_positive(tmp_path, name):
+    q=queue(tmp_path)
+    with pytest.raises(ValueError, match='must be positive'):
+        process_queue(q,tmp_path/'l.json',**{name:0})
+
+def test_priority_tier_is_required(tmp_path):
+    q=queue(tmp_path, priority_tier=None)
+    result=process_queue(q,tmp_path/'l.json')
+    assert result['failed'] == 1
+
+def test_daily_cap_uses_riyadh_calendar_date():
+    assert _riyadh_date('2026-08-23T23:30:00+00:00') == '2026-08-24'
+    assert _riyadh_date('2026-08-24T00:30:00+00:00') == '2026-08-24'
+
 @pytest.mark.parametrize('status', ['', 'catch-all', 'catch_all', 'unknown', 'invalid', 'spamtrap', 'abuse', 'do_not_mail', 'rejected'])
 def test_only_valid_default(status,tmp_path):
     q=queue(tmp_path,verification={'status':status,'evidence':'x'}); result=process_queue(q,tmp_path/'l.json'); assert result['failed']==1
@@ -30,10 +62,12 @@ def test_catch_all_override_is_distinguishable(tmp_path):
 def test_idempotent_and_pacing(tmp_path,monkeypatch):
     q=queue(tmp_path); pdf=tmp_path/'cv2.pdf'; pdf.write_bytes(b'%PDF 2'); rows=json.loads(q.read_text()); rows.append({**rows[0],'outreach_id':'o-2','primary_email':'two@acme.example','cv_pdf_path':str(pdf),'cv_pdf_sha256':hashlib.sha256(pdf.read_bytes()).hexdigest()}); q.write_text(json.dumps(rows))
     now=[0.0]; sleeps=[]; sent=[]; monkeypatch.setattr(gmail,'verify_authenticated_mailbox',lambda: True); monkeypatch.setattr(gmail,'send_application_message',lambda raw: sent.append(raw) or {'id':str(len(sent))})
-    token=confirmation_token(hashlib.sha256(q.read_bytes()).hexdigest()); process_queue(q,tmp_path/'l.json',apply=True,confirmation=token,clock=lambda:now[0],sleep=lambda n:(sleeps.append(n),now.__setitem__(0,now[0]+n)))
+    ledger=tmp_path/'l.json'; process_queue(q,ledger)
+    token=confirmation_token(hashlib.sha256(q.read_bytes()).hexdigest()); process_queue(q,ledger,apply=True,confirmation=token,clock=lambda:now[0],sleep=lambda n:(sleeps.append(n),now.__setitem__(0,now[0]+n)))
     assert sleeps == [180.0]; assert len(sent)==2
-    process_queue(q,tmp_path/'l.json',apply=True,confirmation=token,clock=lambda:now[0],sleep=lambda n:None); assert len(sent)==2
+    process_queue(q,ledger,apply=True,confirmation=token,clock=lambda:now[0],sleep=lambda n:None); assert len(sent)==2
 
 def test_quota_stops_and_checkpoints(tmp_path,monkeypatch):
     q=queue(tmp_path); monkeypatch.setattr(gmail,'verify_authenticated_mailbox',lambda: True); monkeypatch.setattr(gmail,'send_application_message',lambda _: (_ for _ in ()).throw(RuntimeError('quota exceeded')))
-    token=confirmation_token(hashlib.sha256(q.read_bytes()).hexdigest()); result=process_queue(q,tmp_path/'l.json',apply=True,confirmation=token); assert result['stopped_on_error']; assert json.loads((tmp_path/'l.json').read_text())['entries']['o-1']['status']=='failed'
+    ledger=tmp_path/'l.json'; process_queue(q,ledger)
+    token=confirmation_token(hashlib.sha256(q.read_bytes()).hexdigest()); result=process_queue(q,ledger,apply=True,confirmation=token); assert result['stopped_on_error']; assert json.loads(ledger.read_text())['entries']['o-1']['status']=='failed'

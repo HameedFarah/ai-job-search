@@ -163,8 +163,16 @@ def verify_authenticated_mailbox() -> bool:
 
 def send_application_message(raw: bytes) -> dict[str, Any]:
     encoded = _b64url_encode(raw)
+    payload_obj = {"raw": encoded}
+    payload = json.dumps(payload_obj, separators=(",", ":"))
+    if len(payload.encode("utf-8")) > 32768:
+        return _gmail_api_json(
+            "POST",
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            payload_obj,
+        )
     params = json.dumps({"userId": "me"}, separators=(",", ":"))
-    return run_gws(["gmail", "users", "messages", "send", "--params", params, "--json", json.dumps({"raw": encoded}, separators=(",", ":"))])
+    return run_gws(["gmail", "users", "messages", "send", "--params", params, "--json", payload])
 
 
 def _message_text(message: Message) -> str:
@@ -343,6 +351,8 @@ def build_application_message(*, recipient: str, subject: str, body: str, pdf_pa
     message["Subject"] = subject
     message.set_content(body)
     message.add_attachment(pdf_path.read_bytes(), maintype="application", subtype="pdf", filename=pdf_path.name)
+    # Keep the approved MIME byte-for-byte reproducible for preflight/apply hashing.
+    message.set_boundary("=_outreach_" + _sha256(pdf_path.read_bytes() + subject.encode())[:24])
     return message.as_bytes(policy=policy.SMTP)
 
 
