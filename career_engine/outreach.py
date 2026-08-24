@@ -33,7 +33,7 @@ def _content(row: dict[str, Any]) -> tuple[str, str]:
     return subject, body
 
 def _validate(row: dict[str, Any], allow_catch_all: bool) -> tuple[str, str, str, Path, bytes]:
-    for key in ("outreach_id", "company", "primary_email", "verification", "status", "priority_tier"): 
+    for key in ("outreach_id", "company", "primary_email", "verification", "status", "priority_tier"):
         if not row.get(key): raise ValueError(f"missing field: {key}")
     recipient = str(row["primary_email"]).strip().lower()
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient): raise ValueError("invalid primary_email")
