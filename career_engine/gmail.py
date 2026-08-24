@@ -157,6 +157,16 @@ def profile() -> dict[str, Any]:
     }
 
 
+def verify_authenticated_mailbox() -> bool:
+    return profile().get("email_address", "").strip().lower() == CAREER_GMAIL_ACCOUNT
+
+
+def send_application_message(raw: bytes) -> dict[str, Any]:
+    encoded = _b64url_encode(raw)
+    params = json.dumps({"userId": "me"}, separators=(",", ":"))
+    return run_gws(["gmail", "users", "messages", "send", "--params", params, "--json", json.dumps({"raw": encoded}, separators=(",", ":"))])
+
+
 def _message_text(message: Message) -> str:
     plain: list[str] = []
     html: list[str] = []

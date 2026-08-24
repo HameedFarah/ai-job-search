@@ -254,6 +254,15 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--file", required=True)
     ingest.add_argument("--scanner-id", choices=("hermes_scanner", "chatgpt_scanner"), default="hermes_scanner")
     ingest.add_argument("--output", default="")
+    outreach = sub.add_parser("outreach", help="Preview or explicitly apply a verified outreach queue")
+    outreach.add_argument("queue")
+    outreach.add_argument("--ledger", required=True)
+    outreach.add_argument("--apply", action="store_true")
+    outreach.add_argument("--confirm", default="")
+    outreach.add_argument("--allow-catch-all", action="store_true")
+    outreach.add_argument("--max-run", type=int, default=200)
+    outreach.add_argument("--max-per-hour", type=int, default=20)
+    outreach.add_argument("--max-day", type=int, default=200)
     return parser
 
 
@@ -578,6 +587,13 @@ def main(argv: list[str] | None = None) -> int:
                 write_report(report, Path(args.output))
             emit(report, human=args.human)
             return EXIT_READY
+        if args.command == "outreach":
+            from .outreach import process_queue
+            result = process_queue(Path(args.queue), Path(args.ledger), apply=args.apply, confirmation=args.confirm,
+                                   allow_catch_all=args.allow_catch_all, max_run=args.max_run,
+                                   max_per_hour=args.max_per_hour, max_day=args.max_day)
+            emit(result, human=args.human)
+            return EXIT_READY if not result.get("failed") else EXIT_POLICY
         if args.command == "generate":
             config, paths = load_config()
             artifact_dir = paths.tracker_base / "artifacts" / args.job_id
