@@ -1,44 +1,44 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.4",
-  "built_at": "2026-08-21T21:23:43+00:00",
-  "source_hash": "4ad35491ecb6b81502f85759234571c579b8e8de644f3294205698e9373488df",
+  "built_at": "2026-08-25T07:54:21+00:00",
+  "source_hash": "713c72a75f903fc3b01ba91a37516fa6102635c29bc9c70637e3e32715aa150b",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "585a902b445ea79e0dfbfe757642c657e5f7648d9508e90eace11a1667c77d17",
+      "sha256": "a0e9f3625cb39ca46abebd0ccd0c5f88adca695f2a97f6a00cb3714f10be5113",
       "size": 4245,
-      "modified_ns": 1786791479893113822
+      "modified_ns": 1787644378068639813
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
       "sha256": "2f91d66f4d3fd7160c7c0d1fea2042a117c472a3bc3117f20544876f63916408",
       "size": 10210,
-      "modified_ns": 1786791534553090956
+      "modified_ns": 1787636581124371187
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
       "sha256": "738151a50e37a2830c6b8f19b35ca53798959027087f6908bb52396d9a9a2f3d",
       "size": 2778,
-      "modified_ns": 1785791836173958313
+      "modified_ns": 1787636581120371190
     },
     {
       "path": "projects/job-automation/config/runtime-bundle.schema.json",
       "sha256": "b76217f713e6a6cbc49479c90f7dbe38481f211c9f850c39ef1ac5e21d07ab1f",
       "size": 730,
-      "modified_ns": 1785780730665749895
+      "modified_ns": 1787636581124371187
     },
     {
       "path": "projects/job-automation/config/gcc-employers.v1.json",
       "sha256": "698deb347b5e439584078c35ab40d06588c511e76686536843513cbd0f1136db",
       "size": 18955,
-      "modified_ns": 1786664723912679730
+      "modified_ns": 1787636581120371190
     },
     {
       "path": "projects/job-automation/config/consultants-bookmarks.v1.json",
       "sha256": "57468e310e253483d62d3fedb4dac2850ef26d08780cf15082877058af620ca6",
       "size": 13953,
-      "modified_ns": 1786786899733471101
+      "modified_ns": 1787636581120371190
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
@@ -89,12 +89,12 @@
     "tracker_base": "projects/job-automation",
     "template": {
       "id": "modern-executive-sidebar",
-      "version": "1.0",
-      "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-      "repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-      "expected_sha256": "0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123",
-      "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-      "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+      "version": "1.5",
+      "filename": "2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+      "repository_path": "templates/cv/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+      "expected_sha256": "e04ba770264a3bb71149b4c80c0dfce33978eee81ab7ca5801663109cb5b82cf",
+      "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+      "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
       "page_limit": 2,
       "headshot_required": true,
       "body_alignment": "justified"
@@ -1550,6 +1550,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "86d7717b6e055b3fc31f4a41c11524d75326223a5267cc0d5f0af11b058a42cd",
+  "bundle_hash": "f534d83e9b29b42cd46394dcedb7e1d45988487d58f09dadd4c2f8830719d3b6",
   "cache_reused": false
 }
