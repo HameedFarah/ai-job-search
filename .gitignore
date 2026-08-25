@@ -97,6 +97,10 @@ upskill/*.md
 
 # Brainstorm mockups (superpowers visual companion) - never ship
 .superpowers/
+
+# Local execution worktrees and task artifacts are host/runtime state, never source.
+.worktrees/
+.agent-artifacts/
 # Career Engine runtime data (personal job-search records - never commit)
 # Canonical source paths are lowercase under projects/job-automation.
 # Keep directory markers and implementation/docs tracked; ignore live records and artifacts.

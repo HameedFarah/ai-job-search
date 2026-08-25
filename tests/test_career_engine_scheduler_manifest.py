@@ -20,4 +20,6 @@ def test_career_scheduler_manifest_is_reproducible_desired_state():
     assert manifest["runtime_script"] == "career-engine-daily-context.py"
     assert "model" not in manifest and "provider" not in manifest
     assert "runtime_job_id" not in manifest
+    assert "all eligible jobs" in manifest["prompt"]
+    assert "unsent email drafts or portal packages" in manifest["prompt"]
     assert "Never send/contact/submit." in manifest["prompt"]

@@ -4,7 +4,7 @@
   "name": "Career Engine Daily Scan",
   "schedule": "0 9 * * *",
   "timezone": "Asia/Riyadh",
-  "prompt": "Authority order: 1 Vault master projects/agent-ops/model-routing.md for inference, 2 career-engine.v1.json, 3 runtime bundle, 4 central rules, 5 Vault Career Engine contract/truth, 6 owner/dashboard, 7 review diff lessons. Run doctor+bundle status. Use bundle threshold. Sync tracker/dashboard. Inspect authorized alerts. Never send/contact/submit.",
+  "prompt": "Authority order: 1 Vault master projects/agent-ops/model-routing.md for inference, 2 career-engine.v1.json, 3 runtime bundle, 4 central rules, 5 Vault Career Engine contract/truth, 6 owner/dashboard, 7 review diff lessons. Run doctor+bundle status. Use bundle threshold. Scan and score all discovered jobs, then run the canonical no-send pipeline for all eligible jobs. Prepare verified unsent email drafts or portal packages, sync tracker/dashboard, and inspect authorized alerts. Never send/contact/submit.",
   "skills": ["career-engine", "linkedin-search", "freehire-search", "grounded-citations", "email-inbox-triage", "himalaya"],
   "skill_sources": {
     "career-engine": {"kind": "repo", "path": "skills/career-engine"},

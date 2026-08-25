@@ -14,10 +14,62 @@ from pathlib import Path
 
 REPO_ROOT = Path("/home/hameedo/projects/ai-job-search")
 SOURCE_TARGETS = Path("/home/hameedo/.hermes/cron/career-engine-source-targets.json")
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
-from career_engine.bundle import load_bundle
+
+def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run one bounded Git command for the runtime source preflight."""
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=check,
+    )
+
+
+def ensure_canonical_source(root: Path) -> dict[str, object]:
+    """Fail closed unless the operational checkout is clean and on origin/master.
+
+    Mutable CareerTracker/runtime data are intentionally kept in the operational
+    checkout, so the daily scanner must not move to an independent worktree. The
+    source checkout may fast-forward when it is clean and strictly behind, but it
+    must never reset, clean, stash, rebase, or overwrite local work.
+    """
+    if not (root / ".git").exists():
+        raise RuntimeError(f"Career Engine runtime is not a Git checkout: {root}")
+
+    before_status = _git(root, "status", "--porcelain=v1").stdout.strip()
+    if before_status:
+        raise RuntimeError("Career Engine runtime has tracked/untracked source changes; refusing daily scan")
+
+    _git(root, "fetch", "origin", "master")
+    head_before = _git(root, "rev-parse", "HEAD").stdout.strip()
+    origin_master = _git(root, "rev-parse", "origin/master").stdout.strip()
+    fast_forwarded = False
+
+    if head_before != origin_master:
+        ancestor = _git(root, "merge-base", "--is-ancestor", "HEAD", "origin/master", check=False)
+        if ancestor.returncode != 0:
+            raise RuntimeError(
+                "Career Engine runtime source is ahead/diverged from origin/master; refusing daily scan"
+            )
+        _git(root, "merge", "--ff-only", "origin/master")
+        fast_forwarded = True
+
+    head_after = _git(root, "rev-parse", "HEAD").stdout.strip()
+    origin_after = _git(root, "rev-parse", "origin/master").stdout.strip()
+    after_status = _git(root, "status", "--porcelain=v1").stdout.strip()
+    if after_status or head_after != origin_after:
+        raise RuntimeError("Career Engine runtime source did not converge cleanly to origin/master")
+
+    return {
+        "status": "canonical",
+        "head_before": head_before,
+        "head": head_after,
+        "origin_master": origin_after,
+        "fast_forwarded": fast_forwarded,
+        "clean": True,
+    }
 
 
 def reconcile_applied_mail() -> dict[str, object]:
@@ -60,6 +112,11 @@ def reconcile_applied_mail() -> dict[str, object]:
 
 
 def main() -> int:
+    source_sync = ensure_canonical_source(REPO_ROOT)
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from career_engine.bundle import load_bundle
+
     bundle = load_bundle(REPO_ROOT)
     generation_threshold = int(bundle["config"]["daily_scanner"]["minimum_score_for_generation"])
     source_targets = json.loads(SOURCE_TARGETS.read_text(encoding="utf-8")) if SOURCE_TARGETS.exists() else {}
@@ -67,6 +124,7 @@ def main() -> int:
     context = {
         "task": "Run the repository-owned Career Engine daily scanner using the central runtime bundle and the configured discovery-source registry.",
         "repository": str(REPO_ROOT),
+        "source_sync": source_sync,
         "bundle_hash": bundle["bundle_hash"],
         "career_engine_skill": str(REPO_ROOT / "skills/career-engine/SKILL.md"),
         "scanner_entry_point": str(REPO_ROOT / "projects/job-automation/hermes_scanner.py"),
@@ -86,8 +144,8 @@ def main() -> int:
             "Merge and deduplicate all discovered jobs by source ID, normalized URL and JD hash; preserve full JD, provenance and posting-date precision.",
             "Keep verification status and source quality as confidence metadata. Verification is useful but is not required for scoring or application preparation. Explicitly closed roles remain blocked.",
             "Save every complete job record and full job description to one bounded JSON input file with a jobs array.",
-            "Run the repository Hermes scanner against that file. Do not score or draft independently in the cron prompt.",
-            f"For every effective score of {generation_threshold} or higher, generate through the central packet and render both Modern Executive Sidebar and ATS Linear DOCX/PDF variants. Persist one selected submission variant per job: sidebar by default for email routes and ATS by default for portal routes, honoring any dashboard preview override. Attach exactly one selected CV PDF to an email draft.",
+            "Run the repository Hermes scanner against that file. Do not score or draft independently in the cron prompt. After ingestion, run `./career-engine run --all` so every canonical eligible record is prepared through the central no-send pipeline rather than stopping at the routine daily packet cap; report any per-job errors or deferred records explicitly.",
+            f"For every effective score of {generation_threshold} or higher that remains eligible and non-submitted, verify the central packet exists and render both Modern Executive Sidebar and ATS Linear DOCX/PDF variants. Persist one selected submission variant per job: sidebar by default for email routes and ATS by default for portal routes, honoring any dashboard preview override. Attach exactly one selected CV PDF to an email draft.",
             "For an email route with a real recipient, create or update one unsent draft in hameedo@gmail.com. Fill To and Subject from the vacancy instructions when specified; otherwise use the verified recipient and subject 'Abdelhamid Farah - <Post Name>'. For portal routes, prepare the dashboard package without creating an email unless a genuine email route exists.",
             "Use at most one free-prose generation pass per selected role unless deterministic validation fails or evidence is materially ambiguous.",
             "Carry the repository Gmail-reconciliation helper results into the daily report and tracker summary separately from new-job ingestion; do not perform a second independent confirmation/reply matcher.",
