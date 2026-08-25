@@ -17,7 +17,8 @@ BLOCKED = {"invalid", "spamtrap", "abuse", "do_not_mail", "rejected"}
 RIYADH = ZoneInfo("Asia/Riyadh")
 
 def _sha(data: bytes) -> str: return hashlib.sha256(data).hexdigest()
-def _now() -> str: return datetime.now(timezone.utc).isoformat(timespec="seconds")
+def _utcnow() -> datetime: return datetime.now(timezone.utc)
+def _now(at: datetime | None = None) -> str: return (at or _utcnow()).isoformat(timespec="seconds")
 def confirmation_token(queue_hash: str) -> str: return "OUTREACH-" + queue_hash[:12].upper()
 
 def _load(path: Path) -> list[dict[str, Any]]:
@@ -44,10 +45,14 @@ def _validate(row: dict[str, Any], allow_catch_all: bool) -> tuple[str, str, str
         raise ValueError(f"verification status not sendable: {status}")
     if status in {"catch_all", "unknown"} and not allow_catch_all: raise ValueError("catch-all/unknown requires explicit risk override")
     if not (verification.get("evidence") or verification.get("source")): raise ValueError("verification evidence is required")
+    verified_recipient = str(verification.get("email") or verification.get("recipient") or "").strip().lower()
+    if not verified_recipient: raise ValueError("verification must identify the exact recipient email")
+    if verified_recipient != recipient: raise ValueError("verification recipient does not match primary_email")
     pdf = Path(str(row.get("cv_pdf_path", "")))
     if pdf.suffix.lower() != ".pdf" or not pdf.is_file() or pdf.stat().st_size == 0: raise ValueError("approved CV PDF is missing or invalid")
-    data = pdf.read_bytes(); expected = str(row.get("cv_pdf_sha256", ""))
-    if expected and expected != _sha(data): raise ValueError("CV PDF hash mismatch")
+    data = pdf.read_bytes(); expected = str(row.get("cv_pdf_sha256", "")).strip().lower()
+    if not expected: raise ValueError("cv_pdf_sha256 is required")
+    if expected != _sha(data): raise ValueError("CV PDF hash mismatch")
     subject, body = _content(row)
     return recipient, subject, body, pdf, data
 
@@ -56,7 +61,8 @@ def _checkpoint(path: Path, ledger: dict[str, Any]) -> None:
 
 def process_queue(queue_path: Path, ledger_path: Path, *, apply=False, confirmation="", allow_catch_all=False,
                   max_run=DEFAULT_MAX_RUN, max_per_hour=DEFAULT_MAX_PER_HOUR, max_day=DEFAULT_MAX_RUN,
-                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
+                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
+                  wall_clock: Callable[[], datetime] = _utcnow) -> dict[str, Any]:
     rows = _load(queue_path); queue_hash = _sha(queue_path.read_bytes()); token = confirmation_token(queue_hash)
     ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.is_file() else {"entries": {}, "sent": []}
     entries = ledger.setdefault("entries", {}); result = {"mode": "send" if apply else "preflight", "queue_sha256": queue_hash, "confirmation_token": token, "processed": 0, "sent": 0, "failed": 0, "skipped": 0}
@@ -65,8 +71,12 @@ def process_queue(queue_path: Path, ledger_path: Path, *, apply=False, confirmat
     if apply:
         if confirmation != token: raise ValueError(f"confirmation token mismatch; expected {token}")
         if not gmail.verify_authenticated_mailbox(): raise RuntimeError("authenticated Gmail mailbox is not hameedo@gmail.com")
+    now = wall_clock()
+    if now.tzinfo is None: raise ValueError("wall_clock must return an aware datetime")
+    now = now.astimezone(timezone.utc)
     ids=set(); emails=set(); sent_run=0
-    sent_day=sum(1 for x in entries.values() if x.get("status") == "sent" and _riyadh_date(x.get("sent_at")) == datetime.now(timezone.utc).astimezone(RIYADH).date().isoformat())
+    sent_day=sum(1 for x in entries.values() if x.get("status") == "sent" and _riyadh_date(x.get("sent_at")) == now.astimezone(RIYADH).date().isoformat())
+    sent_hour=sum(1 for x in entries.values() if x.get("status") == "sent" and _within_last_hour(x.get("sent_at"), now))
     last_send=None
     for row in rows:
         oid = str(row.get("outreach_id", "")); recipient_key = str(row.get("primary_email", "")).strip().lower()
@@ -88,20 +98,33 @@ def process_queue(queue_path: Path, ledger_path: Path, *, apply=False, confirmat
             if prior.get("status") != "preflighted" or prior.get("queue_sha256") != queue_hash or any(prior.get(k) != record[k] for k in ("recipient", "subject_sha256", "body_sha256", "attachment_sha256", "mime_sha256")):
                 raise RuntimeError("mandatory prior preflight missing, stale, or MIME/hash mismatch")
             result["processed"] += 1
-            if sent_run >= max_run or sent_day >= max_day: result["capped"] = True; break
+            if sent_run >= max_run or sent_day >= max_day or sent_hour >= max_per_hour: result["capped"] = True; break
             if last_send is not None:
                 interval=3600.0/max_per_hour; wait=max(0.0, interval-(clock()-last_send));
                 if wait: sleep(wait)
-            try: response = gmail.send_application_message(raw)
+            try:
+                response = gmail.send_application_message(raw)
+                message_id = str(response.get("id", "")).strip()
+                if not message_id: raise RuntimeError("Gmail send returned no message ID")
             except Exception as exc:
-                entry.update(status="failed", failure_reason=str(exc), updated_at=_now()); _checkpoint(ledger_path, ledger)
+                entry.update(status="failed", failure_reason=str(exc), updated_at=_now(wall_clock())); _checkpoint(ledger_path, ledger)
                 result["failed"] += 1
                 if any(x in str(exc).lower() for x in ("429", "quota", "rate", "authorization", "unauthorized", "forbidden")): result["stopped_on_error"] = True; break
                 continue
-            entry.update(status="sent", gmail_message_id=response.get("id", ""), gmail_thread_id=response.get("threadId", ""), sent_at=_now()); sent_run += 1; sent_day += 1; last_send=clock(); result["sent"] += 1; _checkpoint(ledger_path, ledger)
+            sent_at = wall_clock()
+            entry.update(status="sent", gmail_message_id=message_id, gmail_thread_id=response.get("threadId", ""), sent_at=_now(sent_at)); sent_run += 1; sent_day += 1; sent_hour += 1; last_send=clock(); result["sent"] += 1; _checkpoint(ledger_path, ledger)
         except Exception as exc:
             entry.update(status="failed", failure_reason=str(exc), updated_at=_now()); result["failed"] += 1; _checkpoint(ledger_path, ledger)
     return result
+
+def _within_last_hour(value: Any, now: datetime) -> bool:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None: return False
+        age = now.astimezone(timezone.utc) - parsed.astimezone(timezone.utc)
+        return 0 <= age.total_seconds() < 3600
+    except (TypeError, ValueError):
+        return False
 
 def _riyadh_date(value: Any) -> str:
     try:
