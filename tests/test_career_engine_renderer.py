@@ -15,6 +15,7 @@ from career_engine.pipeline import finalize_render, import_generated, prepare, s
 from career_engine.renderer import (
     _all_paragraphs,
     _libreoffice_binary,
+    _libreoffice_profile_dir,
     build_render_input,
     convert_docx_to_pdf,
     render_and_verify,
@@ -338,6 +339,16 @@ def test_libreoffice_binary_returns_empty_when_unavailable(tmp_path: Path, monke
     monkeypatch.delenv("CAREER_ENGINE_LIBREOFFICE", raising=False)
     monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
     assert _libreoffice_binary(home=tmp_path / "empty-home") == ""
+
+
+def test_libreoffice_profile_prefers_system_temp_over_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    temp_root = tmp_path / "system-temp"
+    temp_root.mkdir()
+    home = tmp_path / "home"
+    monkeypatch.delenv("CAREER_ENGINE_LIBREOFFICE_PROFILE_DIR", raising=False)
+    monkeypatch.setattr("career_engine.renderer.tempfile.gettempdir", lambda: str(temp_root))
+    selected = _libreoffice_profile_dir(home=home)
+    assert selected == temp_root / "career-engine" / "libreoffice-profiles"
 
 
 def test_convert_docx_to_pdf_builds_headless_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

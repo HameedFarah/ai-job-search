@@ -82,16 +82,15 @@ def _libreoffice_profile_dir(home: Path | None = None) -> Path:
     """Return a writable directory for isolated headless LibreOffice user profiles.
 
     A fresh profile per conversion avoids lock collisions between concurrent headless
-    instances. The profile and LibreOffice's own scratch space must not depend on a
-    small or full system temp filesystem (e.g. a 100% full ``/tmp`` tmpfs), which
-    otherwise aborts conversion with a write error; the user cache directory lives on
-    the main disk and is writable for non-root installs.
+    instances. Prefer the system temp filesystem because LibreOffice's headless runtime
+    is known to work there on this host; fall back to the user cache when temp is full
+    or unwritable. An explicit profile-directory override remains first priority.
     """
     override = os.environ.get("CAREER_ENGINE_LIBREOFFICE_PROFILE_DIR", "").strip()
     candidates = [
         Path(override).expanduser() if override else None,
-        (home or Path.home()) / ".cache" / "career-engine" / "libreoffice-profiles",
         Path(tempfile.gettempdir()) / "career-engine" / "libreoffice-profiles",
+        (home or Path.home()) / ".cache" / "career-engine" / "libreoffice-profiles",
     ]
     for base in candidates:
         if base is None:
