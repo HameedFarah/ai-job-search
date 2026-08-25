@@ -123,3 +123,6 @@ projects/job-automation/artifacts/*/
 projects/job-automation/artifacts/*.json
 projects/job-automation/artifacts/*.md
 !projects/job-automation/artifacts/.gitkeep
+
+# REGA search cache (deterministic but large, not for Git)
+.cache/rega-search-cache/

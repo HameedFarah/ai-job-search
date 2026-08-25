@@ -425,7 +425,8 @@ def run_scan(path: Path, *, root: Path, scanner_id: str) -> dict[str, Any]:
             report["manual_review_needed"].append(summary)
             report["statistics"]["manual_review_needed"] += 1
             path_stats["blocked_or_below_threshold"] += 1
-        elif summary["fit_score"] is not None and summary["fit_score"] >= minimum and not summary["blockers"] and len(report["generation_candidates"]) < maximum:
+        elif summary["fit_score"] is not None and summary["fit_score"] >= minimum and not summary["blockers"]:
+            summary["over_packet_cap"] = len(report["generation_candidates"]) >= maximum
             report["generation_candidates"].append(summary)
             report["statistics"]["generation_candidates"] += 1
             path_stats["generation_candidates"] += 1

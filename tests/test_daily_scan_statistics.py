@@ -45,6 +45,25 @@ def test_scanner_reports_new_existing_and_path_statistics(engine_root: Path) -> 
     assert second_report["results"][0]["is_new"] is False
 
 
+def test_generation_candidate_classification_is_not_truncated_by_packet_cap(engine_root: Path) -> None:
+    jobs = []
+    for index in range(6):
+        item = dict(job_dict())
+        item["external_job_id"] = f"high-fit-{index}"
+        item["source_url"] = f"https://example.com/jobs/high-fit-{index}"
+        item["application_url"] = f"https://example.com/jobs/high-fit-{index}/apply"
+        jobs.append(item)
+
+    source = engine_root / "scan-over-cap.json"
+    source.write_text(json.dumps({"jobs": jobs}), encoding="utf-8")
+    report = run_scan(source, root=engine_root, scanner_id="hermes_scanner")
+
+    assert len(report["generation_candidates"]) == 6
+    assert report["statistics"]["generation_candidates"] == 6
+    assert not report["weak_or_blocked"]
+    assert [item["over_packet_cap"] for item in report["generation_candidates"]] == [False] * 5 + [True]
+
+
 def test_path_statistics_can_merge_zero_result_sources(engine_root: Path) -> None:
     source = engine_root / "scan-empty.json"
     source.write_text(json.dumps({"jobs": []}), encoding="utf-8")
