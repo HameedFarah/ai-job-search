@@ -70,7 +70,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install Python test dependencies
-        run: python -m pip install pytest python-docx
+        run: python -m pip install pytest python-docx httpx
       - name: Run Python unit tests
         run: |
           set -o pipefail
