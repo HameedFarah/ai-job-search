@@ -30,6 +30,7 @@ GENERIC_TOKENS = {
     "service", "house", "houses", "united", "al", "bin", "bint", "ibn",
     "company", "group", "investment", "investments", "ltd", "llc", "inc",
     "one", "person", "closed", "establishment", "contracting", "commercial",
+    "invest", "dev", "invest.",
 }
 
 BLOCKED_HOSTS = (

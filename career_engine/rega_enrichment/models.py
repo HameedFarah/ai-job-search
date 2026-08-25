@@ -117,9 +117,9 @@ def distinctive_tokens(name: str, generic: set[str]) -> list[str]:
     toks2 = [x for x in raw if len(x) >= 3 and x not in generic]
     if toks2:
         return toks2
-    # Final fallback: any non-generic token even if short
-    toks3 = [x for x in raw if x not in generic]
-    return toks3[:3] if toks3 else raw[:2]
+    # Never fall back to sub-3-character fragments: tiny tokens can create
+    # accidental hostname matches (for example "ra" inside unrelated domains).
+    return []
 
 def hostname_tokens(host: str) -> str:
     return re.sub(r"[^a-z0-9]", "", host.lower())

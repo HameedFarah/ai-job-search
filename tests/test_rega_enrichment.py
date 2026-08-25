@@ -24,6 +24,16 @@ def _make_company(**kw):
         location=kw.get("location","Riyadh"),
     )
 
+def test_distinctive_tokens_never_fall_back_to_tiny_fragments():
+    assert distinctive_tokens("Ra", GENERIC_TOKENS) == []
+    assert distinctive_tokens("NHC", GENERIC_TOKENS) == ["nhc"]
+
+
+def test_invest_dev_tokens_are_generic_for_identity_matching():
+    assert {"invest", "dev", "invest."}.issubset(GENERIC_TOKENS)
+    assert distinctive_tokens("Invest Dev", GENERIC_TOKENS) == []
+
+
 def test_deterministic_query_generation():
     c = _make_company(english_name="Roshn Group (Closed Joint)", arabic_name="شركة مجموعة روشن", location="Riyadh", company_id="4", license_no="382")
     q1 = generate_queries(c)
