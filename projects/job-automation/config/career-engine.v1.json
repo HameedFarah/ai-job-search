@@ -16,12 +16,12 @@
   "tracker_base": "projects/job-automation",
   "template": {
     "id": "modern-executive-sidebar",
-    "version": "1.0",
-    "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-    "repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-    "expected_sha256": "0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123",
-    "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
-    "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+    "version": "1.5",
+    "filename": "2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+    "repository_path": "templates/cv/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+    "expected_sha256": "e04ba770264a3bb71149b4c80c0dfce33978eee81ab7ca5801663109cb5b82cf",
+    "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+    "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
     "page_limit": 2,
     "headshot_required": true,
     "body_alignment": "justified"

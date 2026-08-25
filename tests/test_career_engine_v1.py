@@ -9,6 +9,7 @@ import pytest
 
 from career_engine.bundle import build_bundle, bundle_status
 from career_engine.cli import doctor
+from career_engine.config import load_config
 from career_engine.core import decide_route, match_evidence, normalize_job, normalize_text, outward_filename, score_fit, validate_text
 from career_engine.generation import create_generation_packet, validate_generated_application
 from career_engine.pipeline import prepare
@@ -208,6 +209,15 @@ Preferred
 - Saudi Council of Engineers professional classification.
 """
     }
+
+
+def test_tracker_base_override_binds_clean_source_to_live_authority(
+    engine_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    authority = (tmp_path / "live-career-tracker").resolve()
+    monkeypatch.setenv("CAREER_ENGINE_TRACKER_BASE", str(authority))
+    _, paths = load_config(engine_root)
+    assert paths.tracker_base == authority
 
 
 def test_normalization_is_deterministic(job_payload: dict[str, str], engine_root: Path) -> None:

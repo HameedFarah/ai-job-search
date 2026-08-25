@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "template_id": "modern-executive-sidebar",
+  "version": "1.5",
+  "effective_date": "2026-08-15",
+  "filename": "2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+  "sha256": "e04ba770264a3bb71149b4c80c0dfce33978eee81ab7ca5801663109cb5b82cf",
+  "size_bytes": 53155,
+  "page_limit": 2,
+  "headshot_required": true,
+  "body_alignment": "justified",
+  "source_application": "Qiddiya Manager - Design Governance",
+  "fixed_elements": [
+    "modern executive sidebar layout",
+    "approved headshot placement",
+    "identity and contact structure (outward hameedfarah@gmail.com)",
+    "career chronology structure",
+    "education and credential structure",
+    "single Word section with one intentional page break",
+    "page-2 continuation header (DESIGN MANAGER / SENIOR ARCHITECT - CONTINUED)"
+  ],
+  "replaceable_elements": [
+    "functional headline",
+    "leadership profile",
+    "six metric boxes",
+    "selected role bullets",
+    "selected evidence cards",
+    "vacancy keywords and emphasis"
+  ],
+  "outward_filename_pattern": "Abdelhamid_Farah_CV_<Target_Role>.pdf",
+  "canonical_repository_path": "templates/cv/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+  "google_drive_path": "gdrive:Cv/Career Engine/Templates/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+  "storage_box_path": "/mnt/storage-box/dropbox/-=FarahDigital=-/Projects/CVCraft/templates/Career Engine/CV/2026-08-15_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.5.docx",
+  "rollback": {
+    "version": "1.0",
+    "filename": "2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx",
+    "sha256": "0abf9c85e492ad258bf9289b3fef8a1e8d86d84887396dea6fce404f85646123",
+    "canonical_repository_path": "templates/cv/2026-08-03_Abdelhamid_Farah_CV_Template_Modern_Executive_Sidebar_v1.0.docx"
+  }
+}

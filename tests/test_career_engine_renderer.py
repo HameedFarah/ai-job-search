@@ -16,6 +16,7 @@ from career_engine.renderer import (
     _all_paragraphs,
     _libreoffice_binary,
     _libreoffice_profile_dir,
+    apply_dense_page_split,
     build_render_input,
     convert_docx_to_pdf,
     render_and_verify,
@@ -56,6 +57,31 @@ def test_all_paragraphs_finds_template_placeholders(engine_root: Path) -> None:
     assert sum(1 for t in texts if t.startswith("Representative KSA context")) == 1
     assert any("[TARGET ROLE HEADLINE]" in t for t in texts)
     assert any("[TAILORED PROFILE" in t for t in texts)
+
+
+def test_dense_page_split_moves_cube_bullets_without_deleting_them(tmp_path: Path) -> None:
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    cell = table.rows[0].cells[1]
+    cell.paragraphs[0].text = "DESIGN MANAGER / SENIOR ARCHITECT"
+    cell.add_paragraph("Cube Architects | 2004-2022")
+    cell.add_paragraph("• First preserved Cube bullet")
+    cell.add_paragraph("• Second preserved Cube bullet")
+    document.add_paragraph("Cube Architects | 2004-2022")
+    path = tmp_path / "dense-split.docx"
+    document.save(path)
+
+    result = apply_dense_page_split(path)
+    assert result["applied"] is True
+    assert result["moved_bullets"] == 2
+
+    rendered = Document(path)
+    page1_text = "\n".join(p.text for p in rendered.tables[0].rows[0].cells[1].paragraphs)
+    body_text = "\n".join(p.text for p in rendered.paragraphs)
+    assert "First preserved Cube bullet" not in page1_text
+    assert "Second preserved Cube bullet" not in page1_text
+    assert body_text.count("First preserved Cube bullet") == 1
+    assert body_text.count("Second preserved Cube bullet") == 1
 
 
 def test_build_render_input_writes_render_input_json(job_payload: dict, engine_root: Path) -> None:

@@ -44,6 +44,16 @@ def load_config(root: Path | None = None) -> tuple[dict[str, Any], Paths]:
         raise ValueError("Unsupported Career Engine config schema")
     vault_override = os.environ.get("CAREER_ENGINE_VAULT_ROOT", "").strip()
     vault_root = Path(vault_override or config["vault"]["root"]).expanduser().resolve()
+    # The tracker base holds the live CareerTracker data and generated artifact
+    # authority. Clean source worktrees (git worktrees) carry the tracked code
+    # and config but not the ignored runtime authority, so an operator can point
+    # this run at the live tracker base without copying runtime data into Git.
+    tracker_override = os.environ.get("CAREER_ENGINE_TRACKER_BASE", "").strip()
+    tracker_base = (
+        Path(tracker_override).expanduser().resolve()
+        if tracker_override
+        else root / config["tracker_base"]
+    )
     paths = Paths(
         repo_root=root,
         config_path=config_path,
@@ -51,7 +61,7 @@ def load_config(root: Path | None = None) -> tuple[dict[str, Any], Paths]:
         evidence_path=config_dir / "evidence-index.v1.json",
         generated_schema_path=config_dir / "generated_application.schema.json",
         runtime_schema_path=config_dir / "runtime-bundle.schema.json",
-        tracker_base=root / config["tracker_base"],
+        tracker_base=tracker_base,
         runtime_bundle_path=root / config["runtime_bundle"],
         vault_root=vault_root,
         ats_template_path=config_dir / "ats-linear-template.v1.json",

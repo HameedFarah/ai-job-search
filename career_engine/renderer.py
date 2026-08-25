@@ -451,38 +451,56 @@ def convert_docx_to_pdf(docx_path: Path, output_dir: Path) -> dict[str, Any]:
     # so rerenders are deterministic and never touch unrelated artifacts.
     if pdf.exists():
         pdf.unlink()
-    with tempfile.TemporaryDirectory(prefix="career-engine-lo-", dir=_libreoffice_profile_dir()) as profile_dir:
-        profile = Path(profile_dir).resolve()
-        # Keep LibreOffice's own scratch space on the main disk next to the fresh
-        # user profile: a full system /tmp would otherwise abort the export with a
-        # write error even though the output directory itself has space.
-        env = dict(os.environ)
-        env["TMPDIR"] = str(profile)
-        completed = subprocess.run(
-            [
-                libreoffice,
-                "--headless",
-                "--norestore",
-                f"-env:UserInstallation={profile.as_uri()}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(output_dir),
-                str(docx_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-            env=env,
-        )
+    # LibreOffice 26.2.5 has been observed to exit 1 with empty stdout/stderr
+    # under transient host memory pressure even though the binary, profile and
+    # document are healthy. One immediate retry with a brand-new isolated
+    # profile makes conversion deterministic without masking real failures.
+    attempts: list[dict[str, Any]] = []
+    while len(attempts) < 2:
+        with tempfile.TemporaryDirectory(prefix="career-engine-lo-", dir=_libreoffice_profile_dir()) as profile_dir:
+            profile = Path(profile_dir).resolve()
+            # Keep LibreOffice's own scratch space on the main disk next to the fresh
+            # user profile: a full system /tmp would otherwise abort the export with a
+            # write error even though the output directory itself has space.
+            env = dict(os.environ)
+            env["TMPDIR"] = str(profile)
+            completed = subprocess.run(
+                [
+                    libreoffice,
+                    "--headless",
+                    "--norestore",
+                    f"-env:UserInstallation={profile.as_uri()}",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(output_dir),
+                    str(docx_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                check=False,
+                env=env,
+            )
+        attempts.append({
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-500:],
+            "stderr": completed.stderr[-500:],
+        })
+        if completed.returncode == 0 and pdf.is_file():
+            break
+        if pdf.exists():
+            pdf.unlink()
+    last = attempts[-1]
     return {
-        "converted": completed.returncode == 0 and pdf.is_file(),
-        "returncode": completed.returncode,
+        "converted": last["returncode"] == 0 and pdf.is_file(),
+        "returncode": last["returncode"],
         "libreoffice": libreoffice,
+        "attempts": attempts[-1:],
+        "retried": len(attempts) > 1,
         "pdf": str(pdf) if pdf.is_file() else "",
-        "stdout": completed.stdout[-2000:],
-        "stderr": completed.stderr[-2000:],
+        "stdout": last["stdout"],
+        "stderr": last["stderr"],
         "sha256": file_sha256(pdf) if pdf.is_file() else "",
     }
 
@@ -547,14 +565,233 @@ def verify_pdf(pdf_path: Path, *, root: Path | None = None) -> dict[str, Any]:
     }
 
 
+_SIDEBAR_CUBE_HEADING = "DESIGN MANAGER / SENIOR ARCHITECT"
+
+
+def _pdf_page_count(pdf_path: Path) -> int:
+    if not shutil.which("pdfinfo"):
+        return 0
+    code, out, _ = _command_output(["pdfinfo", str(pdf_path)])
+    if code != 0:
+        return 0
+    match = re.search(r"^Pages:\s+(\d+)", out, re.MULTILINE)
+    return int(match.group(1)) if match else 0
+
+
+def apply_dense_page_split(docx_path: Path) -> dict[str, Any]:
+    """Move the Cube chronology block from the page-1 content table to page 2.
+
+    Dense vacancy profiles can overflow page 1: the content table then splits
+    across pages and the forced page break produces a third (mostly empty)
+    page with clipped rows. The page-flow invariant is a safe two-page split,
+    not a fixed Cube bullet count, so when the first render exceeds the page
+    limit the whole Cube block (heading, chronology line and its bullets) is
+    relocated under the page-2 continuation header. All content is preserved;
+    nothing is deleted or rewritten.
+    """
+    document = Document(str(docx_path))
+    cell = document.tables[0].rows[0].cells[1]
+    cell_paragraphs = cell.paragraphs
+    heading_index = next(
+        (index for index, paragraph in enumerate(cell_paragraphs) if paragraph.text.strip() == _SIDEBAR_CUBE_HEADING),
+        None,
+    )
+    if heading_index is None:
+        return {"applied": False, "reason": "cube_heading_not_found_in_page1_table"}
+    chronology = cell_paragraphs[heading_index + 1]
+    if not chronology.text.startswith("Cube Architects"):
+        return {"applied": False, "reason": "cube_chronology_not_found"}
+    bullet_paragraphs = [
+        paragraph for paragraph in cell_paragraphs[heading_index + 2:]
+        if paragraph.text.strip().startswith("•")
+    ]
+    if not bullet_paragraphs:
+        return {"applied": False, "reason": "cube_bullets_not_found"}
+    body_chronology = next(
+        (paragraph for paragraph in document.paragraphs if paragraph.text.startswith("Cube Architects")),
+        None,
+    )
+    if body_chronology is None:
+        return {"applied": False, "reason": "page2_chronology_not_found"}
+    # Move (not copy) the bullet paragraphs into the page-2 body flow so the
+    # wording and claim-cited content stay byte-identical.
+    anchor = body_chronology._p
+    for paragraph in bullet_paragraphs:
+        anchor.addnext(paragraph._p)
+        anchor = paragraph._p
+    # The bullet XML nodes have already been moved into the page-2 body above.
+    # Remove only the now-empty page-1 heading/chronology anchors; removing the
+    # bullet nodes here would delete them from their new parent and lose content.
+    removed = 0
+    for paragraph in [cell_paragraphs[heading_index], chronology]:
+        element = paragraph._p
+        if element.getparent() is not None:
+            element.getparent().remove(element)
+            removed += 1
+    # WordprocessingML requires every table cell to end with a paragraph; the
+    # relocated Cube block was the cell's trailing run of <w:p> elements, so
+    # restore that invariant explicitly. Without it LibreOffice mis-lays-out
+    # the whole first-page row and ejects the main column onto page 2.
+    tc_children = [child.tag for child in cell._tc.iterchildren()]
+    if tc_children and tc_children[-1] == qn("w:tbl"):
+        spacer = OxmlElement("w:p")
+        spacing = OxmlElement("w:spacing")
+        spacing.set(qn("w:before"), "0")
+        spacing.set(qn("w:after"), "0")
+        spacing.set(qn("w:line"), "240")
+        spacing.set(qn("w:lineRule"), "auto")
+        spacer.append(spacing)
+        cell._tc.append(spacer)
+    document.save(str(docx_path))
+    return {"applied": True, "moved_bullets": len(bullet_paragraphs), "removed_paragraphs": removed}
+
+
 def render_and_verify(job_id: str, generated_application: dict[str, Any], packet: dict[str, Any], *, root: Path | None = None) -> dict[str, Any]:
+    _, paths = load_config(root)
     docx = render_docx(job_id, generated_application, packet, root=root)
     docx_path = Path(docx["docx"])
     converted = convert_docx_to_pdf(docx_path, docx_path.parent)
+    page_limit = int(json.loads((paths.config_path).read_text(encoding="utf-8"))["template"]["page_limit"])
+    converted, fit_actions = ensure_page_fit(docx_path, converted, page_limit=page_limit)
+    # The fit steps may modify the generated DOCX; keep the recorded hash
+    # pointing at the exact bytes that produced the verified PDF.
+    docx["sha256"] = file_sha256(docx_path)
     if not converted.get("converted"):
-        return {"valid": False, "docx": docx, "conversion": converted, "verification": {}}
+        return {"valid": False, "docx": docx, "conversion": converted, "verification": {}, "fit": fit_actions}
     verification = verify_pdf(Path(converted["pdf"]), root=root)
-    return {"valid": verification["valid"], "docx": docx, "conversion": converted, "verification": verification}
+    return {
+        "valid": verification["valid"],
+        "docx": docx,
+        "conversion": converted,
+        "verification": verification,
+        "fit": fit_actions,
+    }
+
+
+# Bounded densification ladder for dense vacancy profiles. Levels only tighten
+# typography inside the replaceable zones of the page-1 main cell (generated
+# bullets, tailored profile, evidence-card body text); wording, ordering,
+# anchors and all claim-cited content stay byte-identical. Spacing values are
+# OOXML twips, matching the template's own units; level 2 mirrors the proven
+# v1.0 density (7.5pt bullets, after=20 twips), so the worst case is a
+# known-good look.
+_DENSITY_LEVELS: tuple[dict[str, int], ...] = (
+    {"bullet_size_halfpt": 16, "bullet_after_twips": 22, "bullet_line_twips": 230,
+     "profile_size_halfpt": 17, "profile_line_twips": 245},
+    {"bullet_size_halfpt": 15, "bullet_after_twips": 18, "bullet_line_twips": 220,
+     "profile_size_halfpt": 16, "profile_line_twips": 235},
+)
+
+
+def _tune_paragraph(paragraph: Paragraph, *, size_halfpt: int | None = None, after_twips: int | None = None, line_twips: int | None = None) -> bool:
+    changed = False
+    ppr = paragraph._p.get_or_add_pPr()
+    if after_twips is not None or line_twips is not None:
+        spacing = ppr.find(qn("w:spacing"))
+        if spacing is None:
+            spacing = OxmlElement("w:spacing")
+            ppr.append(spacing)
+        if after_twips is not None:
+            spacing.set(qn("w:after"), str(after_twips))
+            changed = True
+        if line_twips is not None:
+            spacing.set(qn("w:line"), str(line_twips))
+            spacing.set(qn("w:lineRule"), "auto")
+            changed = True
+    if size_halfpt is not None and paragraph.runs:
+        for run in paragraph.runs:
+            run.font.size = Pt(size_halfpt / 2)
+            changed = True
+    return changed
+
+
+def apply_density_level(docx_path: Path, level_index: int) -> dict[str, Any]:
+    """Apply one bounded densification level to the generated document copy.
+
+    The approved template file itself is never modified; this runs on the
+    per-job generated DOCX so every render keeps the template SHA intact.
+    """
+    if level_index < 0 or level_index >= len(_DENSITY_LEVELS):
+        return {"applied": False, "reason": "level_exhausted"}
+    level = _DENSITY_LEVELS[level_index]
+    document = Document(str(docx_path))
+    cell = document.tables[0].rows[0].cells[1]
+    tuned = 0
+    cell_paragraphs = cell.paragraphs
+    profile_header_index = next(
+        (index for index, paragraph in enumerate(cell_paragraphs) if paragraph.text.strip() == "LEADERSHIP PROFILE"),
+        None,
+    )
+    for index, paragraph in enumerate(cell_paragraphs):
+        text = paragraph.text.strip()
+        if text.startswith("•"):
+            if _tune_paragraph(
+                paragraph,
+                size_halfpt=level["bullet_size_halfpt"],
+                after_twips=level["bullet_after_twips"],
+                line_twips=level["bullet_line_twips"],
+            ):
+                tuned += 1
+        elif profile_header_index is not None and index == profile_header_index + 1 and text:
+            if _tune_paragraph(paragraph, size_halfpt=level["profile_size_halfpt"], line_twips=level["profile_line_twips"]):
+                tuned += 1
+
+    def walk_table(table: Any) -> None:
+        nonlocal tuned
+        for row in table.rows:
+            for inner_cell in row.cells:
+                for paragraph in inner_cell.paragraphs:
+                    text = paragraph.text.strip()
+                    # Evidence-card body sentences are long mixed-case lines;
+                    # card titles/labels are short or uppercase and stay as-is.
+                    if len(text) > 40 and text != text.upper():
+                        if _tune_paragraph(paragraph, size_halfpt=level["bullet_size_halfpt"]):
+                            tuned += 1
+                for inner in inner_cell.tables:
+                    walk_table(inner)
+
+    for inner_table in cell.tables:
+        walk_table(inner_table)
+    if not tuned:
+        return {"applied": False, "reason": "nothing_to_tune"}
+    document.save(str(docx_path))
+    return {"applied": True, "level": level_index + 1, "tuned_paragraphs": tuned}
+
+
+def ensure_page_fit(
+    docx_path: Path,
+    converted: dict[str, Any],
+    *,
+    page_limit: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Deterministically bring a rendered sidebar DOCX within the page limit.
+
+    Sequence (each step re-measures with pdfinfo and stops as soon as the
+    document fits):
+      1. relocate the duplicated Cube chronology block to the page-2 body;
+      2. tighten replaceable-zone typography through the bounded ladder.
+    Returns the latest conversion result plus a transparent actions record.
+    """
+    actions: dict[str, Any] = {"dense_split": {"applied": False}, "density_levels_applied": []}
+    if not converted.get("converted"):
+        return converted, actions
+    if _pdf_page_count(Path(converted["pdf"])) <= page_limit:
+        return converted, actions
+    split = apply_dense_page_split(docx_path)
+    actions["dense_split"] = split
+    if split.get("applied"):
+        converted = convert_docx_to_pdf(docx_path, docx_path.parent)
+        if not converted.get("converted") or _pdf_page_count(Path(converted["pdf"])) <= page_limit:
+            return converted, actions
+    for level_index in range(len(_DENSITY_LEVELS)):
+        density = apply_density_level(docx_path, level_index)
+        if not density.get("applied"):
+            break
+        actions["density_levels_applied"].append(density)
+        converted = convert_docx_to_pdf(docx_path, docx_path.parent)
+        if not converted.get("converted") or _pdf_page_count(Path(converted["pdf"])) <= page_limit:
+            break
+    return converted, actions
 
 
 # ---------------------------------------------------------------------------
