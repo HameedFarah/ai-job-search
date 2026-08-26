@@ -115,6 +115,7 @@ def test_apply_create_uses_create_supported_arguments(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "ensure_runtime_worktree", lambda m: {"path": m["workdir"], "clean": True})
+    monkeypatch.setattr(mod, "write_runtime_root_pointer", lambda m: {"pointer": "p", "workdir": m["workdir"]})
     monkeypatch.setattr(
         mod, "write_runtime_authority",
         lambda m: {"pointer": m["runtime_authority_pointer"], "written": True, "continuous": True},
@@ -171,6 +172,7 @@ def test_apply_edit_replaces_skills_without_self_pausing_on_drift(tmp_path, monk
     monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "ensure_runtime_worktree", lambda m: {"path": m["workdir"], "clean": True})
+    monkeypatch.setattr(mod, "write_runtime_root_pointer", lambda m: {"pointer": "p", "workdir": m["workdir"]})
     monkeypatch.setattr(
         mod, "write_runtime_authority",
         lambda m: {"pointer": m["runtime_authority_pointer"], "written": True, "continuous": True},

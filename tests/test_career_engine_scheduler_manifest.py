@@ -27,6 +27,14 @@ def test_career_scheduler_manifest_is_reproducible_desired_state():
     )
     assert (ROOT / manifest["source_script"]).is_file()
     assert manifest["runtime_script"] == "career-engine-daily-context.py"
+    # Source scanners are invoked explicitly by the runtime script. Do not
+    # preload their ambiguous canonical names: Hermes may resolve duplicate
+    # names across repository/global external_dirs and skip both scanners.
+    assert "linkedin-search" not in manifest["skills"]
+    assert "freehire-search" not in manifest["skills"]
+    assert "linkedin-search" not in manifest["skill_sources"]
+    assert "freehire-search" not in manifest["skill_sources"]
+    assert "repository-owned source CLI" in manifest["prompt"]
     assert "model" not in manifest and "provider" not in manifest
     assert "runtime_job_id" not in manifest
     assert "all eligible jobs" in manifest["prompt"]
