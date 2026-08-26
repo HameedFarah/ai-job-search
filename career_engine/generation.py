@@ -526,10 +526,27 @@ def validate_generated_application(application: dict[str, Any], packet: dict[str
 CENTRAL_DISPATCHER = Path("/home/hameedo/vps-infra-dev/scripts/operations/model-route-dispatch.py")
 
 
+def _dispatcher_runtime_paths() -> tuple[Path, Path]:
+    """Return the clean source cwd and persistent verified routing cache.
+
+    Generation packets live under the shared mutable tracker, so their path must
+    never be used to infer the executable checkout. The Career config/runtime
+    authority already resolves both identities correctly: source executes from
+    the clean runtime checkout while the routing cache persists under the one
+    canonical tracker runtime and survives nested-worker DNS failures.
+    """
+    from .config import load_config
+
+    _config, paths = load_config()
+    return paths.repo_root, paths.tracker_base / "runtime" / "model-routing-authority-cache"
+
+
 def _run_central_dispatcher(packet_path: Path, output_path: Path) -> dict[str, Any]:
     """Generate through the GitHub-authoritative dispatcher, fail-closed."""
     evidence_path = output_path.parent / "model-routing-evidence.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    repo_root, cache_dir = _dispatcher_runtime_paths()
+    cache_dir.parent.mkdir(parents=True, exist_ok=True)
     prompt = (
         "Read the Career Engine generation packet at " + str(packet_path) +
         ". Write exactly one valid generated-application JSON object to " + str(output_path) +
@@ -544,8 +561,9 @@ def _run_central_dispatcher(packet_path: Path, output_path: Path) -> dict[str, A
             [
                 "/usr/bin/python3", str(CENTRAL_DISPATCHER),
                 "--prompt-file", str(prompt_path),
-                "--cwd", str(packet_path.parent.parent.parent.parent),
+                "--cwd", str(repo_root),
                 "--evidence-file", str(evidence_path),
+                "--cache-dir", str(cache_dir),
                 "--mode", "workspace-write",
                 "--timeout-seconds", "900",
             ],
