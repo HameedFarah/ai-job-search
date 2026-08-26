@@ -667,6 +667,9 @@ def _reconcile_below_threshold(
         if row["processing_status"] != "generation_ready":
             continue
         record = tracker.get_job(job_id)
+        application_status = str((record.get("job") or {}).get("application_status") or "").strip().lower()
+        if application_status in {"submitted", "sent", "applied"}:
+            continue
         score = _effective_score(record, row["fit_score"])
         if score >= threshold:
             continue
