@@ -23,7 +23,12 @@ def stable_hash(value: Any) -> str:
 
 
 def _load_tracker(paths: Any) -> Any:
-    tracker_path = paths.tracker_base / "tracker.py"
+    # The tracker IMPLEMENTATION is loaded from the executing repository's clean
+    # tracked source so a drifted primary/live checkout can never contaminate
+    # code execution, while tracker STATE is instantiated at the canonical live
+    # tracker base (paths.tracker_base).
+    source_dir = getattr(paths, "tracker_source_path", None) or Path(paths.tracker_base)
+    tracker_path = Path(source_dir) / "tracker.py"
     spec = importlib.util.spec_from_file_location("career_engine_tracker", tracker_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot load tracker: {tracker_path}")

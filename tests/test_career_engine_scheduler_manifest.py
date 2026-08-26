@@ -15,7 +15,16 @@ def test_career_scheduler_manifest_is_reproducible_desired_state():
     assert manifest["timezone"] == "Asia/Riyadh"
     assert manifest["no_agent"] is False
     assert manifest["deliver"] == "local"
-    assert manifest["workdir"] == "/home/hameedo/projects/ai-job-search"
+    # The scan executes from a dedicated clean runtime worktree; the mutable
+    # developer checkout is never the cron execution source.
+    assert manifest["workdir"] == "/home/hameedo/projects/ai-job-search-daily-runtime"
+    assert manifest["workdir"] != "/home/hameedo/projects/ai-job-search"
+    # Runtime authority binding: ignored pointer inside the runtime worktree
+    # binds every entry point to the canonical live tracker base.
+    assert manifest["runtime_authority_pointer"] == "runtime/runtime-authority.json"
+    assert manifest["tracker_authority_base"] == (
+        "/home/hameedo/projects/ai-job-search/projects/job-automation"
+    )
     assert (ROOT / manifest["source_script"]).is_file()
     assert manifest["runtime_script"] == "career-engine-daily-context.py"
     assert "model" not in manifest and "provider" not in manifest

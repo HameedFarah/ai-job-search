@@ -18,5 +18,7 @@
   "runtime_script": "career-engine-daily-context.py",
   "no_agent": false,
   "deliver": "local",
-  "workdir": "/home/hameedo/projects/ai-job-search"
+  "workdir": "/home/hameedo/projects/ai-job-search-daily-runtime",
+  "tracker_authority_base": "/home/hameedo/projects/ai-job-search/projects/job-automation",
+  "runtime_authority_pointer": "runtime/runtime-authority.json"
 }

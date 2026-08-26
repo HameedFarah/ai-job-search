@@ -17,7 +17,10 @@ AREAS = {
 
 
 def _tracker(paths: Any) -> Any:
-    tracker_path = paths.tracker_base / "tracker.py"
+    # Implementation from the executing repository's clean tracked source; state
+    # instantiated at the canonical live tracker base. Mirrors pipeline._load_tracker.
+    source_dir = getattr(paths, "tracker_source_path", None) or Path(paths.tracker_base)
+    tracker_path = Path(source_dir) / "tracker.py"
     spec = importlib.util.spec_from_file_location("career_engine_tracker_review", tracker_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot load tracker: {tracker_path}")
