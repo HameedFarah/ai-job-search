@@ -17,6 +17,7 @@ from career_engine.renderer import (
     _libreoffice_binary,
     _libreoffice_profile_dir,
     apply_dense_page_split,
+    apply_page2_compaction,
     build_render_input,
     convert_docx_to_pdf,
     render_and_verify,
@@ -482,3 +483,77 @@ def test_verify_pdf_rejects_page_count_mismatch(engine_root: Path) -> None:
     result = verify_pdf(artifact, root=engine_root)
     assert result["valid"] is False
     assert any(item["code"] == "page_count" for item in result["findings"])
+
+
+def _render_packet(job_id: str, job_payload: dict, engine_root: Path) -> tuple[dict, dict]:
+    bundle = build_bundle(engine_root)
+    normalized = normalize_job(job_payload, bundle["taxonomy"])
+    matches = match_evidence(normalized, bundle)
+    score = score_fit(normalized, matches, bundle)
+    route = decide_route(normalized, bundle)
+    packet = create_generation_packet(job_id=job_id, normalized_job=normalized, matches=matches, score=score, route=route, bundle=bundle)
+    return packet, seven_bullet_application(packet)
+
+
+def test_render_docx_keeps_generated_current_bullet_matching_template_statement_prefix(job_payload: dict, engine_root: Path) -> None:
+    """A generated current-role bullet that begins with the same words as a
+    removed template statement must survive rendering (regression: the old
+    post-insertion removal pass deleted such bullets)."""
+    packet, application = _render_packet("render-prefix-collision", job_payload, engine_root)
+    generated = (
+        "Directed end-to-end design and project delivery for this vacancy, "
+        "with tailored scope, controls and measurable outcomes."
+    )
+    application["current_role_bullets"][0]["text"] = generated
+    result = render_docx("render-prefix-collision", application, packet, root=engine_root)
+    rendered_text = "\n".join(p.text for p in _all_paragraphs(Document(result["docx"])))
+    assert "• " + generated in rendered_text
+    # The fixed template statements are still gone.
+    assert "• Directed end-to-end design and project delivery, from client briefing" not in rendered_text
+
+
+def test_apply_page2_compaction_is_bounded_and_spacing_only(tmp_path: Path) -> None:
+    """Page-2 compaction tunes only non-heading body paragraphs and reports
+    level exhaustion; font sizes stay untouched."""
+    from docx import Document as BuildDocument
+    from docx.shared import Pt
+
+    document = BuildDocument()
+    heading = document.add_paragraph("EARLIER CAREER")
+    body = document.add_paragraph("• Relocated Cube bullet kept verbatim with spacing tuned only." + " detail" * 6)
+    short = document.add_paragraph("tiny")
+    path = tmp_path / "page2.docx"
+    document.save(str(path))
+    sizes_before = [(run.font.size) for run in body.runs]
+
+    first = apply_page2_compaction(path, 0)
+    assert first["applied"] is True
+    assert first["level"] == 1
+
+    tuned = BuildDocument(str(path))
+    texts = [p.text for p in tuned.paragraphs]
+    assert "EARLIER CAREER" in texts
+    assert body.text in texts
+    assert short.text in texts
+    body_after = next(p for p in tuned.paragraphs if p.text == body.text)
+    sizes_after = [(run.font.size) for run in body_after.runs]
+    assert sizes_after == sizes_before
+
+    exhausted = [apply_page2_compaction(path, index) for index in range(1, 4)]
+    assert exhausted[0]["applied"] is True  # second bounded level still exists
+    assert all(item.get("applied") is False for item in exhausted[1:])  # beyond the last level
+
+
+def test_page2_compaction_ignores_headings_and_short_lines(tmp_path: Path) -> None:
+    from docx import Document as BuildDocument
+
+    document = BuildDocument()
+    document.add_paragraph("EDUCATION")
+    document.add_paragraph("Zigurat Business School")
+    path = tmp_path / "headings.docx"
+    document.save(str(path))
+    result = apply_page2_compaction(path, 0)
+    # Headings (all caps) and short institution lines must remain untouched.
+    assert result == {"applied": False, "reason": "nothing_to_tune"}
+    reloaded = BuildDocument(str(path))
+    assert [p.text for p in reloaded.paragraphs] == ["EDUCATION", "Zigurat Business School"]

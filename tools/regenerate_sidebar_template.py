@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -134,6 +135,19 @@ def _norm(value: str) -> str:
     return " ".join(str(value).split()).casefold()
 
 
+_BIDI_CONTROLS = dict.fromkeys(map(ord, "\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"))
+
+
+def _norm_text(value: str) -> str:
+    """Normalization for rendered-output comparison.
+
+    Strips Unicode bidi control characters: RTL runs such as the Arabic
+    'مستشار' credential carry embedded direction marks that pdftotext reorders
+    visually; the characters are formatting artifacts of correct content.
+    """
+    return _norm(value.translate(_BIDI_CONTROLS))
+
+
 def _bullet_for_claim(claim_id: str, earlier_items: list[dict[str, Any]], claim_map: dict[str, dict[str, Any]], used: set[int]) -> str:
     for index, item in enumerate(earlier_items):
         if claim_id in item.get("claim_ids", []) and index not in used:
@@ -192,9 +206,60 @@ def content_integrity_qa(expectations: dict[str, list[str]], docx_path: Path, pd
     pdf_text = _norm("\n".join(pdf_pages))
     findings: list[dict[str, str]] = []
 
+    def _dehyphenate(value: str) -> str:
+        # pdftotext dehyphenates words wrapped at a hard line-break hyphen
+        # ("design-stage" -> "designstage"), which is a rendering artifact of
+        # justified text, not lost content. Compare a hyphen-stripped form as a
+        # tolerated alternative before flagging missing content.
+        # Thousands-separator commas are stripped symmetrically as well: they
+        # are punctuation, not word boundaries inside numbers, so without this
+        # a '55.4%' needle would be satisfied by the '554' inside '1,554'.
+        return _norm_text(value).replace("-", "").replace(",", "")
+
+    def _token_sequence(value: str) -> str:
+        # Final tolerated form: word tokens joined by a separator that cannot
+        # occur in extracted text. Bidi visual reordering moves punctuation
+        # around RTL runs (e.g. '(مستشار)' renders as '(<RTL>)' with relocated
+        # parentheses); the word sequence itself is the content signal.
+        tokens = [token for token in re.split(r"[\W_]+", _norm_text(value), flags=re.UNICODE) if token]
+        return "\x00".join(tokens)
+
+    def _boundary_contains(needle: str, haystack: str) -> bool:
+        # Substring match hardened with alphanumeric boundaries: a needle whose
+        # edges are word characters must never be satisfied by an occurrence
+        # embedded inside a longer number or word ('42%' cannot be found in
+        # '1420', '74 assignments' in '174', 'one' in 'components').
+        if not needle:
+            return False
+        index = haystack.find(needle)
+        while index >= 0:
+            left_ok = index == 0 or not (haystack[index - 1].isalnum() and needle[0].isalnum())
+            right_index = index + len(needle)
+            right_ok = right_index == len(haystack) or not (haystack[right_index].isalnum() and needle[-1].isalnum())
+            if left_ok and right_ok:
+                return True
+            index = haystack.find(needle, index + 1)
+        return False
+
     def require(group: str, values: list[str], haystack: str, where: str) -> None:
+        normalized = _norm_text(haystack)
+        loose = _dehyphenate(haystack)
+        words = _token_sequence(haystack)
+
+        def present(value: str) -> bool:
+            if _boundary_contains(_norm_text(value), normalized):
+                return True
+            if _boundary_contains(_dehyphenate(value), loose):
+                return True
+            needle_tokens = _token_sequence(value)
+            # Tokens are joined with \\x00, which extraction never produces,
+            # and containment reuses the alphanumeric boundary rule, so a
+            # single token ('42') can never embed inside a longer number
+            # ('1420') or word ('one' inside 'components').
+            return bool(needle_tokens) and _boundary_contains(needle_tokens, words)
+
         for value in values:
-            if _norm(value) not in haystack:
+            if not present(value):
                 findings.append({"severity": "error", "code": "missing_in_" + where, "group": group, "value": value[:90]})
 
     for group in ("headline", "profile", "current_bullets", "metric_values", "metric_labels",
@@ -426,6 +491,69 @@ def revision_stem(outward_pdf: str, version: str) -> str:
     return Path(outward_pdf).stem + f"_v{version}"
 
 
+SIDEBAR_VARIANT = "modern-executive-sidebar"
+_SIDEBAR_FINAL_TYPES = {"final_docx", "final_pdf"}
+
+
+def sidebar_logical_key(entry: Any) -> tuple[str, str, str, str] | None:
+    """Logical identity of a Modern Executive Sidebar revision artifact.
+
+    Identity is ``(type, variant, template_version, path stem)`` and
+    deliberately excludes byte hashes: a rerender of the same approved
+    template version for the same outward document is the SAME logical
+    revision even when embedded timestamps or spacing compaction change the
+    bytes. Non-sidebar entries return ``None`` so they can never collide with
+    (or be reconciled by) sidebar revision bookkeeping.
+    """
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("variant") != SIDEBAR_VARIANT:
+        return None
+    if entry.get("type") not in _SIDEBAR_FINAL_TYPES:
+        return None
+    stem = Path(str(entry.get("path", ""))).stem
+    return (str(entry.get("type")), SIDEBAR_VARIANT, str(entry.get("template_version", "")), stem)
+
+
+def _sidebar_metadata_drift(existing: list[dict[str, Any]], entries: list[dict[str, Any]]) -> list[tuple[int, dict[str, Any]]]:
+    """Pairs of (index into ``existing``, refreshed entry) whose recorded path,
+    sha256 or bundle_hash differs from a newer passing QA render of the same
+    logical revision."""
+    drift: list[tuple[int, dict[str, Any]]] = []
+    keys = {sidebar_logical_key(entry) for entry in entries}
+    for index, item in enumerate(existing):
+        key = sidebar_logical_key(item)
+        if key is None or key not in keys:
+            continue
+        fresh = next(entry for entry in entries if sidebar_logical_key(entry) == key)
+        if any(
+            str(item.get(field, "")) != str(fresh.get(field, ""))
+            for field in ("path", "sha256", "bundle_hash", "template_version")
+        ):
+            drift.append((index, deepcopy(fresh)))
+    return drift
+
+
+def _sidebar_entries_from_report(report: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    docx_entry = {
+        "type": "final_docx",
+        "variant": SIDEBAR_VARIANT,
+        "path": report["docx"]["path"],
+        "sha256": report["docx"]["sha256"],
+        "bundle_hash": report.get("bundle_hash", ""),
+        "template_version": report.get("template_version", ""),
+    }
+    pdf_entry = {
+        "type": "final_pdf",
+        "variant": SIDEBAR_VARIANT,
+        "path": report["pdf"]["path"],
+        "sha256": report["pdf"]["sha256"],
+        "bundle_hash": report.get("bundle_hash", ""),
+        "template_version": report.get("template_version", ""),
+    }
+    return docx_entry, pdf_entry
+
+
 def render_revision(job_id: str, *, root: Path | None = None) -> dict[str, Any]:
     config, paths = load_config(root)
     artifact_dir = paths.tracker_base / "artifacts" / job_id
@@ -512,31 +640,44 @@ def apply_revision(job_id: str, *, root: Path | None = None, actor: str = "syste
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if not report.get("passed"):
         return {"job_id": job_id, "applied": False, "blocker": "qa_failed", "findings": report.get("findings", [])[:5]}
-    docx_entry = {
-        "type": "final_docx",
-        "variant": "modern-executive-sidebar",
-        "path": report["docx"]["path"],
-        "sha256": report["docx"]["sha256"],
-        "bundle_hash": report.get("bundle_hash", ""),
-        "template_version": report.get("template_version", ""),
-    }
-    pdf_entry = {
-        "type": "final_pdf",
-        "variant": "modern-executive-sidebar",
-        "path": report["pdf"]["path"],
-        "sha256": report["pdf"]["sha256"],
-        "bundle_hash": report.get("bundle_hash", ""),
-        "template_version": report.get("template_version", ""),
-    }
+    docx_entry, pdf_entry = _sidebar_entries_from_report(report)
     tracker_module = _load_tracker_module(paths)
     tracker = tracker_module.CareerTracker(paths.tracker_base)
     record = tracker.get_job(job_id)
     existing = list(record.get("generated_artifacts") or [])
     if any(item.get("sha256") == pdf_entry["sha256"] and item.get("type") == "final_pdf" for item in existing):
         return {"job_id": job_id, "applied": True, "already_recorded": True}
+    # Logical idempotence: a repeated apply of the SAME logical revision
+    # (modern-executive-sidebar + template_version + revision path stem) must
+    # not append artifacts or history events even when the rerender produced
+    # different bytes. The CareerTracker event log is append-only; historical
+    # events are never deleted or rewritten. Refreshing the CURRENT record
+    # metadata after such a rerender is an explicit reconcile step (see
+    # reconcile_sidebar_metadata), never an automatic side effect.
+    new_keys = {sidebar_logical_key(docx_entry), sidebar_logical_key(pdf_entry)}
+    existing_keys = {sidebar_logical_key(item) for item in existing} - {None}
+    if not (new_keys - existing_keys):
+        drift = _sidebar_metadata_drift(existing, [docx_entry, pdf_entry])
+        return {
+            "job_id": job_id,
+            "applied": True,
+            "already_recorded": True,
+            "idempotent": True,
+            "metadata_refresh_needed": bool(drift),
+            "detail": (
+                "logical revision already recorded; no artifact entries or "
+                "history events appended"
+            ),
+        }
+    # Append only the sides of the revision that are genuinely missing, so a
+    # partially recorded state can never grow duplicate logical entries.
+    missing_entries = [
+        entry for entry in (docx_entry, pdf_entry)
+        if sidebar_logical_key(entry) not in existing_keys
+    ]
     tracker.update_job(
         job_id,
-        {"generated_artifacts": existing + [docx_entry, pdf_entry]},
+        {"generated_artifacts": existing + missing_entries},
         comment=(
             f"Regenerated Modern Executive Sidebar revision with approved template "
             f"v{report.get('template_version')} (sha {report.get('template_sha256', '')[:12]}); "
@@ -544,11 +685,73 @@ def apply_revision(job_id: str, *, root: Path | None = None, actor: str = "syste
         ),
         actor=actor,
         action="generated",
-        source_refs=[docx_entry["path"], pdf_entry["path"]],
+        source_refs=[entry["path"] for entry in missing_entries],
         confidence="high",
         requires_owner_review=False,
     )
-    return {"job_id": job_id, "applied": True, "docx": docx_entry["path"], "pdf": pdf_entry["path"]}
+    applied_docx = next((entry["path"] for entry in missing_entries if entry["type"] == "final_docx"), "")
+    applied_pdf = next((entry["path"] for entry in missing_entries if entry["type"] == "final_pdf"), "")
+    return {"job_id": job_id, "applied": True, "docx": applied_docx, "pdf": applied_pdf}
+
+
+def reconcile_sidebar_metadata(job_id: str, *, root: Path | None = None, actor: str = "system") -> dict[str, Any]:
+    """Reconcile CURRENT metadata of an already-recorded sidebar logical revision.
+
+    After a rerender changes bytes without changing the logical revision, this
+    explicit step refreshes ``path``/``sha256``/``bundle_hash``/
+    ``template_version`` of the matching entries IN PLACE: the artifact list
+    keeps its length and ordering, other variants are untouched, exactly one
+    history event is appended when something changed, and historical events
+    are never deleted or rewritten. A no-change run writes nothing at all.
+    """
+    config, paths = load_config(root)
+    report_path = qa_dir(root) / f"{job_id}.json"
+    if not report_path.is_file():
+        return {"job_id": job_id, "reconciled": False, "blocker": "qa_report_missing"}
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if not report.get("passed"):
+        return {"job_id": job_id, "reconciled": False, "blocker": "qa_failed"}
+    docx_entry, pdf_entry = _sidebar_entries_from_report(report)
+    tracker_module = _load_tracker_module(paths)
+    tracker = tracker_module.CareerTracker(paths.tracker_base)
+    record = tracker.get_job(job_id)
+    existing = list(record.get("generated_artifacts") or [])
+    if any(item.get("sha256") == pdf_entry["sha256"] and item.get("type") == "final_pdf" for item in existing):
+        return {"job_id": job_id, "reconciled": False, "reason": "already_current"}
+    drift = _sidebar_metadata_drift(existing, [docx_entry, pdf_entry])
+    if not drift:
+        return {
+            "job_id": job_id,
+            "reconciled": False,
+            "reason": "logical_revision_not_recorded",
+            "hint": "apply the revision first",
+        }
+    updated = deepcopy(existing)
+    for index, fresh in drift:
+        updated[index] = fresh
+    template_version = str(report.get("template_version", ""))
+    stems = sorted({Path(docx_entry["path"]).stem, Path(pdf_entry["path"]).stem})
+    tracker.update_job(
+        job_id,
+        {"generated_artifacts": updated},
+        comment=(
+            f"Reconciled current metadata for already-recorded Modern Executive Sidebar "
+            f"v{template_version} revision ({', '.join(stems)}) to the latest passing QA render; "
+            "logical revision count unchanged, no duplicate entries created, "
+            "append-only history preserved"
+        ),
+        actor=actor,
+        action="updated",
+        source_refs=[entry["path"] for _, entry in drift],
+        confidence="high",
+        requires_owner_review=False,
+    )
+    return {
+        "job_id": job_id,
+        "reconciled": True,
+        "reconciled_entries": len(drift),
+        "template_version": template_version,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -563,6 +766,15 @@ def main(argv: list[str] | None = None) -> int:
     apply = sub.add_parser("apply")
     apply.add_argument("--job-id", default="")
     apply.add_argument("--all", action="store_true")
+    apply.add_argument(
+        "--reconcile-metadata",
+        action="store_true",
+        help=(
+            "refresh current metadata of an already-recorded sidebar logical "
+            "revision in place (single event, no duplicate logical entries) "
+            "instead of applying a new revision"
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.command == "plan":
@@ -599,8 +811,13 @@ def main(argv: list[str] | None = None) -> int:
             jobs = [args.job_id]
         failures = 0
         for job_id in jobs:
-            result = apply_revision(job_id)
-            if not result.get("applied"):
+            if args.reconcile_metadata:
+                result = reconcile_sidebar_metadata(job_id)
+                ok = bool(result.get("reconciled")) or result.get("reason") == "already_current"
+            else:
+                result = apply_revision(job_id)
+                ok = bool(result.get("applied"))
+            if not ok:
                 failures += 1
             print(json.dumps(result))
         return 1 if failures else 0

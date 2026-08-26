@@ -262,6 +262,16 @@ def render_docx(job_id: str, generated_application: dict[str, Any], packet: dict
     metric_ids = generated_application["metric_claim_ids"]
     metrics = [claim_map[item] for item in metric_ids]
 
+    # The approved template originally carried two fixed current-role statements.
+    # Remove them BEFORE inserting generated bullets: both are matched by their
+    # opening wording, and a generated bullet that legitimately begins with the
+    # same words must never be mistaken for a template statement and deleted.
+    for paragraph in list(paragraphs):
+        if paragraph.text.startswith("• Directed end-to-end design and project delivery") or paragraph.text.startswith(
+            "• Led multidisciplinary teams, consultants, contractors and stakeholders"
+        ):
+            _remove_paragraph(paragraph)
+
     achievement_paragraphs = [p for p in paragraphs if p.text.startswith("• [ACHIEVEMENT")]
     if len(achievement_paragraphs) != 7:
         raise ValueError(f"Template achievement placeholders changed: expected 7, got {len(achievement_paragraphs)}")
@@ -270,15 +280,6 @@ def render_docx(job_id: str, generated_application: dict[str, Any], packet: dict
         paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         paragraph.paragraph_format.space_after = Pt(10)
         paragraph.paragraph_format.line_spacing = 1.08
-
-    # The approved template originally carried two fixed current-role statements.
-    # Remove them so every role bullet in the outward CV comes from the validated,
-    # claim-cited generated application.
-    for paragraph in list(paragraphs):
-        if paragraph.text.startswith("• Directed end-to-end design and project delivery") or paragraph.text.startswith(
-            "• Led multidisciplinary teams, consultants, contractors and stakeholders"
-        ):
-            _remove_paragraph(paragraph)
 
     earlier_items = generated_application.get("earlier_role_bullets", [])
     if len(earlier_items) != 11:
@@ -451,6 +452,13 @@ def convert_docx_to_pdf(docx_path: Path, output_dir: Path) -> dict[str, Any]:
     # so rerenders are deterministic and never touch unrelated artifacts.
     if pdf.exists():
         pdf.unlink()
+    # A crashed/killed conversion can leave LibreOffice's lock file for the
+    # derived PDF behind; while it exists every retry aborts with
+    # SfxBaseModel::impl_store IO Abort. Clear only this derived lock so a
+    # rerender after an interrupted run is deterministic.
+    stale_lock = output_dir / f".~lock.{pdf.name}#"
+    if stale_lock.exists():
+        stale_lock.unlink()
     # LibreOffice 26.2.5 has been observed to exit 1 with empty stdout/stderr
     # under transient host memory pressure even though the binary, profile and
     # document are healthy. One immediate retry with a brand-new isolated
@@ -758,6 +766,42 @@ def apply_density_level(docx_path: Path, level_index: int) -> dict[str, Any]:
     return {"applied": True, "level": level_index + 1, "tuned_paragraphs": tuned}
 
 
+# Bounded page-2 body-flow compaction. Levels adjust only paragraph spacing of
+# non-heading body paragraphs in the document body flow (outside the page-1
+# table): relocated Cube bullets, earlier-career summaries, education,
+# credentials and languages lines. Font sizes are never changed, so the
+# accepted 9pt body / 10.5pt heading design stays intact.
+_PAGE2_COMPACTION_LEVELS: tuple[dict[str, float], ...] = (
+    {"after_pt": 6, "line_pct": 1.04},
+    {"after_pt": 3, "line_pct": 1.0},
+)
+
+
+def apply_page2_compaction(docx_path: Path, level_index: int) -> dict[str, Any]:
+    """Apply one bounded spacing-only compaction pass to the page-2 body flow."""
+    if level_index < 0 or level_index >= len(_PAGE2_COMPACTION_LEVELS):
+        return {"applied": False, "reason": "level_exhausted"}
+    level = _PAGE2_COMPACTION_LEVELS[level_index]
+    document = Document(str(docx_path))
+    tuned = 0
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if not text or text == text.upper():
+            continue  # headings, the continuation header and blank spacers stay untouched
+        if not (text.startswith("•") or len(text) > 60):
+            continue
+        if _tune_paragraph(
+            paragraph,
+            after_twips=int(float(level["after_pt"]) * 20),
+            line_twips=int(float(level["line_pct"]) * 240),
+        ):
+            tuned += 1
+    if not tuned:
+        return {"applied": False, "reason": "nothing_to_tune"}
+    document.save(str(docx_path))
+    return {"applied": True, "level": level_index + 1, "tuned_paragraphs": tuned}
+
+
 def ensure_page_fit(
     docx_path: Path,
     converted: dict[str, Any],
@@ -772,7 +816,7 @@ def ensure_page_fit(
       2. tighten replaceable-zone typography through the bounded ladder.
     Returns the latest conversion result plus a transparent actions record.
     """
-    actions: dict[str, Any] = {"dense_split": {"applied": False}, "density_levels_applied": []}
+    actions: dict[str, Any] = {"dense_split": {"applied": False}, "density_levels_applied": [], "page2_compaction_applied": []}
     if not converted.get("converted"):
         return converted, actions
     if _pdf_page_count(Path(converted["pdf"])) <= page_limit:
@@ -791,6 +835,19 @@ def ensure_page_fit(
         converted = convert_docx_to_pdf(docx_path, docx_path.parent)
         if not converted.get("converted") or _pdf_page_count(Path(converted["pdf"])) <= page_limit:
             break
+    # Page-2 body flow (relocated Cube bullets, earlier-career summaries,
+    # education, credentials, languages) is already at the approved design
+    # sizes, but a few surplus lines can still spill onto a third page. Two
+    # bounded compaction levels reclaim vertical space through spacing only;
+    # wording, ordering and font sizes stay byte-identical.
+    for p2_level in range(len(_PAGE2_COMPACTION_LEVELS)):
+        if not converted.get("converted") or _pdf_page_count(Path(converted["pdf"])) <= page_limit:
+            break
+        compaction = apply_page2_compaction(docx_path, p2_level)
+        if not compaction.get("applied"):
+            break
+        actions["page2_compaction_applied"].append(compaction)
+        converted = convert_docx_to_pdf(docx_path, docx_path.parent)
     return converted, actions
 
 

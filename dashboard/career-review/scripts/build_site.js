@@ -485,20 +485,102 @@ function findLatestSubmission(jobId) {
   };
 }
 
+/* Canonical current-revision selection from the tracker's generated_artifacts
+   metadata. The tracker section is append-only, so later entries are newer
+   revisions; sidebar revision entries additionally carry a numeric
+   template_version (e.g. the current v1.5 beats an unversioned base render).
+   Every candidate must still exist on disk; stale metadata falls back to the
+   exact legacy directory scan in findGeneratedDocsIn. */
+function artifactVersionRank(entry) {
+  const raw = String(entry?.template_version || '').trim();
+  if (!/^\d+(?:\.\d+)*$/.test(raw)) return null;
+  return raw.split('.').map(part => parseInt(part, 10));
+}
+
+function preferArtifactEntry(candidate, incumbent) {
+  // Higher parsed template_version wins (a missing/unparsable version ranks
+  // lowest); any tie falls through to append order — later entries in the
+  // append-only generated_artifacts section are newer revisions.
+  const rank = entry => artifactVersionRank(entry) || [-1];
+  const ra = rank(candidate);
+  const rb = rank(incumbent);
+  for (let i = 0; i < Math.max(ra.length, rb.length); i++) {
+    const av = ra[i] ?? -1;
+    const bv = rb[i] ?? -1;
+    if (av !== bv) return av > bv;
+  }
+  return true;
+}
+
+function artifactSlotFor(entry) {
+  const variant = normalizeTemplateId(entry.variant); // '' for unknown variants
+  switch (String(entry.type || '')) {
+    case 'final_pdf': return variant === 'modern-executive-sidebar' ? ['resume', 'pdf'] : null;
+    case 'final_docx': return variant === 'modern-executive-sidebar' ? ['resume', 'docx'] : null;
+    case 'ats_pdf': return ['resume_ats', 'pdf'];
+    case 'ats_docx': return ['resume_ats', 'docx'];
+    case 'cover_letter_pdf': return ['cover_letter', 'pdf'];
+    case 'cover_letter_docx': return ['cover_letter', 'docx'];
+    default: return null;
+  }
+}
+
+function validFile(source) {
+  try {
+    return Boolean(source) && fs.existsSync(source) && fs.statSync(source).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function currentArtifactsFromMetadata(payload) {
+  const slots = {
+    resume: {}, resume_ats: {}, cover_letter: {}
+  };
+  const entries = Array.isArray(payload?.generated_artifacts) ? payload.generated_artifacts : [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const slot = artifactSlotFor(entry);
+    if (!slot) continue;
+    const resolved = resolveArtifact(String(entry.path || ''));
+    if (!validFile(resolved)) continue; // existence validation before selection
+    const [name, ext] = slot;
+    const incumbent = slots[name][ext];
+    if (!incumbent || preferArtifactEntry(entry, incumbent.entry)) {
+      slots[name][ext] = { path: resolved, entry };
+    }
+  }
+  const pickPaths = group => ({
+    pdf: slots[group].pdf?.path || '',
+    docx: slots[group].docx?.path || ''
+  });
+  return { resume: pickPaths('resume'), resume_ats: pickPaths('resume_ats'), cover_letter: pickPaths('cover_letter') };
+}
+
 function findGeneratedDocs(jobId) {
-  const dir = path.join(TRACKER_ARTIFACTS, jobId);
+  return findGeneratedDocsIn(jobId, { artifactsRoot: TRACKER_ARTIFACTS, jobsRoot: TRACKER_JOBS });
+}
+
+function findGeneratedDocsIn(jobId, { artifactsRoot = TRACKER_ARTIFACTS, jobsRoot = TRACKER_JOBS } = {}) {
+  const dir = path.join(artifactsRoot, jobId);
   if (!fs.existsSync(dir)) return { resume: {}, resume_ats: {}, cover_letter: {}, email_body: '' };
+  // Metadata-first: the tracker's generated_artifacts section is the canonical
+  // current-revision authority, so the latest matching validated entry wins.
+  const trackerPayload = jobsRoot ? readJson(path.join(jobsRoot, `${jobId}.json`), {}) : {};
+  const current = currentArtifactsFromMetadata(trackerPayload);
+  // Exact legacy directory-scan fallback per file kind when metadata offers no
+  // valid current entry for that kind.
   const names = fs.readdirSync(dir).filter(name => fs.statSync(path.join(dir, name)).isFile());
   const pick = predicate => {
     const name = names.find(predicate);
     return name ? path.join(dir, name) : '';
   };
-  const executivePdf = pick(name => /CV/i.test(name) && /\.pdf$/i.test(name) && !/ATS/i.test(name));
-  const executiveDocx = pick(name => /CV/i.test(name) && /\.docx$/i.test(name) && !/ATS/i.test(name));
-  const atsPdf = pick(name => /CV/i.test(name) && /ATS/i.test(name) && /\.pdf$/i.test(name));
-  const atsDocx = pick(name => /CV/i.test(name) && /ATS/i.test(name) && /\.docx$/i.test(name));
-  const coverPdf = pick(name => /Cover_Letter/i.test(name) && /\.pdf$/i.test(name));
-  const coverDocx = pick(name => /Cover_Letter/i.test(name) && /\.docx$/i.test(name));
+  const executivePdf = current.resume.pdf || pick(name => /CV/i.test(name) && /\.pdf$/i.test(name) && !/ATS/i.test(name));
+  const executiveDocx = current.resume.docx || pick(name => /CV/i.test(name) && /\.docx$/i.test(name) && !/ATS/i.test(name));
+  const atsPdf = current.resume_ats.pdf || pick(name => /CV/i.test(name) && /ATS/i.test(name) && /\.pdf$/i.test(name));
+  const atsDocx = current.resume_ats.docx || pick(name => /CV/i.test(name) && /ATS/i.test(name) && /\.docx$/i.test(name));
+  const coverPdf = current.cover_letter.pdf || pick(name => /Cover_Letter/i.test(name) && /\.pdf$/i.test(name));
+  const coverDocx = current.cover_letter.docx || pick(name => /Cover_Letter/i.test(name) && /\.docx$/i.test(name));
   const emailText = pick(name => /application_email/i.test(name) && /\.txt$/i.test(name));
   const generatedApplication = readJson(path.join(dir, 'generated_application.json'), {});
   const generatedCoverBody = String(generatedApplication?.cover_email?.body || '').trim();
@@ -506,7 +588,7 @@ function findGeneratedDocs(jobId) {
     resume: {
       pdf: copyArtifact(executivePdf, `tracker-${jobId}`),
       docx: copyArtifact(executiveDocx, `tracker-${jobId}`),
-      sha256: sha256(executivePdf),
+      sha256: sha256(executivePdf), // always recomputed from disk bytes
       text: extractPdfText(executivePdf)
     },
     resume_ats: {
@@ -731,4 +813,14 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { canonicalIdentity, mergeUniqueRoles, itemsFromManifest, isFixtureJob };
+module.exports = {
+  canonicalIdentity,
+  mergeUniqueRoles,
+  itemsFromManifest,
+  isFixtureJob,
+  findGeneratedDocsIn,
+  currentArtifactsFromMetadata,
+  preferArtifactEntry,
+  artifactSlotFor,
+  findLatestSubmission
+};
