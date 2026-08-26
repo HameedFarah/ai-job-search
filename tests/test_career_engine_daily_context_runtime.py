@@ -24,9 +24,19 @@ ORIGIN_SHA = "b" * 40
 LOCAL_SHA = "a" * 40
 
 
-def load_context_module(tmp_path, monkeypatch, *, terminal_cwd=None):
+def load_context_module(tmp_path, monkeypatch, *, terminal_cwd=None, runtime_pointer=None):
     """Load the context script with an isolated cwd/workdir contract."""
     monkeypatch.chdir(tmp_path)
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    if runtime_pointer is not None:
+        pointer = fake_home / ".hermes/cron/career-engine-runtime-root.json"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text(
+            json.dumps({"schema_version": 1, "workdir": str(runtime_pointer)}),
+            encoding="utf-8",
+        )
     if terminal_cwd is None:
         monkeypatch.delenv("TERMINAL_CWD", raising=False)
     else:
@@ -39,12 +49,29 @@ def load_context_module(tmp_path, monkeypatch, *, terminal_cwd=None):
 
 
 def test_repo_root_uses_hermes_terminal_cwd_when_script_runs_elsewhere(tmp_path, monkeypatch):
-    """A deployed ~/.hermes/scripts copy must still target the cron workdir."""
+    """Direct/manual runs may still use TERMINAL_CWD when no pointer exists."""
     scripts_cwd = tmp_path / "hermes-scripts"
     runtime_cwd = tmp_path / "career-runtime"
     scripts_cwd.mkdir()
     runtime_cwd.mkdir()
     mod = load_context_module(scripts_cwd, monkeypatch, terminal_cwd=runtime_cwd)
+    assert mod.REPO_ROOT == runtime_cwd.resolve()
+
+
+def test_repo_root_prefers_scheduler_runtime_pointer_over_process_context(tmp_path, monkeypatch):
+    """Deployed cron scripts must use scheduler-owned runtime authority."""
+    process_cwd = tmp_path / "ai-company-store"
+    terminal_cwd = tmp_path / "wrong-terminal-cwd"
+    runtime_cwd = tmp_path / "career-runtime"
+    process_cwd.mkdir()
+    terminal_cwd.mkdir()
+    runtime_cwd.mkdir()
+    mod = load_context_module(
+        process_cwd,
+        monkeypatch,
+        terminal_cwd=terminal_cwd,
+        runtime_pointer=runtime_cwd,
+    )
     assert mod.REPO_ROOT == runtime_cwd.resolve()
 
 

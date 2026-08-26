@@ -29,16 +29,28 @@ import subprocess
 import sys
 from pathlib import Path
 
+RUNTIME_ROOT_POINTER = Path.home() / ".hermes/cron/career-engine-runtime-root.json"
+
 
 def resolve_repo_root() -> Path:
-    """Resolve the Career runtime worktree selected by Hermes cron.
+    """Resolve the Career runtime worktree from scheduler-owned authority.
 
-    Hermes stores and executes pre-run scripts from ``~/.hermes/scripts`` while
-    exposing the scheduled job's configured ``workdir`` to runtime tools through
-    ``TERMINAL_CWD``. Therefore the script's process cwd is not a reliable
-    repository locator when the script is deployed. Direct/manual invocation
-    keeps a cwd fallback for local tests and diagnostics.
+    Hermes executes the pre-run script from its own process cwd before the
+    scheduled job's ``workdir`` is applied to agent tools. Therefore neither
+    ``Path.cwd()`` nor ``TERMINAL_CWD`` is authoritative for deployed cron
+    scripts. The repository reconciler writes a small machine-owned pointer in
+    the default Hermes cron store; that pointer is authoritative. Environment
+    and cwd fallbacks exist only for direct/manual tests and diagnostics.
     """
+    if RUNTIME_ROOT_POINTER.is_file():
+        try:
+            payload = json.loads(RUNTIME_ROOT_POINTER.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+        if isinstance(payload, dict) and payload.get("schema_version") == 1:
+            workdir = str(payload.get("workdir", "")).strip()
+            if workdir:
+                return Path(workdir).expanduser().resolve()
     terminal_cwd = os.environ.get("TERMINAL_CWD", "").strip()
     return Path(terminal_cwd).expanduser().resolve() if terminal_cwd else Path.cwd().resolve()
 

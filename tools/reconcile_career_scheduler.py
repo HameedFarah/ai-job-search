@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "projects/job-automation/config/career-engine-scheduler.v1.json"
 DEFAULT_HERMES = Path.home() / ".hermes"
 GLOBAL_SKILLS = DEFAULT_HERMES / "skills"
+RUNTIME_ROOT_POINTER = DEFAULT_HERMES / "cron/career-engine-runtime-root.json"
 HERMES_EXECUTABLE_ENV = "HERMES_EXECUTABLE"
 ORIGIN_REF = "origin/master"
 GIT_TIMEOUT_SECONDS = 60
@@ -152,6 +153,54 @@ def atomic_write_json(target: Path, payload: dict) -> None:
         tmp.flush()
         os.fsync(tmp.fileno())
     os.replace(tmp_path, target)
+
+
+def write_runtime_root_pointer(manifest: dict) -> dict[str, object]:
+    """Publish the dedicated runtime root for pre-run scripts.
+
+    Hermes executes cron pre-run scripts before applying the job ``workdir`` to
+    agent tools, so deployed scripts cannot infer the repository from process
+    cwd. Keep one scheduler-owned machine pointer in the default cron store.
+    """
+    workdir = Path(manifest["workdir"]).expanduser().resolve()
+    payload = {
+        "schema_version": 1,
+        "workdir": str(workdir),
+        "generated_by": "tools/reconcile_career_scheduler.py",
+    }
+    atomic_write_json(RUNTIME_ROOT_POINTER, payload)
+    return {"pointer": str(RUNTIME_ROOT_POINTER), **payload}
+
+
+def read_runtime_root_pointer_status(manifest: dict) -> dict[str, object]:
+    expected = Path(manifest["workdir"]).expanduser().resolve()
+    problems: list[str] = []
+    details: dict[str, object] = {
+        "pointer": str(RUNTIME_ROOT_POINTER),
+        "expected_workdir": str(expected),
+    }
+    if not RUNTIME_ROOT_POINTER.is_file():
+        problems.append("runtime root pointer missing")
+    else:
+        try:
+            payload = json.loads(RUNTIME_ROOT_POINTER.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            payload = {}
+            problems.append(f"invalid runtime root pointer: {exc}")
+        if isinstance(payload, dict) and payload.get("schema_version") == 1:
+            workdir = str(payload.get("workdir", "")).strip()
+            if not workdir:
+                problems.append("runtime root pointer workdir empty")
+            else:
+                resolved = Path(workdir).expanduser().resolve()
+                details["bound_workdir"] = str(resolved)
+                if resolved != expected:
+                    problems.append(f"runtime root pointer binds {resolved} instead of {expected}")
+        elif not problems:
+            problems.append("unsupported runtime root pointer schema")
+    details["ok"] = not problems
+    details["problems"] = problems
+    return details
 
 
 def skill_source(manifest: dict, skill: str) -> Path:
@@ -572,6 +621,7 @@ def inspect(manifest: dict, target: Path, *, gateway_profile: str | None = None)
         and deployed.read_bytes() == script_source.read_bytes()
     )
     worktree = runtime_worktree_status(manifest)
+    runtime_root_pointer = read_runtime_root_pointer_status(manifest)
     authority = read_runtime_authority_status(manifest)
     timezone_name = host_timezone_name()
     timezone_expected = manifest.get("timezone")
@@ -595,6 +645,10 @@ def inspect(manifest: dict, target: Path, *, gateway_profile: str | None = None)
         problems.append("deployed runtime script bytes drifted from committed source")
     if not worktree["ok"]:
         problems.extend(f"runtime worktree: {problem}" for problem in worktree["problems"])
+    if not runtime_root_pointer["ok"]:
+        problems.extend(
+            f"runtime root pointer: {problem}" for problem in runtime_root_pointer["problems"]
+        )
     if not authority["ok"]:
         problems.extend(f"runtime authority: {problem}" for problem in authority["problems"])
     if not timezone_ok:
@@ -618,6 +672,7 @@ def inspect(manifest: dict, target: Path, *, gateway_profile: str | None = None)
         "enabled_jobs_total": enabled_total,
         "runtime_script_bytes_match": bytes_match,
         "runtime_worktree": worktree,
+        "runtime_root_pointer": runtime_root_pointer,
         "runtime_authority": authority,
         "host_timezone": {
             "name": timezone_name,
@@ -635,6 +690,7 @@ def apply(manifest: dict, target: Path, *, gateway_profile: str | None = None) -
     # preflight remains authoritative at scan time; this provisioning uses the
     # same convergence rules so the two never disagree.
     ensure_runtime_worktree(manifest)
+    write_runtime_root_pointer(manifest)
     write_runtime_authority(manifest)
     provision_skills(manifest, target)
     source = ROOT / manifest["source_script"]
