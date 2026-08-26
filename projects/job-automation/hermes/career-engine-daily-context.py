@@ -277,6 +277,7 @@ def main() -> int:
             "Use at most one free-prose generation pass per selected role unless deterministic validation fails or evidence is materially ambiguous.",
             "Carry the repository Gmail-reconciliation helper results into the daily report and tracker summary separately from new-job ingestion; do not perform a second independent confirmation/reply matcher.",
             "Synchronize the full canonical tracker, selected template, generated variants, draft state and owner-review status into the Career Engine dashboard.",
+            "After the complete no-send run and dashboard synchronization, publish the final review projection with `python3 projects/job-automation/daily_scanner.py --republish <scan-report.json> --final-run-report <run-report.json>`. Preserve scan.scanned_at and scan.scan_source_sha from the scanner report; record current source SHA, bundle hash, final tracker/package/draft status and canonical dashboard summary. A recovery publication after 10:00 is recovery evidence, not natural 09:00 acceptance.",
             "Return source-by-source counts, blocked sources, database changes, structured scan results, both resume variants, selected submission variant, draft changes, dashboard synchronization and owner-review actions.",
             "Never send email, contact a recruiter or submit an application."
         ],

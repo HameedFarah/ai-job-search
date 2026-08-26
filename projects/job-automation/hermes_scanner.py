@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,7 +30,14 @@ def main(argv: list[str] | None = None) -> int:
     target_lane_reconciliation = reconcile_existing_non_target_jobs(
         _load_tracker(paths), bundle.get("taxonomy", {}), actor="hermes"
     )
+    try:
+        scan_source_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        scan_source_sha = ""
     report = run_scan(Path(args.input), root=ROOT, scanner_id="hermes_scanner")
+    report["scan_source_sha"] = scan_source_sha
     report["target_lane_reconciliation"] = target_lane_reconciliation
     # Keep the long-standing Hermes entry point on the same sanitized review
     # publication contract as daily_scanner.py.  This is derived evidence only;

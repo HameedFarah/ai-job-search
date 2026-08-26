@@ -154,6 +154,8 @@ def _gmail_review_block(report: dict[str, Any]) -> dict[str, Any]:
         jobs_discovered_from_gmail = int(discovery.get("jobs_new_after_deduplication") or 0)
         jobs_new_after_deduplication = jobs_discovered_from_gmail
         jobs_matched_existing = int(discovery.get("jobs_matched_existing") or 0)
+    final_run = report.get("final_run") if isinstance(report.get("final_run"), dict) else {}
+    final_dashboard = final_run.get("dashboard") if isinstance(final_run.get("dashboard"), dict) else {}
     return {
         "authenticated": bool(discovery.get("authenticated", submission.get("messages_scanned") is not None)),
         "messages_scanned": int(discovery.get("messages_scanned") or submission.get("messages_scanned") or 0),
@@ -278,6 +280,8 @@ def _build_review_bundle(report: dict[str, Any]) -> dict[str, Any]:
         pass
     scanned_at = str(report.get("scanned_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"))
     scan_source_sha = str(report.get("scan_source_sha") or "")
+    final_run = report.get("final_run") if isinstance(report.get("final_run"), dict) else {}
+    final_dashboard = final_run.get("dashboard") if isinstance(final_run.get("dashboard"), dict) else {}
     return {
         "schema_version": 1,
         "projection_type": "career_engine_daily_review",
@@ -318,6 +322,18 @@ def _build_review_bundle(report: dict[str, Any]) -> dict[str, Any]:
             "total_jobs": len(rows),
             "processing_status_counts": status_counts,
             "application_status_counts": application_counts,
+        },
+        "final_run": {
+            "completed": bool(final_run),
+            "process_all": bool(final_run.get("process_all")) if final_run else False,
+            "processed_count": len(final_run.get("processed") or []) if final_run else 0,
+            "error_count": len(final_run.get("errors") or []) if final_run else 0,
+            "deferred_count": len(final_run.get("deferred") or []) if final_run else 0,
+            "dashboard": {
+                "jobs": final_dashboard.get("jobs"),
+                "counts": final_dashboard.get("counts"),
+                "publisher": final_dashboard.get("publisher"),
+            },
         },
         "reconciliation": {
             "gmail_submission": _safe_numeric_summary(report.get("gmail_submission_reconciliation")),
@@ -386,6 +402,13 @@ def _add_trend(bundle: dict[str, Any], worktree: Path) -> None:
 
 
 def _publish_review_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+    scan = bundle.get("scan") if isinstance(bundle.get("scan"), dict) else {}
+    if not str(scan.get("scan_source_sha") or ""):
+        return {
+            "status": "failed",
+            "branch": REVIEW_RUNTIME_BRANCH,
+            "error_type": "scan_source_sha_missing",
+        }
     try:
         fetch = _git("fetch", REVIEW_RUNTIME_REMOTE, check=False)
         if fetch.returncode != 0:
@@ -472,9 +495,17 @@ def main(argv: list[str] | None = None) -> int:
         metavar="REPORT_JSON",
         help="Rebuild and publish the sanitized review projection from an existing scan report without rescanning",
     )
+    parser.add_argument(
+        "--final-run-report",
+        default="",
+        metavar="RUN_REPORT_JSON",
+        help="Attach the completed no-send career-engine run report before publishing",
+    )
     args = parser.parse_args(argv)
     if args.republish:
         report = json.loads(Path(args.republish).read_text(encoding="utf-8"))
+        if args.final_run_report:
+            report["final_run"] = json.loads(Path(args.final_run_report).read_text(encoding="utf-8"))
         review_bundle = _build_review_bundle(report)
         report["review_bundle_publication"] = _publish_review_bundle(review_bundle)
         print(json.dumps(report, ensure_ascii=False, indent=2), end="")
