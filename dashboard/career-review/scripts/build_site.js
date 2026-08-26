@@ -2,13 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { trackerPaths } = require('./tracker_base');
 
 const ROOT = path.resolve(__dirname, '..');
 const SITE = path.join(ROOT, 'site');
-const REPO = '/home/hameedo/projects/ai-job-search';
-const MANIFEST = path.join(REPO, 'projects/job-automation/artifacts/five-applications-2026-08-04.json');
-const TRACKER_JOBS = path.join(REPO, 'projects/job-automation/data/jobs');
-const TRACKER_ARTIFACTS = path.join(REPO, 'projects/job-automation/artifacts');
+const REPO = path.resolve(ROOT, '../..');
+const TRACKER = trackerPaths(REPO);
+const MANIFEST = TRACKER.manifest;
+const TRACKER_JOBS = TRACKER.jobs;
+const TRACKER_ARTIFACTS = TRACKER.artifacts;
 const REVIEWED = path.join(ROOT, 'data-reviewed.json');
 const DATE_OVERRIDES = path.join(ROOT, 'job-date-overrides.json');
 

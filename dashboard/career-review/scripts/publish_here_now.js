@@ -2,17 +2,19 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { trackerPaths } = require('./tracker_base');
 
 // Resolve deployment inputs from this versioned dashboard checkout. The old
 // /home/hameedo/websites/career-review copy was intentionally retired.
 const ROOT = path.resolve(__dirname, '..');
 const REPO = path.resolve(ROOT, '../..');
+const TRACKER = trackerPaths(REPO);
 const SITE = path.join(ROOT, 'site');
 const STATE = path.join(ROOT, '.deploy.json');
 const API = 'https://here.now/api/v1';
 const UNIFIER = path.join(REPO, 'tools', 'career_tracker_unify_safe.py');
 const BUILD = path.join(ROOT, 'scripts', 'build_site.js');
-const CANONICAL_SUMMARY = path.join(REPO, 'projects', 'job-automation', 'runtime', 'canonical-tracker-summary.json');
+const CANONICAL_SUMMARY = TRACKER.canonicalSummary;
 
 function loadApiKey() {
   let raw = process.env.HERENOW_API_KEY || '';
