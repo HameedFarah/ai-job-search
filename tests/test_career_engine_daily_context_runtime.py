@@ -30,6 +30,7 @@ def load_context_module(tmp_path, monkeypatch, *, terminal_cwd=None, runtime_poi
     fake_home = tmp_path / "home"
     fake_home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("HERMES_HOME", raising=False)
     if runtime_pointer is not None:
         pointer = fake_home / ".hermes/cron/career-engine-runtime-root.json"
         pointer.parent.mkdir(parents=True, exist_ok=True)
@@ -73,6 +74,30 @@ def test_repo_root_prefers_scheduler_runtime_pointer_over_process_context(tmp_pa
         runtime_pointer=runtime_cwd,
     )
     assert mod.REPO_ROOT == runtime_cwd.resolve()
+
+
+def test_repo_root_uses_pointer_when_cron_home_is_hermes_root(tmp_path, monkeypatch):
+    """Hermes cron may set HOME to ~/.hermes; do not append a second .hermes."""
+    process_cwd = tmp_path / "copied-hermes-scripts"
+    runtime_cwd = tmp_path / "career-runtime"
+    hermes_home = tmp_path / ".hermes"
+    process_cwd.mkdir()
+    runtime_cwd.mkdir()
+    (hermes_home / "cron").mkdir(parents=True)
+    (hermes_home / "cron/career-engine-runtime-root.json").write_text(
+        json.dumps({"schema_version": 1, "workdir": str(runtime_cwd)}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(process_cwd)
+    monkeypatch.setenv("HOME", str(hermes_home))
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.delenv("TERMINAL_CWD", raising=False)
+    spec = importlib.util.spec_from_file_location("career_engine_daily_context_cron_home_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.RUNTIME_ROOT_POINTER == hermes_home / "cron/career-engine-runtime-root.json"
+    assert module.REPO_ROOT == runtime_cwd.resolve()
 
 
 class FakeGit:

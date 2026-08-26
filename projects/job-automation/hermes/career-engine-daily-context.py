@@ -29,7 +29,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-RUNTIME_ROOT_POINTER = Path.home() / ".hermes/cron/career-engine-runtime-root.json"
+def resolve_hermes_root() -> Path:
+    """Resolve Hermes state even when cron sets HOME to the Hermes root itself."""
+    configured = os.environ.get("HERMES_HOME", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    home = Path.home().resolve()
+    return home if home.name == ".hermes" else home / ".hermes"
+
+
+RUNTIME_ROOT_POINTER = resolve_hermes_root() / "cron/career-engine-runtime-root.json"
 
 
 def resolve_repo_root() -> Path:
