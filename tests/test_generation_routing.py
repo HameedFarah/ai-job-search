@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import inspect
+import re
 import subprocess
+from pathlib import Path
 
 from career_engine import generation
 
@@ -25,8 +27,12 @@ def test_routed_adapter_uses_central_dispatcher_and_writes_evidence(tmp_path, mo
         assert command[command.index("--cwd") + 1] == str(repo_root)
         assert command[command.index("--cache-dir") + 1] == str(tracker_runtime / "model-routing-authority-cache")
         assert "--model" not in command and "--provider" not in command
-        output.write_text(json.dumps({"headline": "routed"}), encoding="utf-8")
-        evidence = tmp_path / "model-routing-evidence.json"
+        prompt_file = Path(command[command.index("--prompt-file") + 1])
+        prompt = prompt_file.read_text(encoding="utf-8")
+        stage = Path(re.search(r"to (/.+?)\. Follow the packet schema", prompt).group(1))
+        assert stage.parent == repo_root
+        stage.write_text(json.dumps({"headline": "routed"}), encoding="utf-8")
+        evidence = Path(command[command.index("--evidence-file") + 1])
         evidence.write_text("{\"route\":\"test\"}", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "", "")
 

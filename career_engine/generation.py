@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -542,14 +544,27 @@ def _dispatcher_runtime_paths() -> tuple[Path, Path]:
 
 
 def _run_central_dispatcher(packet_path: Path, output_path: Path) -> dict[str, Any]:
-    """Generate through the GitHub-authoritative dispatcher, fail-closed."""
+    """Generate through the central dispatcher and promote a sandbox-local stage.
+
+    Routed workspace-write workers are intentionally confined to ``repo_root``.
+    The canonical tracker may live outside that clean runtime checkout, so the
+    model writes to a unique stage inside ``repo_root``. Only this trusted host
+    process validates the staged JSON and atomically promotes it to the tracker.
+    """
     evidence_path = output_path.parent / "model-routing-evidence.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     repo_root, cache_dir = _dispatcher_runtime_paths()
     cache_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    stage_handle = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".json", prefix=".career-generation-", dir=repo_root, delete=False
+    )
+    stage_path = Path(stage_handle.name)
+    stage_handle.close()
+    stage_path.unlink(missing_ok=True)
     prompt = (
         "Read the Career Engine generation packet at " + str(packet_path) +
-        ". Write exactly one valid generated-application JSON object to " + str(output_path) +
+        ". Write exactly one valid generated-application JSON object to " + str(stage_path) +
         ". Follow the packet schema and citations. Do not modify any other files. "
         "This is the single generation pass; do not perform external actions or submit/contact anyone."
     )
@@ -557,30 +572,59 @@ def _run_central_dispatcher(packet_path: Path, output_path: Path) -> dict[str, A
         handle.write(prompt)
         prompt_path = Path(handle.name)
     try:
-        completed = subprocess.run(
-            [
-                "/usr/bin/python3", str(CENTRAL_DISPATCHER),
-                "--prompt-file", str(prompt_path),
-                "--cwd", str(repo_root),
-                "--evidence-file", str(evidence_path),
-                "--cache-dir", str(cache_dir),
-                "--mode", "workspace-write",
-                "--timeout-seconds", "900",
-            ],
-            check=False, text=True, capture_output=True, timeout=930,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"returncode": 1, "error": type(exc).__name__, "output_exists": False, "evidence_exists": evidence_path.is_file()}
+        try:
+            completed = subprocess.run(
+                [
+                    "/usr/bin/python3", str(CENTRAL_DISPATCHER),
+                    "--prompt-file", str(prompt_path),
+                    "--cwd", str(repo_root),
+                    "--evidence-file", str(evidence_path),
+                    "--cache-dir", str(cache_dir),
+                    "--mode", "workspace-write",
+                    "--timeout-seconds", "900",
+                ],
+                check=False, text=True, capture_output=True, timeout=930,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {
+                "returncode": 1,
+                "error": type(exc).__name__,
+                "output_exists": False,
+                "evidence_exists": evidence_path.is_file(),
+            }
+
+        if completed.returncode == 0:
+            if not stage_path.is_file():
+                raise RuntimeError("Generation route succeeded but staged output was not created")
+            try:
+                staged = json.loads(stage_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Generation route succeeded but staged output is invalid JSON") from exc
+            if not isinstance(staged, dict):
+                raise RuntimeError("Generation route succeeded but staged output is not a JSON object")
+
+            promoted_handle = tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".json", prefix=".career-promotion-", dir=output_path.parent, delete=False
+            )
+            promoted_path = Path(promoted_handle.name)
+            promoted_handle.close()
+            try:
+                shutil.copyfile(stage_path, promoted_path)
+                os.replace(promoted_path, output_path)
+            finally:
+                promoted_path.unlink(missing_ok=True)
+
+        return {
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-4000:],
+            "stderr": completed.stderr[-4000:],
+            "output_exists": output_path.is_file(),
+            "evidence_exists": evidence_path.is_file(),
+            "evidence": str(evidence_path),
+        }
     finally:
         prompt_path.unlink(missing_ok=True)
-    return {
-        "returncode": completed.returncode,
-        "stdout": completed.stdout[-4000:],
-        "stderr": completed.stderr[-4000:],
-        "output_exists": output_path.is_file(),
-        "evidence_exists": evidence_path.is_file(),
-        "evidence": str(evidence_path),
-    }
+        stage_path.unlink(missing_ok=True)
 
 
 def run_adapter(adapter: str, packet_path: Path, output_path: Path, *, provider: str = "", model: str = "") -> dict[str, Any]:
