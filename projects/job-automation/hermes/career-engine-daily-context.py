@@ -24,11 +24,26 @@ agent to stop: no scanning, no fallback improvisation, no career_engine import.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path.cwd().resolve()
+
+def resolve_repo_root() -> Path:
+    """Resolve the Career runtime worktree selected by Hermes cron.
+
+    Hermes stores and executes pre-run scripts from ``~/.hermes/scripts`` while
+    exposing the scheduled job's configured ``workdir`` to runtime tools through
+    ``TERMINAL_CWD``. Therefore the script's process cwd is not a reliable
+    repository locator when the script is deployed. Direct/manual invocation
+    keeps a cwd fallback for local tests and diagnostics.
+    """
+    terminal_cwd = os.environ.get("TERMINAL_CWD", "").strip()
+    return Path(terminal_cwd).expanduser().resolve() if terminal_cwd else Path.cwd().resolve()
+
+
+REPO_ROOT = resolve_repo_root()
 ORIGIN_REF = "origin/master"
 SOURCE_TARGETS = Path("/home/hameedo/.hermes/cron/career-engine-source-targets.json")
 RUNTIME_AUTHORITY_POINTER = Path("runtime/runtime-authority.json")
@@ -60,10 +75,11 @@ def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
 def ensure_canonical_source(root: Path) -> dict[str, object]:
     """Fail closed unless the operational checkout is clean and on origin/master.
 
-    Mutable CareerTracker/runtime data are intentionally kept in the operational
-    checkout, so the daily scanner must not move to an independent worktree. The
-    source checkout may fast-forward when it is clean and strictly behind, but it
-    must never reset, clean, stash, rebase, or overwrite local work.
+    Source executes from the dedicated clean runtime worktree while mutable
+    CareerTracker/artifact/runtime state remains bound to the canonical live
+    tracker base through ``runtime/runtime-authority.json``. The source worktree
+    may fast-forward when clean and strictly behind, but it must never reset,
+    clean, stash, rebase, overwrite local work, or initialize a second tracker.
     """
     if not (root / ".git").exists():
         raise PreflightError(f"Career Engine runtime is not a Git checkout: {root}")

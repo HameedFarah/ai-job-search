@@ -24,14 +24,28 @@ ORIGIN_SHA = "b" * 40
 LOCAL_SHA = "a" * 40
 
 
-def load_context_module(tmp_path, monkeypatch):
-    """Load the context script with REPO_ROOT bound to an isolated tmp cwd."""
+def load_context_module(tmp_path, monkeypatch, *, terminal_cwd=None):
+    """Load the context script with an isolated cwd/workdir contract."""
     monkeypatch.chdir(tmp_path)
+    if terminal_cwd is None:
+        monkeypatch.delenv("TERMINAL_CWD", raising=False)
+    else:
+        monkeypatch.setenv("TERMINAL_CWD", str(terminal_cwd))
     spec = importlib.util.spec_from_file_location("career_engine_daily_context_test", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_repo_root_uses_hermes_terminal_cwd_when_script_runs_elsewhere(tmp_path, monkeypatch):
+    """A deployed ~/.hermes/scripts copy must still target the cron workdir."""
+    scripts_cwd = tmp_path / "hermes-scripts"
+    runtime_cwd = tmp_path / "career-runtime"
+    scripts_cwd.mkdir()
+    runtime_cwd.mkdir()
+    mod = load_context_module(scripts_cwd, monkeypatch, terminal_cwd=runtime_cwd)
+    assert mod.REPO_ROOT == runtime_cwd.resolve()
 
 
 class FakeGit:
