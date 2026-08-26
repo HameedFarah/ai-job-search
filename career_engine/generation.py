@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -525,28 +528,57 @@ def validate_generated_application(application: dict[str, Any], packet: dict[str
 def run_adapter(adapter: str, packet_path: Path, output_path: Path, *, provider: str = "", model: str = "") -> dict[str, Any]:
     if adapter == "manual":
         return {"adapter": "manual", "packet": str(packet_path), "output": str(output_path), "executed": False}
+    stage_handle = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", prefix=".career-generation-", dir=Path.cwd(), delete=False
+    )
+    stage_path = Path(stage_handle.name)
+    stage_handle.close()
+    stage_path.unlink()
     prompt = (
         "Read the Career Engine generation packet at " + str(packet_path) +
-        ". Write only valid generated-application JSON to " + str(output_path) +
+        ". Write only valid generated-application JSON to " + str(stage_path) +
         ". Do not modify other files."
     )
-    if adapter == "opencode":
-        selected_model = model or "opencode-go/deepseek-v4-flash"
-        command = ["opencode", "run", "--pure", "-m", selected_model, "--agent", "build", "--auto", prompt]
-    elif adapter == "hermes":
-        command = ["hermes", "-z", prompt]
-        if provider:
-            command.extend(["--provider", provider])
-        if model:
-            command.extend(["--model", model])
-    else:
-        raise ValueError(f"Unknown generation adapter: {adapter}")
-    completed = subprocess.run(command, check=False, text=True, capture_output=True, timeout=900)
-    return {
-        "adapter": adapter,
-        "executed": True,
-        "returncode": completed.returncode,
-        "stdout": completed.stdout[-4000:],
-        "stderr": completed.stderr[-4000:],
-        "output_exists": output_path.is_file(),
-    }
+    try:
+        if adapter == "opencode":
+            selected_model = model or "opencode-go/deepseek-v4-flash"
+            command = ["opencode", "run", "--pure", "-m", selected_model, "--agent", "build", "--auto", prompt]
+        elif adapter == "hermes":
+            command = ["hermes", "-z", prompt]
+            if provider:
+                command.extend(["--provider", provider])
+            if model:
+                command.extend(["--model", model])
+        else:
+            raise ValueError(f"Unknown generation adapter: {adapter}")
+        completed = subprocess.run(command, check=False, text=True, capture_output=True, timeout=900, cwd=Path.cwd())
+        if completed.returncode == 0:
+            if not stage_path.is_file():
+                raise RuntimeError("Generation route succeeded but staged output was not created")
+            try:
+                staged = json.loads(stage_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Generation route succeeded but staged output is invalid JSON") from exc
+            if not isinstance(staged, dict):
+                raise RuntimeError("Generation route succeeded but staged output is not a JSON object")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            promoted_handle = tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".json", prefix=".career-promotion-", dir=output_path.parent, delete=False
+            )
+            promoted_path = Path(promoted_handle.name)
+            promoted_handle.close()
+            try:
+                shutil.copyfile(stage_path, promoted_path)
+                os.replace(promoted_path, output_path)
+            finally:
+                promoted_path.unlink(missing_ok=True)
+        return {
+            "adapter": adapter,
+            "executed": True,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-4000:],
+            "stderr": completed.stderr[-4000:],
+            "output_exists": output_path.is_file(),
+        }
+    finally:
+        stage_path.unlink(missing_ok=True)
