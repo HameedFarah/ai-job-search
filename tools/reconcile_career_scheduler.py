@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Reconcile the canonical Career Engine schedule into Hermes profile stores.
 
-Canonical/default operation targets the profile actually consumed by the
-RUNNING Hermes gateway process (detected from ``--profile`` in its command
-line). An explicit ``--profile`` is supported but must match the running
-gateway; a mismatch fails closed because editing another store would have no
-effect on what the gateway executes. Exactly one enabled Career Engine Daily
-Scan may exist across ALL stores; reconciliation pauses duplicates.
+Canonical operation targets the explicit ``default`` Hermes profile. Gateway
+process argv is not an authority for profile ownership: systemd wrappers can
+reuse a process while Hermes profile state is stale or mislabeled. An
+explicit ``--profile`` is supported for inspection/migration, but the
+canonical Career scheduler requires ``--profile default``. Exactly one
+enabled Career Engine Daily Scan may exist across ALL stores; reconciliation
+pauses duplicates.
 
 The daily scan itself runs from a dedicated clean runtime worktree
 (``workdir``). Reconciliation provisions it with fast-forward-only semantics
@@ -212,29 +213,18 @@ def running_gateway_profile(proc_root: Path = Path("/proc")) -> str | None:
 
 
 def resolve_target_profile(requested: str | None) -> tuple[str, dict[str, object]]:
-    """Resolve the store profile to reconcile against the running gateway.
-
-    Default operation targets the running gateway profile and fails closed when
-    it cannot be detected; an explicit request must match the running gateway.
-    """
+    """Resolve profile ownership from the manifest, never gateway argv."""
     gateway = running_gateway_profile()
     info: dict[str, object] = {
         "running_gateway_profile": gateway,
         "requested_profile": requested,
     }
-    if requested:
-        if gateway is not None and requested != gateway:
-            raise ProfileMismatchError(
-                f"requested profile {requested!r} does not match the running gateway profile "
-                f"{gateway!r}; refusing to edit a store the gateway does not execute"
-            )
-        return requested, info
-    if gateway is None:
+    profile = requested or "default"
+    if profile != "default":
         raise ProfileMismatchError(
-            "no running hermes gateway process detected; pass --profile explicitly to "
-            "target a store deliberately"
+            f"Career Engine scheduler ownership is fixed to profile 'default', not {profile!r}"
         )
-    return gateway, info
+    return profile, info
 
 
 # --- Dedicated runtime worktree ----------------------------------------------

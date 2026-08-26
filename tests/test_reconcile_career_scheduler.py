@@ -255,36 +255,30 @@ def test_running_gateway_profile_detection(tmp_path):
     assert mod.running_gateway_profile(proc_root) is None
 
 
-def test_resolve_target_profile_enforces_running_gateway(tmp_path, monkeypatch):
+def test_resolve_target_profile_is_explicit_default_and_ignores_gateway_argv(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "running_gateway_profile", lambda proc_root=None: "agency")
     profile, info = mod.resolve_target_profile(None)
-    assert profile == "agency" and info["running_gateway_profile"] == "agency"
-    profile, _ = mod.resolve_target_profile("agency")
-    assert profile == "agency"
-    with pytest.raises(mod.ProfileMismatchError, match="does not match"):
-        mod.resolve_target_profile("default")
-    monkeypatch.setattr(mod, "running_gateway_profile", lambda proc_root=None: None)
-    with pytest.raises(mod.ProfileMismatchError, match="no running hermes gateway"):
-        mod.resolve_target_profile(None)
+    assert profile == "default" and info["running_gateway_profile"] == "agency"
     profile, _ = mod.resolve_target_profile("default")
+    assert profile == "default"
+    with pytest.raises(mod.ProfileMismatchError, match="fixed to profile 'default'"):
+        mod.resolve_target_profile("agency")
+    monkeypatch.setattr(mod, "running_gateway_profile", lambda proc_root=None: None)
+    profile, _ = mod.resolve_target_profile(None)
     assert profile == "default"
 
 
-def test_main_apply_fails_closed_on_profile_mismatch(tmp_path, monkeypatch, capsys):
+def test_main_rejects_non_default_scheduler_profile(tmp_path, monkeypatch, capsys):
     data = manifest()
     hermes = tmp_path / ".hermes"
-    agency = hermes / "profiles" / "agency"
-    (agency / "cron").mkdir(parents=True)
-    (agency / "cron/jobs.json").write_text(json.dumps({"jobs": []}))
     monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
     monkeypatch.setattr(mod, "MANIFEST", tmp_path / "manifest.json")
     monkeypatch.setattr(mod, "running_gateway_profile", lambda proc_root=None: "agency")
-    # requested profile 'default' != running gateway 'agency' -> exit 2 before any mutation
-    assert mod.main(["--apply", "--profile", "default"]) == 2
+    (tmp_path / "manifest.json").write_text(json.dumps(data))
+    assert mod.main(["--apply", "--profile", "agency"]) == 2
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "error"
-    assert "does not match" in output["error"]
-    assert json.loads((agency / "cron/jobs.json").read_text())["jobs"] == []
+    assert "fixed to profile 'default'" in output["error"]
 
 
 # --- Dedicated runtime worktree provisioning ---------------------------------
