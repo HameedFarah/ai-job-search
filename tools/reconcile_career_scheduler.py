@@ -389,7 +389,7 @@ def runtime_worktree_status(manifest: dict) -> dict[str, Any]:
     problems: list[str] = []
     details: dict[str, object] = {"path": str(path)}
     if not path.exists():
-        problems.append("missing")
+        problems.append(f"runtime worktree missing: {path}")
         details.update({"ok": False, "problems": problems})
         return details
     try:
