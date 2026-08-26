@@ -37,6 +37,17 @@ cd /home/hameedo/projects/ai-job-search
 
 For credible roles, use the generated packet for one structured free-prose generation pass, then import it through the engine. Do not draft independently from this skill text.
 
+The default adapter is intentionally `manual`; scheduled runs must drain every
+eligible non-submitted pending generation request within the configured
+per-scan cap. Read/export each request, use only current canonical Vault career
+evidence, the full job description, and the runtime bundle, and produce factual
+structured output with claim citations. Import with `./career-engine generate
+import`, validate, render both required variants as applicable, package the
+selected route, and create a verified UNSENT Gmail draft only for a verified
+email route. Re-run and sync until none remain, or record a genuine
+evidence/validation blocker. Never fabricate evidence, send/contact/submit, or
+mark applied; do not replace the manual adapter with a hidden provider.
+
 `validate-config` fails closed on config/bundle/tracker errors; `run` is the
 idempotent no-send orchestration (bundle + reconcile + prepare eligible +
 local dashboard data sync); `reconcile` enforces the centralized threshold and

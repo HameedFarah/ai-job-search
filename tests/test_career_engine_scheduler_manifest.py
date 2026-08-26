@@ -40,3 +40,9 @@ def test_career_scheduler_manifest_is_reproducible_desired_state():
     assert "all eligible jobs" in manifest["prompt"]
     assert "unsent email drafts or portal packages" in manifest["prompt"]
     assert "Never send/contact/submit." in manifest["prompt"]
+    prompt = manifest["prompt"]
+    assert "complete the manual-generation loop" in prompt
+    assert "generate import" in prompt
+    assert "verified UNSENT Gmail draft" in prompt
+    assert "configured per-scan cap" in prompt
+    assert "never fabricate evidence" in prompt

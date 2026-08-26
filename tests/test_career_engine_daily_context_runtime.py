@@ -221,6 +221,12 @@ def test_canonical_context_carries_source_sync_and_authority(tmp_path, monkeypat
     assert Path(authority["tracker_base"]) == live_base
     assert context["send_or_submit"] is False
     assert "run --all" in " ".join(context["workflow"])
+    workflow = " ".join(context["workflow"])
+    assert "drain every eligible non-submitted pending manual-generation request" in workflow
+    assert "generate import" in workflow
+    assert "verified UNSENT Gmail draft" in workflow
+    assert "never fabricate evidence" in workflow
+    assert "configured per-scan cap" in workflow
 
 
 def test_preflight_runs_before_bundle_load_when_behind(tmp_path, monkeypatch, capsys):
