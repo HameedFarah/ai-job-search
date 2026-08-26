@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -522,31 +523,56 @@ def validate_generated_application(application: dict[str, Any], packet: dict[str
     return findings
 
 
-def run_adapter(adapter: str, packet_path: Path, output_path: Path, *, provider: str = "", model: str = "") -> dict[str, Any]:
-    if adapter == "manual":
-        return {"adapter": "manual", "packet": str(packet_path), "output": str(output_path), "executed": False}
+CENTRAL_DISPATCHER = Path("/home/hameedo/vps-infra-dev/scripts/operations/model-route-dispatch.py")
+
+
+def _run_central_dispatcher(packet_path: Path, output_path: Path) -> dict[str, Any]:
+    """Generate through the GitHub-authoritative dispatcher, fail-closed."""
+    evidence_path = output_path.parent / "model-routing-evidence.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     prompt = (
         "Read the Career Engine generation packet at " + str(packet_path) +
-        ". Write only valid generated-application JSON to " + str(output_path) +
-        ". Do not modify other files."
+        ". Write exactly one valid generated-application JSON object to " + str(output_path) +
+        ". Follow the packet schema and citations. Do not modify any other files. "
+        "This is the single generation pass; do not perform external actions or submit/contact anyone."
     )
-    if adapter == "opencode":
-        selected_model = model or "opencode-go/deepseek-v4-flash"
-        command = ["opencode", "run", "--pure", "-m", selected_model, "--agent", "build", "--auto", prompt]
-    elif adapter == "hermes":
-        command = ["hermes", "-z", prompt]
-        if provider:
-            command.extend(["--provider", provider])
-        if model:
-            command.extend(["--model", model])
-    else:
-        raise ValueError(f"Unknown generation adapter: {adapter}")
-    completed = subprocess.run(command, check=False, text=True, capture_output=True, timeout=900)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as handle:
+        handle.write(prompt)
+        prompt_path = Path(handle.name)
+    try:
+        completed = subprocess.run(
+            [
+                "/usr/bin/python3", str(CENTRAL_DISPATCHER),
+                "--prompt-file", str(prompt_path),
+                "--cwd", str(packet_path.parent.parent.parent.parent),
+                "--evidence-file", str(evidence_path),
+                "--mode", "workspace-write",
+                "--timeout-seconds", "900",
+            ],
+            check=False, text=True, capture_output=True, timeout=930,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"returncode": 1, "error": type(exc).__name__, "output_exists": False, "evidence_exists": evidence_path.is_file()}
+    finally:
+        prompt_path.unlink(missing_ok=True)
     return {
-        "adapter": adapter,
-        "executed": True,
         "returncode": completed.returncode,
         "stdout": completed.stdout[-4000:],
         "stderr": completed.stderr[-4000:],
         "output_exists": output_path.is_file(),
+        "evidence_exists": evidence_path.is_file(),
+        "evidence": str(evidence_path),
+    }
+
+
+def run_adapter(adapter: str, packet_path: Path, output_path: Path, *, provider: str = "", model: str = "") -> dict[str, Any]:
+    if adapter == "manual":
+        return {"adapter": "manual", "packet": str(packet_path), "output": str(output_path), "executed": False}
+    if adapter not in {"opencode", "hermes"}:
+        raise ValueError(f"Unknown generation adapter: {adapter}")
+    routed = _run_central_dispatcher(packet_path, output_path)
+    return {
+        "adapter": adapter,
+        "executed": True,
+        **routed,
     }
