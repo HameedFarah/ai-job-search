@@ -14,6 +14,7 @@ from career_engine.core import decide_route, match_evidence, normalize_job, norm
 from career_engine.generation import create_generation_packet, validate_generated_application
 from career_engine.pipeline import prepare
 from career_engine.service import get_bundle_info, prepare_job
+from career_engine.pipeline import _load_tracker
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -525,6 +526,34 @@ def test_prepare_is_idempotent_and_uses_tracker(job_payload: dict[str, str], eng
     jobs = json.loads((engine_root / "projects/job-automation/data/jobs" / f"{first['job_id']}.json").read_text())
     assert jobs["processing_state"]["bundle_hash"] == first["bundle_hash"]
     assert get_bundle_info(root=engine_root)["bundle_hash"] == first["bundle_hash"]
+
+
+@pytest.mark.parametrize("application_status", ["submitted", "sent", "applied"])
+def test_rediscovery_preserves_submitted_application_lifecycle(
+    job_payload: dict[str, str], engine_root: Path, application_status: str
+) -> None:
+    first = prepare(job_payload, root=engine_root, actor="system")
+    _, paths = load_config(engine_root)
+    tracker = _load_tracker(paths)
+    tracker.update_job(
+        first["job_id"],
+        {
+            "application_status": application_status,
+            "processing_status": "submitted",
+            "generated_artifacts": [{"type": "submitted_package", "sha256": "immutable-package-proof"}],
+        },
+        comment="Test fixture records canonical submission evidence",
+        actor="owner",
+        action="updated",
+    )
+    before = tracker.get_job(first["job_id"])
+    result = prepare(job_payload, root=engine_root, actor="system")
+    after = tracker.get_job(first["job_id"])
+    assert result["preserved_submission"] is True
+    assert result["outputs"] == {}
+    assert after["job"]["application_status"] == before["job"]["application_status"]
+    assert after["job"]["processing_status"] == before["job"]["processing_status"]
+    assert after["generated_artifacts"] == before["generated_artifacts"]
 
 
 def test_blocked_role_does_not_create_generation_packet(job_payload: dict[str, str], engine_root: Path) -> None:

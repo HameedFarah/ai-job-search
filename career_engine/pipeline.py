@@ -148,6 +148,30 @@ def prepare(
         source_refs=[item for item in (normalized["source_url"],) if item],
     )
     job_id = ingest["job_id"]
+    # Rediscovery is observational for submitted applications.  In particular,
+    # never let a fresh score/package overwrite the canonical application
+    # lifecycle or its evidence.  The duplicate ingest above records last-seen
+    # provenance; this early return prevents any workflow mutation or packet
+    # regeneration below it.
+    existing_record = ingest.get("record") or {}
+    existing_job = existing_record.get("job") or {}
+    if str(existing_job.get("application_status") or "").strip().lower() in {"submitted", "sent", "applied"}:
+        existing_state = dict(existing_record.get("processing_state") or {})
+        return {
+            "schema_version": 1,
+            "job_id": job_id,
+            "bundle_hash": bundle["bundle_hash"],
+            "stage": existing_job.get("processing_status") or existing_state.get("status") or "submitted",
+            "live_status": existing_state.get("live_status", ""),
+            "fit_score": existing_record.get("scoring") or {"total": existing_job.get("fit_score")},
+            "route": existing_state.get("route", {}),
+            "blockers": existing_state.get("blockers", []),
+            "warnings": ["rediscovery_preserved_application_lifecycle"],
+            "skip_reason": "",
+            "outputs": {},
+            "cache_reused": {},
+            "preserved_submission": True,
+        }
     artifact_dir = paths.tracker_base / "artifacts" / job_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
     outputs: dict[str, str] = {}
