@@ -118,6 +118,9 @@ def build_adapter(
     elif adapter_id == "jsonld":
         from .adapters.jsonld import JsonLdAdapter
         cls = JsonLdAdapter
+    elif adapter_id == "keystone":
+        from .adapters.keystone import KeystoneAdapter
+        cls = KeystoneAdapter
     elif adapter_id == "brave_search":
         from .adapters.aggregators import BraveSearchAdapter
         cls = BraveSearchAdapter
