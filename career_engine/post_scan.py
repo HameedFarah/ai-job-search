@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from .gmail_outcomes import reconcile_outcome_mail
 from .gmail_reconcile import reconcile_submission_mail
 from .owner_feedback import apply_owner_feedback_calibration, reconcile_irrelevant_feedback
 
@@ -26,12 +27,17 @@ def reconcile_after_scan(root: Path, report: dict[str, Any]) -> dict[str, Any]:
 
     Ordering is deliberate:
     1. Verified Gmail submission evidence promotes real applications.
-    2. Explicit owner Irrelevant feedback is reconciled into CareerTracker.
-    3. The bounded calibration corpus is rebuilt and applied to newly scanned
+    2. Verified Gmail outcome evidence updates matched applied records without
+       inventing vacancies or changing historical submission identity.
+    3. Explicit owner Irrelevant feedback is reconciled into CareerTracker.
+    4. The bounded calibration corpus is rebuilt and applied to newly scanned
        jobs, while applied jobs and human overrides remain protected.
     """
     report["gmail_submission_reconciliation"] = _safe_runtime_step(
         "gmail_submission_reconciliation", reconcile_submission_mail, root,
+    )
+    report["gmail_outcome_reconciliation"] = _safe_runtime_step(
+        "gmail_outcome_reconciliation", reconcile_outcome_mail, root,
     )
     report["owner_irrelevant_reconciliation"] = _safe_runtime_step(
         "owner_irrelevant_reconciliation", reconcile_irrelevant_feedback, root,
