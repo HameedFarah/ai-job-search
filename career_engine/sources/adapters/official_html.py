@@ -293,6 +293,13 @@ class OfficialHtmlAdapter(SourceAdapter):
                 if not is_path_job and not is_query_job:
                     continue
                 context = _anchor_context(html, match.start(), match.end())
+                # Query-style URLs are generic WordPress routes. Accept them only
+                # when the anchor is actually enclosed by a singular job_listing
+                # card; a loose marketing/archive link is not a live vacancy.
+                if is_query_job and not re.search(
+                    r'class=["\'][^"\']*\bjob_listing\b[^"\']*["\']', context, re.I
+                ):
+                    continue
                 if re.search(r"\bstatus-expired\b", context, re.I):
                     continue
                 block = match.group(0)
@@ -322,7 +329,10 @@ class OfficialHtmlAdapter(SourceAdapter):
                 title_match = _TRIBEPAD_TITLE_RE.search(inner)
                 role = _clean(title_match.group(1)) if title_match else role
                 address_match = _TRIBEPAD_ADDRESS_RE.search(inner)
-                loc = _clean(address_match.group(1)) if address_match else _context_location(inner)
+                if address_match:
+                    loc = _clean(address_match.group(1))
+                else:
+                    loc = _context_location(_anchor_context(html, match.start(), match.end()))
             else:
                 loc = ""
             if preset == "applytojob" and "/apply/" not in path:
