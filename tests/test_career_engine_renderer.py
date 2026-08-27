@@ -261,6 +261,10 @@ def test_finalize_render_rejects_stale_generated_application_before_render(
     assert tracker_state["job"]["processing_status"] == "generated_content_rejected"
     assert tracker_state["processing_state"]["status"] == "generated_content_rejected"
     assert tracker_state["processing_state"]["external_action_allowed"] is False
+    assert "submission_package" not in tracker_state["processing_state"]
+    record_path = engine_root / "projects/job-automation/data/jobs" / f"{state['job_id']}.json"
+    saved_record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert saved_record["submission_package"] == {}
 
 
 def test_finalize_render_persisted_preview_override_selects_single_cv(

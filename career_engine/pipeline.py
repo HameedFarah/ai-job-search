@@ -405,12 +405,14 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
             "external_action_allowed": False,
             "send_or_submit": False,
         })
+        processing_state.pop("submission_package", None)
         tracker.update_job(
             job_id,
             {
                 "processing_status": "generated_content_rejected",
                 "next_action": "Regenerate application content against the current Career Engine bundle before rendering",
                 "processing_state": processing_state,
+                "submission_package": {},
             },
             comment="Rejected stale or invalid generated application before rendering or owner approval",
             actor=actor,
