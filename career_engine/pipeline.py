@@ -393,6 +393,37 @@ def finalize_render(job_id: str, *, root: Path | None = None, actor: str = "chat
 
     application = json.loads(application_path.read_text(encoding="utf-8"))
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    bundle = load_bundle(root)
+    findings = validate_generated_application(application, packet, bundle)
+    errors = [item for item in findings if item.get("severity") == "error"]
+    if errors:
+        tracker = _load_tracker(paths)
+        record = tracker.get_job(job_id)
+        processing_state = dict(record.get("processing_state") or {})
+        processing_state.update({
+            "status": "generated_content_rejected",
+            "external_action_allowed": False,
+            "send_or_submit": False,
+        })
+        tracker.update_job(
+            job_id,
+            {
+                "processing_status": "generated_content_rejected",
+                "next_action": "Regenerate application content against the current Career Engine bundle before rendering",
+                "processing_state": processing_state,
+            },
+            comment="Rejected stale or invalid generated application before rendering or owner approval",
+            actor=actor,
+            action="rejected",
+            requires_owner_review=True,
+        )
+        return {
+            "job_id": job_id,
+            "valid": False,
+            "blocker": "generated_application_invalid",
+            "findings": findings,
+        }
+
     result = render_and_verify(job_id, application, packet, root=root)
     ats_result = (
         render_ats_and_verify(job_id, application, packet, root=root)

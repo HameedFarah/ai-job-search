@@ -224,6 +224,45 @@ def test_finalize_render_moves_tracker_to_owner_approval(
     assert saved_record["submission_package"]["selected_resume_variant"] == "ats-linear"
 
 
+def test_finalize_render_rejects_stale_generated_application_before_render(
+    job_payload: dict,
+    engine_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = dict(job_payload)
+    payload.update({
+        "live_status": "live",
+        "live_verified_at": "2026-08-03T10:00:00+00:00",
+        "live_verification_source": "official employer careers page",
+    })
+    state = prepare(payload, root=engine_root, actor="chatgpt")
+    packet_path = Path(state["outputs"]["generation_packet"])
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    application = valid_application(packet)
+    pending = packet_path.parent / "generated_application.pending.json"
+    pending.write_text(json.dumps(application, ensure_ascii=False, indent=2), encoding="utf-8")
+    imported = import_generated(state["job_id"], pending, root=engine_root, actor="chatgpt")
+    assert imported["valid"] is True
+
+    generated = packet_path.parent / "generated_application.json"
+    stale = json.loads(generated.read_text(encoding="utf-8"))
+    stale["bundle_hash"] = "stale-bundle"
+    generated.write_text(json.dumps(stale, ensure_ascii=False, indent=2), encoding="utf-8")
+    monkeypatch.setattr(
+        "career_engine.pipeline.render_and_verify",
+        lambda *args, **kwargs: pytest.fail("renderer must not run for stale generated content"),
+    )
+
+    result = finalize_render(state["job_id"], root=engine_root, actor="chatgpt")
+    assert result["valid"] is False
+    assert result["blocker"] == "generated_application_invalid"
+    assert any(item["code"] == "bundle_hash" for item in result["findings"])
+    tracker_state = pipeline_status(state["job_id"], root=engine_root)
+    assert tracker_state["job"]["processing_status"] == "generated_content_rejected"
+    assert tracker_state["processing_state"]["status"] == "generated_content_rejected"
+    assert tracker_state["processing_state"]["external_action_allowed"] is False
+
+
 def test_finalize_render_persisted_preview_override_selects_single_cv(
     job_payload: dict,
     engine_root: Path,

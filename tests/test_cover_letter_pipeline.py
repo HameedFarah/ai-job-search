@@ -30,6 +30,8 @@ def test_finalize_render_requires_cover_letter_for_portal(monkeypatch, tmp_path)
     }))
     tracker = FakeTracker()
     monkeypatch.setattr(pipeline, "load_config", lambda root=None: ({}, SimpleNamespace(tracker_base=tmp_path)))
+    monkeypatch.setattr(pipeline, "load_bundle", lambda root=None: {"bundle_hash": "bundle"})
+    monkeypatch.setattr(pipeline, "validate_generated_application", lambda application, packet, bundle: [])
     monkeypatch.setattr(pipeline, "_load_tracker", lambda paths: tracker)
     monkeypatch.setattr(pipeline, "render_and_verify", lambda *a, **k: {
         "valid": True,
