@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from html import unescape
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 from .. import network
 from ..base import DiscoveryJob, SourceAdapter, SourceError, html_to_text
@@ -41,6 +41,10 @@ _WPJM_CONTAINER_RE = re.compile(
     re.I,
 )
 _WPJM_TITLE_RE = re.compile(r'<(?:h2|h3|h4)\b[^>]*>([\s\S]*?)</(?:h2|h3|h4)>', re.I)
+_TRIBEPAD_TITLE_RE = re.compile(r'class=["\'][^"\']*\bjob-list-title\b[^"\']*["\'][^>]*>([\s\S]*?)</span>', re.I)
+_TRIBEPAD_ADDRESS_RE = re.compile(r'itemprop=["\']address["\'][^>]*>([\s\S]*?)</span>', re.I)
+_TRIBEPAD_NEXT_RE = re.compile(r'(?:Next results page|Page number\s+\d+)', re.I)
+_MAX_TRIBEPAD_PAGES = 20
 _MAIN_RE = re.compile(r'<(?:main|article)\b[^>]*>([\s\S]*?)</(?:main|article)>', re.I)
 _ID_RE = re.compile(r'(?<!\d)(\d{2,})(?!\d)')
 
@@ -136,25 +140,41 @@ class OfficialHtmlAdapter(SourceAdapter):
         offline: bool = False,
     ) -> list[DiscoveryJob]:
         name, base, preset = self._spec(company)
+        requested = max(1, min(int(limit), 100))
+
         if offline:
             # Offline consultant-registry tests exercise routing, not these live
             # sites. Return a deterministic empty page only for known presets;
             # parser behaviour itself is covered with mocked live HTML tests.
-            html = self._offline_html(preset)
+            pages = [(base, self._offline_html(preset))]
+        elif preset == "tribepad":
+            pages = self._fetch_tribepad_pages(base)
         else:
-            html = network.fetch_text(base, max_bytes=4 * 1024 * 1024)
-        rows = self._parse(base, html, preset)
-        if not rows:
-            lowered = _clean(html).lower()
-            if not any(marker in lowered for marker in _EMPTY_MARKERS[preset]):
-                raise SourceError(
-                    f"{name} careers page matched no {preset} vacancies and no verified empty-state marker"
-                )
-            return []
+            pages = [(base, network.fetch_text(base, max_bytes=4 * 1024 * 1024))]
 
-        requested = max(1, min(int(limit), 100))
+        rows: list[tuple[str, str, str, str]] = []
+        saw_parseable_page = False
+        for page_url, html in pages:
+            page_rows = self._parse(page_url, html, preset)
+            if page_rows:
+                saw_parseable_page = True
+                rows.extend(page_rows)
+                continue
+            lowered = _clean(html).lower()
+            if any(marker in lowered for marker in _EMPTY_MARKERS[preset]):
+                saw_parseable_page = True
+
+        if not rows and not saw_parseable_page:
+            raise SourceError(
+                f"{name} careers page matched no {preset} vacancies and no verified empty-state marker"
+            )
+
         jobs: list[DiscoveryJob] = []
+        seen_urls: set[str] = set()
         for raw_id, role, loc, detail_url in rows:
+            if detail_url in seen_urls:
+                continue
+            seen_urls.add(detail_url)
             if not _location_matches(location, loc):
                 continue
             jobs.append(self._job(name, raw_id, role, loc, detail_url))
@@ -184,6 +204,25 @@ class OfficialHtmlAdapter(SourceAdapter):
             raise SourceError(f"unsupported official_html preset: {preset}")
         return name, base, preset
 
+    def _fetch_tribepad_pages(self, base: str) -> list[tuple[str, str]]:
+        pages: list[tuple[str, str]] = []
+        root = base.rstrip("/")
+        previous_urls: set[str] = set()
+        for page in range(1, _MAX_TRIBEPAD_PAGES + 1):
+            url = base if page == 1 else f"{root}/{page}"
+            html = network.fetch_text(url, max_bytes=4 * 1024 * 1024)
+            pages.append((url, html))
+            rows = self._parse(url, html, "tribepad")
+            urls = {row[3] for row in rows}
+            if not rows:
+                break
+            if urls and urls == previous_urls:
+                break
+            previous_urls = urls
+            if not _TRIBEPAD_NEXT_RE.search(_clean(html)):
+                break
+        return pages
+
     def _parse(self, base: str, html: str, preset: str) -> list[tuple[str, str, str, str]]:
         if preset == "wpjm":
             rows = self._parse_wpjm(base, html)
@@ -210,6 +249,11 @@ class OfficialHtmlAdapter(SourceAdapter):
             if span in parsed_spans:
                 continue
             parsed_spans.add(span)
+            opening_tag = match.group(0).split(">", 1)[0]
+            # WP Job Manager keeps expired listings in public archives. They are
+            # historical evidence, not live vacancies.
+            if re.search(r"\bstatus-expired\b", opening_tag, re.I):
+                continue
             block = match.groupdict().get("body") or match.group(1)
             href_match = _A_RE.search(block)
             title_match = _WPJM_TITLE_RE.search(block)
@@ -220,12 +264,17 @@ class OfficialHtmlAdapter(SourceAdapter):
             parsed_url = urlsplit(url)
             if (parsed_url.scheme, parsed_url.netloc) != (parsed_base.scheme, parsed_base.netloc):
                 continue
-            if not re.fullmatch(r"/job/[^/]+/?", parsed_url.path, re.I):
+            query = parse_qs(parsed_url.query)
+            is_path_job = bool(re.fullmatch(r"/job/[^/]+/?", parsed_url.path, re.I))
+            query_id = (query.get("p") or [""])[0]
+            is_query_job = query.get("post_type") == ["job_listing"] and bool(query_id)
+            if not is_path_job and not is_query_job:
                 continue
             role = _clean(title_match.group(1))
             loc = _context_location(block)
-            slug = urlsplit(url).path.rstrip("/").split("/")[-1]
-            out.append((slug, role, loc, url))
+            slug = parsed_url.path.rstrip("/").split("/")[-1]
+            raw_id = query_id if is_query_job else slug
+            out.append((raw_id, role, loc, url))
         if not out:
             # Current themes may use nested div cards, which cannot be safely
             # matched with a regex spanning balanced markup. The anchor is a
@@ -237,29 +286,55 @@ class OfficialHtmlAdapter(SourceAdapter):
                 parsed_url = urlsplit(url)
                 if (parsed_url.scheme, parsed_url.netloc) != (parsed_base.scheme, parsed_base.netloc):
                     continue
-                if not re.fullmatch(r"/job/[^/]+/?", parsed_url.path, re.I):
+                query = parse_qs(parsed_url.query)
+                is_path_job = bool(re.fullmatch(r"/job/[^/]+/?", parsed_url.path, re.I))
+                query_id = (query.get("p") or [""])[0]
+                is_query_job = query.get("post_type") == ["job_listing"] and bool(query_id)
+                if not is_path_job and not is_query_job:
+                    continue
+                context = _anchor_context(html, match.start(), match.end())
+                # Query-style URLs are generic WordPress routes. Accept them only
+                # when the anchor is actually enclosed by a singular job_listing
+                # card; a loose marketing/archive link is not a live vacancy.
+                if is_query_job and not re.search(
+                    r'class=["\'][^"\']*\bjob_listing\b[^"\']*["\']', context, re.I
+                ):
+                    continue
+                if re.search(r"\bstatus-expired\b", context, re.I):
                     continue
                 block = match.group(0)
                 title_match = _WPJM_TITLE_RE.search(block)
                 if not title_match:
                     continue
                 role = _clean(title_match.group(1))
-                loc = _context_location(block)
+                loc = _context_location(block) or _context_location(context)
                 slug = parsed_url.path.rstrip("/").split("/")[-1]
-                out.append((slug, role, loc, url))
+                raw_id = query_id if is_query_job else slug
+                out.append((raw_id, role, loc, url))
         return out
 
     def _parse_anchors(self, base: str, html: str, preset: str) -> list[tuple[str, str, str, str]]:
         out: list[tuple[str, str, str, str]] = []
         for match in _A_RE.finditer(html or ""):
             href = unescape(match.group(1)).strip()
-            role = _clean(match.group(2))
+            inner = match.group(2)
+            role = _clean(inner)
             if not href or not role:
                 continue
             url = urljoin(base, href)
             path = urlsplit(url).path.lower()
-            if preset == "tribepad" and "/jobs/job/" not in path:
-                continue
+            if preset == "tribepad":
+                if "/jobs/job/" not in path:
+                    continue
+                title_match = _TRIBEPAD_TITLE_RE.search(inner)
+                role = _clean(title_match.group(1)) if title_match else role
+                address_match = _TRIBEPAD_ADDRESS_RE.search(inner)
+                if address_match:
+                    loc = _clean(address_match.group(1))
+                else:
+                    loc = _context_location(_anchor_context(html, match.start(), match.end()))
+            else:
+                loc = ""
             if preset == "applytojob" and "/apply/" not in path:
                 continue
             if preset == "applytojob" and path.rstrip("/").endswith("/apply"):
@@ -271,8 +346,9 @@ class OfficialHtmlAdapter(SourceAdapter):
             # Ignore generic navigation labels rather than promoting them as jobs.
             if role.lower() in {"jobs", "careers", "career", "apply", "apply now", "view jobs", "show more jobs"}:
                 continue
-            block = _anchor_context(html, match.start(), match.end())
-            loc = _context_location(block)
+            if preset != "tribepad":
+                block = _anchor_context(html, match.start(), match.end())
+                loc = _context_location(block)
             id_match = _ID_RE.search(urlsplit(url).path)
             raw_id = id_match.group(1) if id_match else urlsplit(url).path.rstrip("/").split("/")[-1]
             out.append((raw_id, role, loc, url))
