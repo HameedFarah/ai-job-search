@@ -505,6 +505,74 @@ def _has_owner_force(record: dict[str, Any], config: dict[str, Any]) -> bool:
     return False
 
 
+def _reconcile_submitted_lifecycle(
+    tracker: Any,
+    root: Path | None,
+    *,
+    report: list[dict[str, Any]],
+    preserved: list[dict[str, Any]],
+) -> None:
+    """Keep submitted/sent applications terminal in the processing lifecycle.
+
+    Application evidence is authoritative over a stale internal preparation
+    status.  This repairs any record whose application_status already proves an
+    outward application while preserving the immutable submission artifacts.
+    """
+    for row in tracker.list_rows():
+        job_id = row["job_id"]
+        record = tracker.get_job(job_id)
+        job = record.get("job") or {}
+        application_status = str(job.get("application_status") or "").strip().lower()
+        if application_status not in {"submitted", "sent", "applied"}:
+            continue
+        processing_state = dict(record.get("processing_state") or {})
+        processing_status = str(job.get("processing_status") or row.get("processing_status") or "").strip().lower()
+        if processing_status == "applied" and str(processing_state.get("status") or "").strip().lower() == "applied":
+            preserved.append({
+                "job_id": job_id,
+                "state": "applied",
+                "preserved": True,
+                "reason": "application_submitted",
+            })
+            continue
+
+        previous_status = job.get("processing_status") or row.get("processing_status") or ""
+        processing_state.update({
+            "status": "applied",
+            "external_action_allowed": False,
+            "send_or_submit": False,
+            "reconciled_reason": (
+                f"application_status={application_status} proves the application is already outward; "
+                "processing lifecycle repaired to applied"
+            ),
+        })
+        tracker.update_job(
+            job_id,
+            {
+                "processing_status": "applied",
+                "next_action": "Application already submitted/sent; preserve the submitted package and monitor for outcome.",
+                "processing_state": processing_state,
+            },
+            comment=(
+                f"Reconciled submitted lifecycle: application_status={application_status}; "
+                f"processing_status {previous_status or 'unknown'} -> applied."
+            ),
+            actor="system",
+            action="updated",
+            requires_owner_review=False,
+        )
+        _set_pipeline_stage(root, job_id, "applied")
+        report.append({
+            "job_id": job_id,
+            "company": job.get("company", ""),
+            "role": job.get("role", ""),
+            "from": previous_status,
+            "to": "applied",
+            "reason": "application_submitted_lifecycle_repair",
+            "application_status": application_status,
+        })
+
+
 def _apply_owner_decisions(
     tracker: Any,
     config: dict[str, Any],
@@ -584,6 +652,15 @@ def _apply_owner_decisions(
                 "packet_removed": packet_removed,
             })
         elif decision["decision"] == "accepted":
+            application_status = str(job.get("application_status") or "").strip().lower()
+            if application_status in {"submitted", "sent", "applied"}:
+                preserved.append({
+                    "job_id": job_id,
+                    "state": job.get("processing_status") or "applied",
+                    "preserved": True,
+                    "reason": "application_submitted",
+                })
+                continue
             target_variant = "ats-linear"
             expected_status = "generation_ready"
             decision_score = _effective_score(record, str(job.get("fit_score", "")))
@@ -976,7 +1053,9 @@ def _check_named_roles(tracker: Any, config: dict[str, Any], *, threshold: int) 
         job = record["job"]
         score = _effective_score(record, str(job.get("fit_score", "")))
         status = job["processing_status"]
-        eligible = status == "generation_ready" and score >= threshold
+        application_status = str(job.get("application_status") or "").strip().lower()
+        submitted = application_status in {"submitted", "sent", "applied"}
+        eligible = status == "generation_ready" and score >= threshold and not submitted
         checks.append({
             "job_id": job_id,
             "company": job["company"],
@@ -1006,6 +1085,7 @@ def reconcile(root: Path | None = None) -> dict[str, Any]:
     changed: list[dict[str, Any]] = []
     preserved: list[dict[str, Any]] = []
     notes: list[dict[str, Any]] = []
+    _reconcile_submitted_lifecycle(tracker, root, report=changed, preserved=preserved)
     _apply_owner_decisions(tracker, config, root, report=changed, preserved=preserved, notes=notes, threshold=threshold)
     _reconcile_below_threshold(tracker, config, root, threshold=threshold, report=changed)
     _reconcile_zawaya_duplicate(tracker, root, report=changed, preserved=preserved)
@@ -1160,6 +1240,10 @@ def run(
         job = record.get("job") or {}
         if processing_state.get("status") == "rejected":
             continue
+        application_status = str(job.get("application_status") or record.get("application_status") or "not_submitted").lower()
+        submitted = application_status in {"submitted", "sent", "applied"}
+        if submitted:
+            continue
         score = _effective_score(record, row["fit_score"])
         if score < threshold:
             continue
@@ -1167,11 +1251,9 @@ def run(
         is_generation_ready = row["processing_status"] == "generation_ready"
         if not is_generation_ready and reprocess_existing:
             live_status = str(processing_state.get("live_status") or record.get("live_status") or "").lower()
-            application_status = str(job.get("application_status") or record.get("application_status") or "not_submitted").lower()
             processing_status = str(row.get("processing_status") or "").lower()
             terminal = processing_status in {"applied", "superseded", "rejected", "closed", "inactive"}
-            submitted = application_status in {"submitted", "sent", "applied"}
-            is_generation_ready = live_status == "live" and not terminal and not submitted
+            is_generation_ready = live_status == "live" and not terminal
         if not is_generation_ready:
             continue
         eligible_by_job[row["job_id"]] = score

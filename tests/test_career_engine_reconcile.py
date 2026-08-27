@@ -41,6 +41,7 @@ def seed_job(
     live_status: str = "live",
     route: str = "portal",
     application_url: str = "https://example.org/jobs/123",
+    application_status: str = "not_submitted",
 ) -> None:
     from career_engine.config import load_config
     _, paths = load_config(engine_root)
@@ -70,7 +71,7 @@ def seed_job(
         "cover_letter_status": "not_started",
         "pdf_status": "not_started",
         "gmail_draft_status": "not_started",
-        "application_status": "not_submitted",
+        "application_status": application_status,
         "outcome": "",
         "last_updated": now,
         "next_action": "test",
@@ -263,6 +264,42 @@ def test_faden_persisted_decision(engine_root: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("application_status", ["submitted", "sent", "applied"])
+def test_faden_submitted_application_repairs_processing_lifecycle(
+    engine_root: Path,
+    application_status: str,
+) -> None:
+    seed_job(
+        engine_root,
+        FADEN_JOB_ID,
+        company="FADEN CONTRACTING LTD",
+        role="Architecture Project Manager",
+        score=78,
+        status="generation_ready",
+        application_status=application_status,
+    )
+    result = reconcile(engine_root)
+    status, processing_state = job_status(engine_root, FADEN_JOB_ID)
+    assert status == "applied"
+    assert processing_state["status"] == "applied"
+    assert processing_state["external_action_allowed"] is False
+    assert processing_state["send_or_submit"] is False
+    assert any(
+        item["job_id"] == FADEN_JOB_ID
+        and item["reason"] == "application_submitted_lifecycle_repair"
+        and item["to"] == "applied"
+        for item in result["changed_jobs"]
+    )
+    named = {item["job_id"]: item for item in result["named_generation_ready_checks"]}
+    assert named[FADEN_JOB_ID]["eligible"] is False
+    second = reconcile(engine_root)
+    assert second["changed_count"] == 0
+    assert any(
+        item["job_id"] == FADEN_JOB_ID and item.get("reason") == "application_submitted"
+        for item in second["preserved"]
+    )
+
+
 def test_reconcile_is_idempotent(engine_root: Path) -> None:
     seed_job(engine_root, "9c85bd0d9661c2f34978", company="Gensler", role="Architect - Senior", score=51, status="generation_ready")
     seed_job(engine_root, LUXOFT_JOB_ID, company="Luxoft", role="Project Manager/Scrum Master", score=72, status="generation_ready")
@@ -359,3 +396,32 @@ def test_run_never_sends_or_submits(engine_root: Path, job_payload: dict) -> Non
     assert dashboard_path.is_file()
     assert report["report_path"]
     assert Path(report["report_path"]).is_file()
+
+
+def test_run_excludes_submitted_generation_ready_even_if_reconcile_is_noop(
+    engine_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import career_engine.ops as ops_module
+
+    build_bundle(engine_root)
+    seed_job(
+        engine_root,
+        FADEN_JOB_ID,
+        company="FADEN CONTRACTING LTD",
+        role="Architecture Project Manager",
+        score=86,
+        status="generation_ready",
+        application_status="submitted",
+    )
+    monkeypatch.setattr(
+        ops_module,
+        "reconcile",
+        lambda root=None: {"send_or_submit": False, "changed_count": 0, "changed_job_ids": []},
+    )
+    report = ops_module.run(engine_root, process_all=True)
+    processed_ids = [item["job_id"] for item in report["processed"]]
+    assert FADEN_JOB_ID not in processed_ids
+    assert report["send_or_submit"] is False
+    assert report["drafts_created"] == 0
+    assert report["submissions"] == 0
