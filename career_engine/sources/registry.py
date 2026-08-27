@@ -557,6 +557,37 @@ _SOURCES: list[dict[str, Any]] = [
         "probe": {"verified": False, "companies": [], "verified_at": ""},
     },
     {
+        "id": "keystone",
+        "name": "Keystone AI Public Recruiter Jobs",
+        "kind": "board_web",
+        "priority": 2,
+        "auth": "none",
+        "posting_date": "exact",
+        "official": False,
+        "status": STATUS_PARTIAL,
+        "blocked_reason": (
+            "Public job-detail URLs are probeable and expose dated role content, but the /jobs "
+            "catalog is client-rendered and no stable zero-auth listing API or sitemap has been "
+            "verified. Treat as recruiter-board discovery and require employer/ATS verification "
+            "before authoritative ingestion or application-package generation."
+        ),
+        "base_url": "https://gokeystone.ai/jobs",
+        "docs_url": "https://gokeystone.ai/jobs",
+        "notes": (
+            "No login or private API is used. A concrete public /jobs/<uuid> URL can be probed "
+            "directly; board-wide link extraction is best-effort. Keystone is a recruiter/talent "
+            "platform, not an employer-owned careers source, so emitted records remain unverified."
+        ),
+        "probe": {
+            "verified": True,
+            "companies": [
+                "https://gokeystone.ai/jobs/f6c0ea4a-a504-47b3-b160-6e00d93747a2"
+            ],
+            "verified_at": "2026-08-27",
+        },
+        "manual_only": False,
+    },
+    {
         "id": "gcc_bayt",
         "name": "Bayt.com (GCC/Jordan/MENA)",
         "kind": "board_web",
