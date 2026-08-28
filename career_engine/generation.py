@@ -262,6 +262,9 @@ Use only the evidence claims supplied in this packet. Every factual profile stat
 Do not invent employers, clients, dates, qualifications, metrics, tools or achievements. A genuine gap must remain an acknowledged gap.
 Avoid repetition: never restate the same evidence, figure, subject or outcome in more than one bullet; each bullet must add a distinct responsibility or result.
 Respect attribution: career-wide and current-role claims (for example 112+ projects, portfolio values, KSA team or office figures, and TTW programme and governance metrics) belong in the profile, metric boxes or current-role bullets only; earlier-role bullets must cite only Cube Architects or earlier-role evidence.
+Each achievement bullet may contain no more than two numeric figures in total.
+Never output any value listed in policy.prohibited_experience_names anywhere in employer-facing text. If such a value is also the target employer name, refer to it generically as "your organization" instead.
+Before returning JSON, self-check exact role-bullet counts, earlier-role placement, claim attribution, numeric density, duplicate evidence/figures, prohibited names/terms and the exact required email subject.
 Return only JSON matching the supplied schema. Use ASCII hyphens only. Do not mention availability.
 """
 
@@ -269,10 +272,13 @@ Return only JSON matching the supplied schema. Use ASCII hyphens only. Do not me
 # adapter sees the anti-repetition and anti-attribution-leakage rules explicitly.
 GENERATION_GUIDANCE = [
     "Never restate the same evidence, figure, subject or outcome in more than one bullet; each bullet must add a distinct responsibility or result.",
+    "Each achievement bullet may contain at most two numeric figures in total. Do not combine multiple metric claims into one bullet when that would exceed the limit.",
     "Career-wide and current-role claims (112+ projects, portfolio values, KSA team or office figures, TTW programme and governance metrics) belong in the profile, metric boxes or current-role bullets only.",
     "Earlier-role bullets must cite only Cube Architects or earlier-role evidence (cube.*, earlier.* claims); never place career totals or current-role metrics under an earlier role.",
     "Current-role bullets must never cite cube.* or earlier.* claims; use only verified career-wide, current-role or role-neutral evidence for the current employer.",
-    "Produce exactly eleven earlier-role bullets: seven distinct Cube Design Manager/Senior Architect bullets, then one each for Cube Project Architect, Creative Urban Designs, Al-Mehanya and Sigma. Cite the role-scoped claim that determines placement.",
+    "Produce exactly eleven earlier-role bullets with this evidence placement: bullets 1-7 each use Cube Design Manager/Senior Architect cube.* evidence; bullet 8 uses earlier.cube_project_architect.*; bullet 9 uses earlier.cud.*; bullet 10 uses earlier.procurement.20plus; bullet 11 uses earlier.sigma.*. Do not mix current/career claims into those bullets.",
+    "Never output any value in policy.prohibited_experience_names anywhere in the generated employer-facing text. If one equals the target employer name, refer to the employer generically as your organization.",
+    "Before writing the final JSON, self-check exactly seven current-role bullets, exactly eleven earlier-role bullets, the 7/1/1/1/1 earlier-role evidence buckets, maximum two numeric figures per bullet, no repeated figures/evidence between bullets, and no prohibited names or terms.",
     "Use the exact deterministic cover-email subject supplied in email_draft_policy.expected_subject; do not rewrite or decorate it.",
 ]
 
@@ -565,9 +571,12 @@ def _run_central_dispatcher(packet_path: Path, output_path: Path) -> dict[str, A
     stage_path.unlink(missing_ok=True)
     prompt = (
         "Read the Career Engine generation packet at " + str(packet_path) +
-        ". Write exactly one valid generated-application JSON object to " + str(stage_path) +
-        ". Follow the packet schema and citations. Do not modify any other files. "
-        "This is the single generation pass; do not perform external actions or submit/contact anyone."
+        ". Read and obey its system_instruction, generation_guidance, policy and output schema before drafting. "
+        "Write exactly one valid generated-application JSON object to " + str(stage_path) +
+        ". Follow the packet schema and claim citations. Before writing, self-check: exactly 7 current-role bullets; "
+        "exactly 11 earlier-role bullets with 7/1/1/1/1 evidence placement; no more than 2 numeric figures per bullet; "
+        "no repeated evidence/figures across bullets; no prohibited names/terms; correct role attribution; exact required email subject. "
+        "Do not modify any other files. This is the single generation pass; do not perform external actions or submit/contact anyone."
     )
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as handle:
         handle.write(prompt)
