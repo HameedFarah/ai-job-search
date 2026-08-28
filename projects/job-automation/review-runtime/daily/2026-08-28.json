@@ -1,4 +1,5 @@
 {
+  "controlled_recovery": true,
   "eligible_roles": [],
   "final_run": {
     "completed": true,
@@ -36,6 +37,7 @@
     "submission_confirmation_messages": 0,
     "vacancy_messages": 0
   },
+  "natural_scan": false,
   "operation_date": "2026-08-28",
   "privacy": {
     "contains_application_documents": false,
@@ -56,6 +58,7 @@
     "owner_irrelevant": {},
     "target_lane": {}
   },
+  "recovery_label": "controlled_recovery_post_10_not_natural_09xx_scan",
   "scan": {
     "bundle_hash": "f534d83e9b29b42cd46394dcedb7e1d45988487d58f09dadd4c2f8830719d3b6",
     "current_source_sha": "4287ba2210cd50fa70e2952eb043a0024377a9c8",
