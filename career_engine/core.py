@@ -569,6 +569,12 @@ def _role_title_signals(role: str, taxonomy: dict[str, Any]) -> dict[str, Any]:
     has_design_lane = any(phrase(term) for term in design_lane)
     has_target_management = any(phrase(term) for term in target_management)
     has_out_of_lane = any(phrase(term) for term in out_of_lane) or phrase("account manager")
+    # ``planning`` is normally a different professional lane, but explicit
+    # built-environment management phrases such as Master Planning and Design
+    # Planning are target leadership lanes. Keep the broad planner suppression
+    # while preventing those exact target phrases from being misclassified.
+    if has_target_management and (phrase("master planning") or phrase("design planning")):
+        has_out_of_lane = False
     has_production = any(phrase(term) for term in production)
     has_junior = any(phrase(term) for term in junior)
     # "Assistant" is usually a junior signal, but senior leadership titles such

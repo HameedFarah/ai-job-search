@@ -8,6 +8,7 @@ manual-review/generation attention at all.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,6 +73,39 @@ def auto_skip_reason(normalized_job: dict[str, Any], score: dict[str, Any]) -> s
     if calibration.get("production") and not calibration.get("has_management"):
         return "non_target_production_individual_contributor"
     return ""
+
+
+def target_management_title_candidate(role: str, taxonomy: dict[str, Any]) -> bool:
+    """Return whether a title belongs in the broad senior target-management lane.
+
+    This is a discovery prefilter, not a fit score. It deliberately reuses the
+    central specialization/seniority taxonomy so ATS-specific discovery does
+    not grow its own title rules. Explicit target-management phrases are kept;
+    otherwise a senior title must also contain a built-environment management
+    domain term. Known out-of-lane and junior functions are rejected.
+    """
+
+    title = str(role or "").strip()
+    if not title:
+        return False
+    calibration = _role_title_signals(title, taxonomy)
+    if calibration.get("junior") or calibration.get("out_of_lane"):
+        return False
+    if calibration.get("target_management") or calibration.get("adjacent_design_management"):
+        return True
+    if not calibration.get("has_management"):
+        return False
+
+    normalized = " ".join(re.sub(r"[^a-z0-9]+", " ", title.lower()).split())
+    domains = taxonomy.get("specialization", {}).get("management_lane_domain_terms", [])
+    for term in domains:
+        phrase = " ".join(re.sub(r"[^a-z0-9]+", " ", str(term).lower()).split())
+        if phrase and re.search(
+            r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])",
+            normalized,
+        ):
+            return True
+    return False
 
 
 def auto_skip_title_reason(role: str, taxonomy: dict[str, Any]) -> str:

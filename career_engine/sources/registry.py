@@ -152,13 +152,15 @@ _SOURCES: list[dict[str, Any]] = [
         "base_url": "https://api.lever.co/v0/postings/{company}?mode=json",
         "docs_url": "https://jobs.lever.co/",
         "notes": (
-            "Public postings endpoint; createdAt is a millisecond epoch. Verified live against "
-            "Lever's own demo board (leverdemo). No GCC/KSA board identifier has been confirmed yet."
+            "Public postings endpoint; createdAt is a millisecond epoch. Supports the documented "
+            "global/EU instances and skip/limit pagination. Verified live against GCC employer "
+            "boards Aldar Properties (aldar) and Flow (flowlife); search engines are tenant-discovery "
+            "evidence only and Lever remains the authoritative job-data source after validation."
         ),
         "probe": {
             "verified": True,
-            "companies": ["leverdemo"],
-            "verified_at": "2026-08-05",
+            "companies": ["aldar", "flowlife", "leverdemo"],
+            "verified_at": "2026-08-27",
         },
     },
     {
@@ -586,6 +588,63 @@ _SOURCES: list[dict[str, Any]] = [
             "verified_at": "2026-08-27",
         },
         "manual_only": False,
+    },
+    {
+        "id": "hma",
+        "name": "HMA Public Vacancy API",
+        "kind": "employer_page",
+        "priority": 1,
+        "auth": "none",
+        "posting_date": "unknown",
+        "official": True,
+        "status": STATUS_ACTIVE,
+        "blocked_reason": "",
+        "base_url": "https://hr.hma.sa/api/public-jobs",
+        "docs_url": "https://hr.hma.sa/",
+        "notes": (
+            "First-party unauthenticated public JSON endpoint returning an open-vacancy "
+            "board ({ok,jobs,count}). Open roles use Arabic status 'مفتوحة'. No authenticated "
+            "or internal endpoint is used; closed statuses are dropped so the pipeline never "
+            "promotes stale vacancies. Employer identity is fixed by the adapter and the "
+            "canonical gcc-employers registry, never from a remote self-claim."
+        ),
+        "probe": {
+            "verified": True,
+            "companies": ["https://hr.hma.sa/api/public-jobs"],
+            "verified_at": "2026-08-28",
+        },
+    },
+    {
+        "id": "rwaq",
+        "name": "Rwaq Public Vacancy Board (runtime-discovered Supabase)",
+        "kind": "employer_page",
+        "priority": 2,
+        "auth": "none",
+        "posting_date": "exact",
+        "official": True,
+        "status": STATUS_ACTIVE,
+        "blocked_reason": "",
+        "base_url": "https://www.rwaqeng.com/careers",
+        "docs_url": "https://www.rwaqeng.com/careers",
+        "notes": (
+            "True public React vacancy board. The bounded adapter discovers the current public "
+            "JS asset from the employer careers HTML at runtime, extracts the publicly embedded "
+            "Supabase base URL + anonymous public client key (no hard-coded project identity or "
+            "key), then reads only the public 'jobs' table. It fails closed when credentials "
+            "cannot be discovered or the read fails, emitting no invented data; privileged/"
+            "internal tables and authenticated APIs are never touched. If live discovery cannot "
+            "locate stable public credentials, the route degrades to portal-only with no jobs."
+        ),
+        "probe": {
+            "verified": True,
+            "companies": ["https://www.rwaqeng.com/careers"],
+            "verified_at": "2026-08-28",
+            "evidence": (
+                "Live bounded acceptance returned 10 active vacancies from the first-party public "
+                "jobs table after runtime discovery of the public client configuration; all 10 "
+                "carried affirmative active status and send_or_submit remained false."
+            ),
+        },
     },
     {
         "id": "gcc_bayt",

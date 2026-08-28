@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from career_engine.core import _role_title_signals
-from career_engine.targeting import auto_skip_reason
+from career_engine.targeting import auto_skip_reason, target_management_title_candidate
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,11 +39,35 @@ class TargetLaneSkipTests(unittest.TestCase):
             "Senior Project Manager",
             "Construction Manager",
             "Project Director",
+            "Engineering Director",
+            "Head of Engineering",
+            "Development Director",
+            "Executive Director - Design Management",
+            "Senior Vice President - Master Planning - Projects",
+            "Senior Vice President – Project Management",
+            "Vice President - Development",
+            "Vice President – Landscape",
         ]
         for role in roles:
             with self.subTest(role=role):
                 calibration = _role_title_signals(role, TAXONOMY)
                 self.assertEqual(auto_skip_reason({"role": role}, {"calibration": calibration}), "")
+                self.assertTrue(target_management_title_candidate(role, TAXONOMY))
+
+    def test_generic_senior_titles_require_target_domain(self) -> None:
+        rejected = [
+            "Assistant Vice President - Organizational Development",
+            "Director – Asset Management (Residential/Commercial)",
+            "Vice President – Digital Workspace",
+            "Vice President – Application Managed Services & Delivery",
+            "IT Director",
+            "Finance Director",
+            "Head of Operations",
+            "BIM / CAD Modeler (Revit)",
+        ]
+        for role in rejected:
+            with self.subTest(role=role):
+                self.assertFalse(target_management_title_candidate(role, TAXONOMY))
 
 
 if __name__ == "__main__":

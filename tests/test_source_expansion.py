@@ -32,9 +32,9 @@ class SourceExpansionTests(unittest.TestCase):
         # WSP and Dar Al Omran remain manual because their authoritative pages
         # block the bounded client; Omrania is an explicit Egis duplicate. Six
         # active duplicate records are skipped, leaving 18 attempted sources.
-        self.assertEqual(report["summary"]["active_records"], 24)
+        self.assertEqual(report["summary"]["active_records"], 26)
         self.assertEqual(report["summary"]["sources_skipped"], 6)
-        self.assertEqual(report["summary"]["sources_attempted"], 18)
+        self.assertEqual(report["summary"]["sources_attempted"], 20)
         self.assertFalse(report["send_or_submit"])
         self.assertGreaterEqual(len(report["jobs"]), 1)
         self.assertIn("workday", {job["adapter"] for job in report["jobs"]})
@@ -220,8 +220,8 @@ class SourceExpansionTests(unittest.TestCase):
             root / "projects/job-automation/config/gcc-employers.v1.json"
         ).read_text(encoding="utf-8"))
         employers = payload["employers"]
-        self.assertEqual(len(employers), 50)
-        self.assertEqual(len({item["id"] for item in employers}), 50)
+        self.assertEqual(len(employers), 57)
+        self.assertEqual(len({item["id"] for item in employers}), 57)
         self.assertEqual(payload["policy"]["residential_allowlist_enabled_domains"], [])
         for item in employers:
             self.assertTrue(item["name"])

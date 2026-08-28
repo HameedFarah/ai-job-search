@@ -1,44 +1,44 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.4",
-  "built_at": "2026-08-25T07:54:21+00:00",
-  "source_hash": "713c72a75f903fc3b01ba91a37516fa6102635c29bc9c70637e3e32715aa150b",
+  "built_at": "2026-08-28T08:09:51+00:00",
+  "source_hash": "df2db49f73234853d6095acb2566bcd027c0c04f98e7ff4115435a9369a61bb9",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
       "sha256": "a0e9f3625cb39ca46abebd0ccd0c5f88adca695f2a97f6a00cb3714f10be5113",
       "size": 4245,
-      "modified_ns": 1787644378068639813
+      "modified_ns": 1787863024748606957
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "2f91d66f4d3fd7160c7c0d1fea2042a117c472a3bc3117f20544876f63916408",
-      "size": 10210,
-      "modified_ns": 1787636581124371187
+      "sha256": "9d04c1fcd575e7dbb28c67c59e84cfb76d35459a59c739a108ee2aaf564656e2",
+      "size": 11274,
+      "modified_ns": 1787864084563380738
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
       "sha256": "738151a50e37a2830c6b8f19b35ca53798959027087f6908bb52396d9a9a2f3d",
       "size": 2778,
-      "modified_ns": 1787636581120371190
+      "modified_ns": 1787863024748606957
     },
     {
       "path": "projects/job-automation/config/runtime-bundle.schema.json",
       "sha256": "b76217f713e6a6cbc49479c90f7dbe38481f211c9f850c39ef1ac5e21d07ab1f",
       "size": 730,
-      "modified_ns": 1787636581124371187
+      "modified_ns": 1787863024752606952
     },
     {
       "path": "projects/job-automation/config/gcc-employers.v1.json",
-      "sha256": "698deb347b5e439584078c35ab40d06588c511e76686536843513cbd0f1136db",
-      "size": 18955,
-      "modified_ns": 1787636581120371190
+      "sha256": "a71816328a127c7670e18b128c50f1c1f38403684215b9f7919fb606e9a69375",
+      "size": 23371,
+      "modified_ns": 1787903654200724385
     },
     {
       "path": "projects/job-automation/config/consultants-bookmarks.v1.json",
-      "sha256": "57468e310e253483d62d3fedb4dac2850ef26d08780cf15082877058af620ca6",
-      "size": 13953,
-      "modified_ns": 1787636581120371190
+      "sha256": "21f14dd3af6224f74c1624a70bf96e810d10ba79ba0a7286a95bdf82dd02f23e",
+      "size": 17111,
+      "modified_ns": 1787903634328788686
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
@@ -355,7 +355,13 @@
     "seniority_terms": [
       "manager",
       "senior manager",
+      "general manager",
       "director",
+      "executive director",
+      "associate director",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
       "principal",
       "head",
       "lead",
@@ -373,14 +379,20 @@
     ],
     "gcc_locations": [
       "saudi arabia",
+      "ksa",
       "riyadh",
       "jeddah",
       "dammam",
       "khobar",
       "gcc",
       "uae",
+      "united arab emirates",
+      "abu dhabi",
+      "dubai",
       "qatar",
+      "doha",
       "oman",
+      "muscat",
       "bahrain",
       "kuwait",
       "jordan",
@@ -579,28 +591,68 @@
       "target_management_terms": [
         "design manager",
         "design director",
+        "head of design",
+        "design management",
+        "design planning",
         "project manager",
         "project director",
+        "projects director",
         "director of projects",
+        "project management",
         "program manager",
         "programme manager",
         "program director",
         "programme director",
+        "program management",
+        "programme management",
         "delivery manager",
         "delivery director",
         "construction manager",
         "construction director",
+        "construction management",
         "technical manager",
         "technical director",
         "architecture manager",
         "architecture director",
         "architectural manager",
         "architectural director",
+        "engineering manager",
+        "engineering director",
+        "head of engineering",
+        "development manager",
+        "development director",
+        "development management",
+        "master planning",
+        "masterplan",
+        "general manager",
+        "regional manager",
+        "regional director",
+        "district manager",
         "design lead",
         "project lead",
         "technical lead",
-        "construction lead",
-        "district manager"
+        "construction lead"
+      ],
+      "management_lane_domain_terms": [
+        "design",
+        "architect",
+        "architecture",
+        "architectural",
+        "technical",
+        "project",
+        "projects",
+        "program",
+        "programme",
+        "delivery",
+        "construction",
+        "engineering",
+        "development",
+        "master planning",
+        "masterplan",
+        "landscape",
+        "public realm",
+        "real estate",
+        "property"
       ],
       "out_of_lane_terms": [
         "planner",
@@ -609,7 +661,7 @@
         "scheduling",
         "schedule manager",
         "project engineer",
-        "engineering manager",
+        "project engineering manager",
         "site engineer",
         "process engineer",
         "civil engineer",
@@ -645,6 +697,12 @@
         "senior commercial manager",
         "commercial head",
         "head of commercial",
+        "asset management",
+        "organizational development",
+        "organization development",
+        "managed services",
+        "application managed services",
+        "talent",
         "procurement",
         "financial",
         "finance",
@@ -1550,6 +1608,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "f534d83e9b29b42cd46394dcedb7e1d45988487d58f09dadd4c2f8830719d3b6",
+  "bundle_hash": "c0756035e5881ac70d2fc8f58644a6e4bc97c6f75fb8d32e7a16b63d83efe8dd",
   "cache_reused": false
 }

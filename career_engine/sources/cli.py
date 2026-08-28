@@ -118,6 +118,12 @@ def build_adapter(
     elif adapter_id == "jsonld":
         from .adapters.jsonld import JsonLdAdapter
         cls = JsonLdAdapter
+    elif adapter_id == "hma":
+        from .adapters.hma import HmaAdapter
+        cls = HmaAdapter
+    elif adapter_id == "rwaq":
+        from .adapters.rwaq import RwaqAdapter
+        cls = RwaqAdapter
     elif adapter_id == "keystone":
         from .adapters.keystone import KeystoneAdapter
         cls = KeystoneAdapter
@@ -308,6 +314,97 @@ def run_ingest(file_path: str, *, scanner_id: str, output: str = "") -> dict[str
     return report
 
 
+def run_lever_discovery(
+    *,
+    root: Path,
+    candidate_urls: list[str] | None = None,
+    include_search: bool = False,
+    max_queries: int = 24,
+    limit_per_tenant: int = 1000,
+) -> dict[str, Any]:
+    """Discover, validate and emit GCC-relevant Lever jobs without side effects.
+
+    Known employer identity comes only from the existing GCC employer registry.
+    Search-engine results may add candidate tenant URLs, but remain discovery
+    evidence and are not allowed to emit jobs until their employer identity is
+    promoted into that canonical registry.
+    """
+
+    from .lever_tenants import (
+        candidates_from_urls,
+        discover_with_brave,
+        load_registry_candidates,
+        merge_candidates,
+        validate_candidate,
+    )
+
+    registry_candidates = load_registry_candidates(root)
+    extras = candidates_from_urls(candidate_urls or [], discovery_source="user_or_search_candidate_url")
+    search_report: dict[str, Any] = {
+        "status": "not_requested",
+        "queries_attempted": 0,
+        "candidate_urls": [],
+        "send_or_submit": False,
+    }
+    if include_search:
+        search_report = discover_with_brave(root, max_queries=max_queries)
+        extras.extend(
+            candidates_from_urls(
+                search_report.get("candidate_urls", []),
+                discovery_source="brave_search_tenant_discovery",
+            )
+        )
+
+    candidates = merge_candidates([*registry_candidates, *extras])
+    validations: list[dict[str, Any]] = []
+    scanner_jobs: list[dict[str, Any]] = []
+    seen_jobs: set[tuple[str, str, str]] = set()
+    duplicates = 0
+    for candidate in candidates:
+        result = validate_candidate(candidate, root=root, job_limit=limit_per_tenant)
+        job_records = result.pop("relevant_job_records", [])
+        validations.append(result)
+        if not result.get("active"):
+            continue
+        for job in job_records:
+            job.company = candidate.employer_name or job.company
+            key = (job.adapter_id, candidate.tenant.slug, job.external_job_id or job.detail_url)
+            if key in seen_jobs:
+                duplicates += 1
+                continue
+            seen_jobs.add(key)
+            scanner_jobs.append(job.to_scanner_job(live_status="live"))
+
+    active = [row for row in validations if row.get("active")]
+    api_verified = [row for row in validations if row.get("api_verified")]
+    return {
+        "schema_version": 1,
+        "adapter": "lever",
+        "send_or_submit": False,
+        "offline_fixture": False,
+        "ingest_allowed_in_production": True,
+        "search_discovery": search_report,
+        "tenants": validations,
+        "jobs": scanner_jobs,
+        "duplicates_dropped": duplicates,
+        "summary": {
+            "tenant_candidates": len(validations),
+            "api_validated": len(api_verified),
+            "active_identity_verified_tenants": len(active),
+            "published_vacancies": sum(int(row.get("jobs") or 0) for row in active),
+            "gcc_vacancies": sum(int(row.get("gcc_jobs") or 0) for row in active),
+            "relevant_jobs_emitted": len(scanner_jobs),
+            "duplicates_dropped": duplicates,
+            "send_or_submit": False,
+        },
+        "notes": [
+            "Search discovery identifies tenant URLs only; it is never job authority.",
+            "Only identity-verified tenants from the canonical GCC employer registry emit jobs.",
+            "Jobs are read from Lever's public Postings API and pass the existing Career Engine target-title/geography controls before central scanner ingestion.",
+        ],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="career-engine-sources",
@@ -356,6 +453,17 @@ def build_parser() -> argparse.ArgumentParser:
     consultants.add_argument("--limit", type=int, default=25)
     consultants.add_argument("--offline", action="store_true")
     consultants.add_argument("--output", default="")
+
+    lever_discover = sub.add_parser(
+        "lever-discover",
+        help="Discover/validate Lever tenants and emit target GCC jobs for central scanner ingestion",
+    )
+    lever_discover.add_argument("--root", default="")
+    lever_discover.add_argument("--candidate-url", action="append", default=[])
+    lever_discover.add_argument("--include-search", action="store_true")
+    lever_discover.add_argument("--max-queries", type=int, default=24)
+    lever_discover.add_argument("--limit-per-tenant", type=int, default=1000)
+    lever_discover.add_argument("--output", default="")
     return parser
 
 
@@ -409,6 +517,21 @@ def main(argv: list[str] | None = None) -> int:
             from .consultants import scan_consultants
             from ..config import repo_root
             result = scan_consultants(root=Path(args.root) if args.root else repo_root(), limit=args.limit, offline=args.offline)
+            if args.output:
+                out = Path(args.output)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            emit(result)
+            return 0
+        if args.command == "lever-discover":
+            from ..config import repo_root
+            result = run_lever_discovery(
+                root=Path(args.root) if args.root else repo_root(),
+                candidate_urls=list(args.candidate_url or []),
+                include_search=bool(args.include_search),
+                max_queries=args.max_queries,
+                limit_per_tenant=args.limit_per_tenant,
+            )
             if args.output:
                 out = Path(args.output)
                 out.parent.mkdir(parents=True, exist_ok=True)

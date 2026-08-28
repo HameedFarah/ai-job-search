@@ -219,7 +219,7 @@ class ConsultantRegistryRepairTests(unittest.TestCase):
         self.rows = {row["id"]: row for row in self.payload["bookmarks"]}
 
     def test_target_routes_are_explicit_and_no_bypass_is_enabled(self) -> None:
-        self.assertEqual(len(self.payload["bookmarks"]), 37)
+        self.assertEqual(len(self.payload["bookmarks"]), 43)
         self.assertEqual(self.rows["saudconsult"]["adapter"], "official_html")
         self.assertEqual(self.rows["al-othaim-investment"]["url"], "https://www.alothaiminvestment.com/careers")
         self.assertEqual(self.rows["omrania"]["duplicate_of"], "egis")
@@ -237,9 +237,9 @@ class ConsultantRegistryRepairTests(unittest.TestCase):
 
     def test_offline_registry_summary_matches_repaired_states(self) -> None:
         report = scan_consultants(root=self.root, offline=True, limit=3)
-        self.assertEqual(report["summary"]["active_records"], 24)
+        self.assertEqual(report["summary"]["active_records"], 26)
         self.assertEqual(report["summary"]["sources_skipped"], 6)
-        self.assertEqual(report["summary"]["sources_attempted"], 18)
+        self.assertEqual(report["summary"]["sources_attempted"], 20)
         self.assertFalse(report["send_or_submit"])
 
 
