@@ -12,8 +12,8 @@ def test_all_consultants_bookmarks_are_accounted_for_and_deduplicated():
     rows = payload["bookmarks"]
     # The stale, unidentified SuccessFactors `abdullahal` bookmark was
     # deliberately deleted after employer-specific endpoint verification.
-    assert len(rows) == 37
-    assert len({row["id"] for row in rows}) == 37
+    assert len(rows) == 43
+    assert len({row["id"] for row in rows}) == 43
     assert "sap-successfactors-abdullahal" not in {row["id"] for row in rows}
     assert all(row.get("url") for row in rows)
     assert all(row["scan"] is False for row in rows if row["class"] in {

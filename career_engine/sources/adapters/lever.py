@@ -1,11 +1,13 @@
 """Lever Postings API adapter (public, unauthenticated).
 
-- List: ``GET https://api.lever.co/v0/postings/{company}?mode=json&limit=N``
+Uses the documented tenant-scoped public Postings API with ``skip``/``limit``
+pagination on both Lever's global and EU public instances. Posting date comes
+from ``createdAt`` (millisecond epoch, exact day). Live GCC boards verified on
+2026-08-27 include Aldar Properties (``aldar``) and Flow (``flowlife``).
 
-Posting date: ``createdAt`` (millisecond epoch, exact day). Verified live
-against Lever's own demo board ``leverdemo`` on 2026-08-05. The API does not
-return a company name, so the probe-supplied identifier is used as the display
-name unless the posting embeds one.
+The API does not reliably return the employer display name, so the adapter
+retains the tenant slug; the canonical employer registry upgrades that identity
+before CareerTracker ingestion.
 """
 
 from __future__ import annotations
@@ -16,9 +18,10 @@ from typing import Any
 from .. import network
 from ..base import DiscoveryJob, SourceAdapter, SourceError, html_to_text
 from ..dates import parse_ms_epoch
+from ..lever_tenants import normalize_tenant
 from ..provenance import provenance as make_provenance
 
-LIST_TEMPLATE = "https://api.lever.co/v0/postings/{company}?mode=json"
+PAGE_SIZE = 100
 
 
 class LeverAdapter(SourceAdapter):
@@ -36,20 +39,29 @@ class LeverAdapter(SourceAdapter):
         fetch_full: bool = False,
         offline: bool = False,
     ) -> list[DiscoveryJob]:
-        slug = company.strip()
-        if not slug:
-            raise SourceError("Lever company identifier is required")
-        url = f"{LIST_TEMPLATE.format(company=slug)}&limit={max(1, min(limit, 50))}"
-        payload = self._load(url, offline)
-        if not isinstance(payload, list):
-            raise SourceError(f"Unexpected Lever response shape for {slug!r}")
+        tenant = normalize_tenant(company)
+        requested = max(1, min(int(limit), 5000))
         results: list[DiscoveryJob] = []
-        for item in payload:
-            job = self._map_job(item, slug)
-            if location and location.lower() not in job.location.lower():
-                continue
-            results.append(job)
-        return results[:limit]
+        skip = 0
+        while len(results) < requested:
+            page_limit = min(PAGE_SIZE, requested)
+            url = f"{tenant.api_url}?mode=json&skip={skip}&limit={page_limit}"
+            payload = self._load(url, offline)
+            if not isinstance(payload, list):
+                raise SourceError(f"Unexpected Lever response shape for {tenant.slug!r}")
+            if not payload:
+                break
+            for item in payload:
+                job = self._map_job(item, tenant.slug, tenant.instance)
+                if location and location.lower() not in job.location.lower():
+                    continue
+                results.append(job)
+                if len(results) >= requested:
+                    break
+            skip += len(payload)
+            if offline or len(payload) < page_limit:
+                break
+        return results[:requested]
 
     def fetch(
         self,
@@ -61,13 +73,21 @@ class LeverAdapter(SourceAdapter):
     ) -> DiscoveryJob:
         raise SourceError("Lever detail lookup requires the full listing mode=json; use search()")
 
+    @staticmethod
+    def _all_locations(value: Any) -> list[str]:
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
+
     def _load(self, url: str, offline: bool) -> Any:
         if offline:
             with open(self._fixture_path("lever-list.json"), encoding="utf-8") as handle:
                 return json.load(handle)
         return network.fetch_json(url)
 
-    def _map_job(self, item: dict[str, Any], slug: str) -> DiscoveryJob:
+    def _map_job(self, item: dict[str, Any], slug: str, instance: str = "global") -> DiscoveryJob:
         title = str(item.get("text") or item.get("title") or "").strip()
         company = str(item.get("company") or item.get("companyName") or "").strip() or slug
         categories = item.get("categories") or {}
@@ -77,9 +97,20 @@ class LeverAdapter(SourceAdapter):
         apply_url = str(item.get("applyUrl") or urls.get("apply") or "").strip() or detail_url
         external_id = str(item.get("id") or "")
         description_parts: list[str] = []
+        seen_description_parts: set[str] = set()
+
+        def append_description_part(value: Any) -> None:
+            raw = str(value or "").strip()
+            if not raw:
+                return
+            fingerprint = " ".join(html_to_text(raw).lower().split())
+            if not fingerprint or fingerprint in seen_description_parts:
+                return
+            seen_description_parts.add(fingerprint)
+            description_parts.append(raw)
+
         for key in ("description", "descriptionBody", "opening"):
-            if item.get(key):
-                description_parts.append(str(item[key]))
+            append_description_part(item.get(key))
         lists = item.get("lists")
         if isinstance(lists, dict):
             for key in ("position", "qualifications", "responsibilities", "niceToHave"):
@@ -118,6 +149,12 @@ class LeverAdapter(SourceAdapter):
                 detail_url=detail_url,
                 raw_id=external_id,
             ),
+            extra={
+                "tenant": slug,
+                "lever_instance": instance,
+                "country": str(item.get("country") or "").strip(),
+                "all_locations": self._all_locations(categories.get("allLocations")),
+            },
         )
 
 

@@ -144,6 +144,8 @@ class KeystoneAdapter(SourceAdapter):
         job_id = job_id_match.group(1).lower()
 
         payload = self._jobposting_jsonld(page_html)
+        streamed = self._public_ssr_job(page_html)
+        extraction = "public Keystone job detail HTML"
         if payload:
             role = self._clean(payload.get("title"))
             description_html = self._clean(payload.get("description"), preserve=True)
@@ -153,6 +155,18 @@ class KeystoneAdapter(SourceAdapter):
             if isinstance(hiring_org, dict):
                 company = self._clean(hiring_org.get("name"))
             posted = parse_date(payload.get("datePosted"), "keystone JobPosting.datePosted")
+            extraction = "public Keystone JobPosting JSON-LD"
+        elif streamed:
+            role = self._clean(streamed.get("externalJobTitle"))
+            description_html = self._clean(streamed.get("jobDescription"), preserve=True)
+            location = self._clean(
+                streamed.get("formattedAddress")
+                or streamed.get("rawCityCountry")
+                or streamed.get("city")
+            )
+            company = ""
+            posted = parse_date(streamed.get("publishedAt"), "keystone public SSR publishedAt")
+            extraction = "public Keystone server-rendered job payload"
         else:
             role = self._heading(page_html)
             description_html = page_html
@@ -176,11 +190,7 @@ class KeystoneAdapter(SourceAdapter):
             source_name=self.source_name,
             source_kind=self.source_kind,
             official=False,
-            extracted_from=(
-                "public Keystone JobPosting JSON-LD"
-                if payload
-                else "public Keystone job detail HTML"
-            ),
+            extracted_from=extraction,
             detail_url=url,
             raw_id=job_id,
             verification=(
@@ -210,6 +220,54 @@ class KeystoneAdapter(SourceAdapter):
                 "employer_official_verified": False,
             },
         )
+
+    @staticmethod
+    def _public_ssr_job(page_html: str) -> dict[str, Any] | None:
+        """Extract the public server-rendered Keystone job payload.
+
+        Keystone currently streams the already-public job fields into the HTML
+        for client hydration. This parser reads only those embedded public-page
+        fields; it does not call or infer Keystone's private GraphQL endpoint.
+        """
+
+        fields = (
+            "externalJobTitle",
+            "jobDescription",
+            "publishedAt",
+            "formattedAddress",
+            "rawCityCountry",
+            "city",
+            "country",
+        )
+        result: dict[str, Any] = {}
+        for field in fields:
+            value = KeystoneAdapter._public_ssr_string(page_html, field)
+            if value:
+                result[field] = value
+        if not result.get("externalJobTitle") or not result.get("jobDescription"):
+            return None
+        return result
+
+    @staticmethod
+    def _public_ssr_string(page_html: str, field: str) -> str:
+        escaped = re.compile(
+            rf'\\"{re.escape(field)}\\":\\"((?:\\\\.|[^"\\])*)\\"',
+            re.DOTALL,
+        )
+        plain = re.compile(
+            rf'"{re.escape(field)}":"((?:\\.|[^"\\])*)"',
+            re.DOTALL,
+        )
+        for pattern in (escaped, plain):
+            match = pattern.search(page_html or "")
+            if not match:
+                continue
+            raw = match.group(1)
+            try:
+                return str(json.loads(f'"{raw}"')).strip()
+            except (json.JSONDecodeError, TypeError):
+                return html_lib.unescape(raw).strip()
+        return ""
 
     @staticmethod
     def _jobposting_jsonld(page_html: str) -> dict[str, Any] | None:

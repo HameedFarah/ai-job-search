@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-08-06",
+  "updated": "2026-08-27",
   "purpose": "GCC priority-employer discovery and official-domain verification registry",
   "policy": {
     "official_source_required_for_authoritative_promotion": true,
@@ -283,11 +283,17 @@
       "official_domains": [
         "aldar.com"
       ],
+      "official_ats_url": "https://jobs.lever.co/aldar",
+      "ats": {
+        "adapter": "lever",
+        "identifier": "aldar"
+      },
       "discovery_query": "site:aldar.com careers jobs",
       "preferred_sources": [
         "official_employer_page",
         "official_ats"
       ],
+      "source_classification": "developer_client_employer",
       "residential_fallback_allowed": false
     },
     {
@@ -680,6 +686,107 @@
       "preferred_sources": ["official_employer_page"],
       "source_classification": "direct_employer_consultant",
       "residential_fallback_allowed": false
+    },
+    {
+      "id": "flow",
+      "name": "Flow",
+      "market": "SA",
+      "official_domains": ["flow.life"],
+      "official_ats_url": "https://jobs.lever.co/flowlife",
+      "ats": {
+        "adapter": "lever",
+        "identifier": "flowlife"
+      },
+      "discovery_query": "site:flow.life careers Riyadh jobs",
+      "preferred_sources": ["official_employer_page", "official_ats"],
+      "source_classification": "developer_client_employer",
+      "residential_fallback_allowed": false
+    },
+    {
+      "id": "asd-architects",
+      "name": "ASD Architects",
+      "market": "SA",
+      "official_domains": ["asdarchitects.com"],
+      "official_careers_url": "https://www.asdarchitects.com/career.html",
+      "discovery_query": "site:asdarchitects.com career",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false,
+      "route_status": "portal_only_manual",
+      "verified_note": "2026-08-28: general CV form only; no discrete public vacancies. Scan disabled."
+    },
+    {
+      "id": "advconcenter",
+      "name": "Advanced Consultancy Center",
+      "market": "SA",
+      "official_domains": ["advconcenter.net"],
+      "official_careers_url": "https://www.advconcenter.net/careers/",
+      "discovery_query": "site:advconcenter.net careers",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false,
+      "route_status": "portal_only_manual",
+      "verified_note": "2026-08-28: CV-upload portal only; no public vacancy board. Scan disabled."
+    },
+    {
+      "id": "taibacc",
+      "name": "Taiba Consulting",
+      "market": "SA",
+      "official_domains": ["taibacc.com"],
+      "official_careers_url": "https://taibacc.com/careers/",
+      "discovery_query": "site:taibacc.com careers",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false,
+      "route_status": "portal_only_manual",
+      "verified_note": "2026-08-28: general application + official Google Form; no discrete public vacancies. Scan disabled."
+    },
+    {
+      "id": "madar",
+      "name": "Madar Al Jazeera",
+      "market": "SA",
+      "official_domains": ["madar-eng.com"],
+      "official_careers_url": "https://madar-eng.com/vacancies/",
+      "discovery_query": "site:madar-eng.com vacancies",
+      "preferred_sources": ["official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false,
+      "route_status": "portal_only_manual",
+      "verified_note": "2026-08-28: recruitment form + 'available jobs' heading but no discrete public records. Scan disabled; promote only if stable public role records appear."
+    },
+    {
+      "id": "hma",
+      "name": "HMA",
+      "market": "SA",
+      "official_domains": ["hma.sa"],
+      "official_careers_url": "https://hr.hma.sa/",
+      "ats": {
+        "adapter": "hma",
+        "identifier": "https://hr.hma.sa/api/public-jobs"
+      },
+      "discovery_query": "site:hr.hma.sa jobs",
+      "preferred_sources": ["official_ats", "official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false,
+      "route_status": "vacancy_source",
+      "verified_note": "2026-08-28: live first-party public-jobs JSON endpoint; bounded official adapter."
+    },
+    {
+      "id": "rwaq",
+      "name": "Rwaq",
+      "market": "SA",
+      "official_domains": ["rwaqeng.com"],
+      "official_careers_url": "https://www.rwaqeng.com/careers",
+      "ats": {
+        "adapter": "rwaq",
+        "identifier": "https://www.rwaqeng.com/careers"
+      },
+      "discovery_query": "site:rwaqeng.com careers",
+      "preferred_sources": ["official_ats", "official_employer_page"],
+      "source_classification": "direct_employer_consultant",
+      "residential_fallback_allowed": false,
+      "route_status": "vacancy_source",
+      "verified_note": "2026-08-28: public React + Supabase board; runtime-discovery adapter, fail-closed."
     }
   ]
 }
