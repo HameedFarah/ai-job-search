@@ -450,6 +450,22 @@ def test_email_subject_policy_uses_job_instruction_then_fallback(job_payload: di
     assert packet["email_draft_policy"]["expected_subject"] == f"Abdelhamid Farah - {normalized['role']}"
     assert packet["email_draft_policy"]["subject_source"] == "fallback"
 
+    unicode_dash = dict(fallback)
+    unicode_dash["role"] = "Director – Design Planning & Services"
+    normalized = normalize_job(unicode_dash, bundle["taxonomy"])
+    matches = match_evidence(normalized, bundle)
+    packet = create_generation_packet(
+        job_id="subject-policy-ascii-dash",
+        normalized_job=normalized,
+        matches=matches,
+        score=score_fit(normalized, matches, bundle),
+        route=decide_route(normalized, bundle),
+        bundle=bundle,
+    )
+    assert packet["email_draft_policy"]["expected_subject"] == "Abdelhamid Farah - Director - Design Planning & Services"
+    assert "–" not in packet["email_draft_policy"]["expected_subject"]
+    assert "—" not in packet["email_draft_policy"]["expected_subject"]
+
 
 def valid_application(packet: dict) -> dict:
     claims = [item["id"] for item in packet["selected_claims"]]

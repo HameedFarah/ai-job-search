@@ -284,8 +284,9 @@ def expected_email_subject(normalized_job: dict[str, Any], bundle: dict[str, Any
     identity = bundle.get("identity", {})
     policy = bundle["config"]["policy"]
     pattern = str(policy.get("email_subject_fallback", "{name} - {post_name}"))
+    role = str(normalized_job.get("role", "Position")).replace("—", "-").replace("–", "-")
     subject = pattern.replace("{name}", str(identity.get("name", "Abdelhamid Farah"))).replace(
-        "{post_name}", str(normalized_job.get("role", "Position"))
+        "{post_name}", role
     )
     return subject.strip(), "fallback"
 
