@@ -57,6 +57,13 @@ def test_source_preflight_refuses_dirty_checkout(tmp_path, monkeypatch):
         mod.ensure_canonical_source(tmp_path)
 
 
+def test_daily_context_treats_linkedin_and_freehire_as_source_adapters_not_scheduler_skills():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "attached LinkedIn-public, Freehire" not in text
+    assert "they are source adapters, not scheduler skill attachments" in text
+    assert "do not add or edit Hermes scheduler skills during a scan" in text
+
+
 def test_source_preflight_refuses_ahead_or_diverged_checkout(tmp_path, monkeypatch):
     (tmp_path / ".git").mkdir()
 
