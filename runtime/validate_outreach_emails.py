@@ -18,7 +18,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from career_engine.rega_enrichment.outscraper_validation import validate_emails
+from career_engine.rega_enrichment.outscraper_validation import MAX_BATCH_SIZE, validate_emails
 from career_engine.rega_enrichment.provider_clients import OutscraperClient, ProviderBudget
 
 
@@ -56,7 +56,12 @@ def main() -> int:
     parser.add_argument("--email-column", default="Email", help="Email column name; default: Email")
     parser.add_argument("--output-jsonl", required=True, help="Sanitized per-email result JSONL")
     parser.add_argument("--summary", required=True, help="Sanitized summary JSON")
-    parser.add_argument("--batch-size", type=int, default=250, help="1-1000; default 250")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=MAX_BATCH_SIZE,
+        help=f"1-{MAX_BATCH_SIZE}; default {MAX_BATCH_SIZE}",
+    )
     parser.add_argument(
         "--allow-existing-credit",
         action="store_true",
@@ -79,7 +84,7 @@ def main() -> int:
             + str(account_probe.get("status") or "unknown")
         )
 
-    batch_size = max(1, min(int(args.batch_size), 1000))
+    batch_size = max(1, min(int(args.batch_size), MAX_BATCH_SIZE))
     input_path = Path(args.input)
     output_path = Path(args.output_jsonl)
     summary_path = Path(args.summary)
@@ -121,6 +126,7 @@ def main() -> int:
         "unique_emails": len(emails),
         "provider": "outscraper",
         "account_probe": "success",
+        "batch_size": batch_size,
         "counts": dict(sorted(counts.items())),
         "receiving": counts.get("RECEIVING", 0),
         "invalid": counts.get("INVALID", 0),
