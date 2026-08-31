@@ -12,6 +12,12 @@ the cron context can include its counts.  ``auto`` prefers the
 repository gws integration; if gws is unavailable a bounded himalaya
 read-only path would be accepted, but gws is verified live as
 ``hameedo@gmail.com`` so that fallback is not exercised.
+
+The proactive portfolio-outreach campaign uses a stable subject and can produce
+hundreds of Sent messages in a day. Those messages are not job-application
+submission evidence and must not consume the bounded reconciliation window.
+This helper therefore filters that exact outreach subject at the Gmail query
+boundary while leaving the canonical reconciliation/matching logic unchanged.
 """
 
 from __future__ import annotations
@@ -19,12 +25,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+OUTREACH_SUBJECT = "Abdelhamid Farah | Senior Design & Project Leadership"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,9 +69,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        from career_engine.gmail_reconcile import reconcile_submission_mail
+        import career_engine.gmail_reconcile as gmail_reconcile
 
-        report = reconcile_submission_mail(root, start=start, max_results=args.limit)
+        canonical_search = gmail_reconcile.search_messages
+
+        def submission_search(query: str, *, max_results: int = 100):
+            filtered = f'{query} -subject:"{OUTREACH_SUBJECT}"'
+            return canonical_search(filtered, max_results=max_results)
+
+        # Keep matching/state logic centralized in gmail_reconcile; only narrow
+        # the mailbox query used by this cron helper so mass outreach cannot
+        # starve real application receipts from the bounded result window.
+        gmail_reconcile.search_messages = submission_search
+        report = gmail_reconcile.reconcile_submission_mail(root, start=start, max_results=args.limit)
         # Map to the shape the cron context script expects.
         reconciled = report.get("reconciled", []) if isinstance(report.get("reconciled"), list) else []
         unmatched = report.get("unmatched", []) if isinstance(report.get("unmatched"), list) else []

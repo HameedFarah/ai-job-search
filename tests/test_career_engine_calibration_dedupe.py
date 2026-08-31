@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from career_engine.core import _role_title_signals
+from career_engine.core import _role_title_signals, domain_requirement_gate, score_fit
 from career_engine.sources.dedupe import stable_vacancy_identity
 
 
@@ -15,6 +15,8 @@ def test_functional_title_calibration_and_positive_controls():
     assert _role_title_signals("Fraud Investigator", tx)["out_of_lane"]
     assert _role_title_signals("Revit Draftsperson", tx)["production"]
     assert _role_title_signals("Lighting SME", tx)["out_of_lane"]
+    assert _role_title_signals("Contract Adiministrator", tx)["out_of_lane"]
+    assert _role_title_signals("Business Development Manager", tx)["out_of_lane"]
     mep = _role_title_signals("Construction Manager (MEP)", tx)
     assert mep["out_of_lane"] and not mep["target_management"]
     for title in ("Architectural Design Manager", "Design Manager - Interior Design", "Project Manager", "Director of Projects", "Construction Manager", "Construction Lead"):
@@ -25,6 +27,61 @@ def test_functional_title_calibration_and_positive_controls():
     assert assistant_director["has_management"]
     assert not assistant_director["junior"]
     assert _role_title_signals("Assistant Architect", tx)["junior"]
+
+
+def _minimal_bundle(tx):
+    return {
+        "config": {
+            "scoring": {
+                "weights": {
+                    "mandatory_coverage": 42,
+                    "preferred_coverage": 13,
+                    "leadership": 15,
+                    "seniority": 12,
+                    "sector": 8,
+                    "geography": 5,
+                    "credentials": 5,
+                },
+                "thresholds": {"high_priority": 70, "credible": 65, "selective": 50, "weak": 0},
+                "llm_adjustment_ceiling": 5,
+            }
+        },
+        "taxonomy": tx,
+        "identity": {"nationalities": ["Jordanian", "Brazilian"]},
+        "claims": [],
+    }
+
+
+def _score(role, jd):
+    tx = taxonomy()
+    job = {
+        "role": role,
+        "full_job_description": jd,
+        "location": "Riyadh, Saudi Arabia",
+        "requirements": [],
+    }
+    return score_fit(job, [], _minimal_bundle(tx))
+
+
+def test_software_engineering_manager_is_not_built_environment_high_priority():
+    score = _score(
+        "Engineering Manager - I",
+        "Lead a software engineering team building Java microservices on Kubernetes with CI/CD and AWS cloud platform delivery.",
+    )
+    assert score["calibration"]["out_of_lane"] is True
+    assert score["calibration"]["jd_out_of_lane"] == "specialist_delivery_domain"
+    assert score["total"] < 50
+
+
+def test_rail_construction_management_is_specialist_without_rail_evidence():
+    tx = taxonomy()
+    assert domain_requirement_gate("Minimum 15 years of experience in rail construction", tx) == "rail_transit"
+    score = _score(
+        "Construction Lead",
+        "Lead rail construction delivery for a major metro programme and coordinate rail infrastructure contractors.",
+    )
+    assert score["calibration"]["out_of_lane"] is True
+    assert score["total"] < 50
 
 
 def test_stable_requisition_identity_is_cross_source_but_not_title_only():
