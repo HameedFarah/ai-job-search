@@ -125,7 +125,7 @@
   },
   "daily_scanner": {
     "minimum_score_for_generation": 70,
-    "maximum_generation_packets_per_scan": 5,
+    "maximum_generation_packets_per_scan": 20,
     "send_or_submit": false
   }
 }
