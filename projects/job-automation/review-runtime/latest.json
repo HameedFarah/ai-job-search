@@ -152,18 +152,34 @@
     }
   ],
   "final_run": {
-    "completed": false,
+    "completed": true,
     "dashboard": {
-      "counts": null,
-      "jobs": null,
-      "publisher": null
+      "counts": {
+        "applied": 59,
+        "awaiting_owner_approval": 30,
+        "blocked": 573,
+        "generated_content_rejected": 3,
+        "generated_content_valid": 2,
+        "generation_ready": 14,
+        "inactive": 13,
+        "ingested": 11,
+        "manual_review_needed": 499,
+        "rejected": 1111,
+        "superseded": 177
+      },
+      "jobs": 2492,
+      "publisher": {
+        "deployed": false,
+        "established_publisher": "Static career-review site at dashboard/career-review (scripts/build_site.js builds from the canonical tracker; scripts/publish_here_now.js deploys the permanent here.now URL).",
+        "live_deploy": "external consequential action requiring explicit owner approval; not performed from this workspace"
+      }
     },
     "deferred_count": 0,
     "error_count": 0,
-    "process_all": false,
-    "processed_count": 0
+    "process_all": true,
+    "processed_count": 14
   },
-  "generated_at": "2026-08-31T06:13:22+00:00",
+  "generated_at": "2026-08-31T06:14:53+00:00",
   "gmail": {
     "ambiguous_messages_manual_review": 0,
     "application_confirmations_matched": 0,
@@ -510,7 +526,7 @@
       "submitted": 43
     },
     "processing_status_counts": {
-      "applied": 54,
+      "applied": 59,
       "awaiting_owner_approval": 30,
       "blocked": 573,
       "generated_content_rejected": 3,
@@ -518,8 +534,8 @@
       "generation_ready": 14,
       "inactive": 13,
       "ingested": 11,
-      "manual_review_needed": 502,
-      "rejected": 1113,
+      "manual_review_needed": 499,
+      "rejected": 1111,
       "superseded": 177
     },
     "total_jobs": 2492
@@ -527,29 +543,29 @@
   "trend": {
     "rolling_7d": {
       "eligible_70_plus": {
-        "average": 9.33,
-        "days_available": 6,
-        "total": 56
+        "average": 8.4,
+        "days_available": 5,
+        "total": 42
       },
       "generation_candidates": {
-        "average": 7.33,
-        "days_available": 6,
-        "total": 44
+        "average": 7.8,
+        "days_available": 5,
+        "total": 39
       },
       "new_jobs": {
-        "average": 25.83,
-        "days_available": 6,
-        "total": 155
+        "average": 30.8,
+        "days_available": 5,
+        "total": 154
       },
       "paths_failed": {
-        "average": 0.33,
-        "days_available": 6,
+        "average": 0.4,
+        "days_available": 5,
         "total": 2
       },
       "processed_scored": {
-        "average": 49.0,
-        "days_available": 6,
-        "total": 294
+        "average": 45.4,
+        "days_available": 5,
+        "total": 227
       }
     },
     "today": {
