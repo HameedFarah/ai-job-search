@@ -1,7 +1,7 @@
 """Fail-closed Outscraper email deliverability validation.
 
 This module deliberately wraps the existing :class:`OutscraperClient` rather
-than creating a second provider stack.  The API key remains in the client's
+than creating a second provider stack. The API key remains in the client's
 request header and is never returned in evidence.
 """
 from __future__ import annotations
@@ -12,7 +12,10 @@ from urllib.parse import urlencode
 from .provider_clients import OutscraperClient, ProviderBudget, _record
 
 TERMINAL_STATUSES = {"RECEIVING", "INVALID", "BLACKLISTED", "UNKNOWN"}
-MAX_BATCH_SIZE = 1000
+# Outscraper's current public API FAQ documents array batching up to 25 queries
+# per request (query=a&query=b&...). Keep this fail-closed even if a caller asks
+# for a larger batch.
+MAX_BATCH_SIZE = 25
 
 
 def _normalise_emails(emails: Iterable[str]) -> list[str]:
@@ -59,7 +62,7 @@ def validate_emails(
 ) -> list[dict]:
     """Validate emails with Outscraper's ``/email-validator`` endpoint.
 
-    Only ``RECEIVING`` is represented as ``safe_to_send=True``.  ``UNKNOWN``
+    Only ``RECEIVING`` is represented as ``safe_to_send=True``. ``UNKNOWN``
     is terminal provider evidence but remains fail-closed for outreach.
     Missing rows, unexpected statuses, network errors, authentication errors,
     quota errors, and budget exhaustion never become send-eligible.
