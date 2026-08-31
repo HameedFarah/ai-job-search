@@ -1,6 +1,6 @@
 {
   "contains_secret_values": false,
   "service": "career-provider-outscraper",
-  "folder": "services",
+  "folder": "servicea",
   "keys": ["OUTSCRAPER_API_KEY"]
 }
