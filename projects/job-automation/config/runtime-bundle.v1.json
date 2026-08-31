@@ -1,44 +1,44 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.4",
-  "built_at": "2026-08-28T08:09:51+00:00",
-  "source_hash": "df2db49f73234853d6095acb2566bcd027c0c04f98e7ff4115435a9369a61bb9",
+  "built_at": "2026-08-31T13:01:01+00:00",
+  "source_hash": "c5a93bc397a640f7af63a8168a4f4a4212400c949ab04e4e2849e41c03876489",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
-      "sha256": "a0e9f3625cb39ca46abebd0ccd0c5f88adca695f2a97f6a00cb3714f10be5113",
-      "size": 4245,
-      "modified_ns": 1787863024748606957
+      "sha256": "ce37e42388bc3d83741423e71a53d0fe406886d0f475cc1578e24633f4b2a0d7",
+      "size": 4246,
+      "modified_ns": 1788178117375763281
     },
     {
       "path": "projects/job-automation/config/requirements-taxonomy.v1.json",
-      "sha256": "9d04c1fcd575e7dbb28c67c59e84cfb76d35459a59c739a108ee2aaf564656e2",
-      "size": 11274,
-      "modified_ns": 1787864084563380738
+      "sha256": "85a605c2e660624b6d6a5b71ac2c6c81132896a76547a5e4f6f6d894033d1106",
+      "size": 12395,
+      "modified_ns": 1788178117379763278
     },
     {
       "path": "projects/job-automation/config/generated_application.schema.json",
       "sha256": "738151a50e37a2830c6b8f19b35ca53798959027087f6908bb52396d9a9a2f3d",
       "size": 2778,
-      "modified_ns": 1787863024748606957
+      "modified_ns": 1788103591409087196
     },
     {
       "path": "projects/job-automation/config/runtime-bundle.schema.json",
       "sha256": "b76217f713e6a6cbc49479c90f7dbe38481f211c9f850c39ef1ac5e21d07ab1f",
       "size": 730,
-      "modified_ns": 1787863024752606952
+      "modified_ns": 1788103591409087196
     },
     {
       "path": "projects/job-automation/config/gcc-employers.v1.json",
       "sha256": "a71816328a127c7670e18b128c50f1c1f38403684215b9f7919fb606e9a69375",
       "size": 23371,
-      "modified_ns": 1787903654200724385
+      "modified_ns": 1788103591409087196
     },
     {
       "path": "projects/job-automation/config/consultants-bookmarks.v1.json",
       "sha256": "21f14dd3af6224f74c1624a70bf96e810d10ba79ba0a7286a95bdf82dd02f23e",
       "size": 17111,
-      "modified_ns": 1787903634328788686
+      "modified_ns": 1788103591409087196
     },
     {
       "path": "projects/job-automation/career-engine-profile.v1.json",
@@ -198,7 +198,7 @@
     },
     "daily_scanner": {
       "minimum_score_for_generation": 70,
-      "maximum_generation_packets_per_scan": 5,
+      "maximum_generation_packets_per_scan": 20,
       "send_or_submit": false
     }
   },
@@ -493,6 +493,21 @@
         "medical facility",
         "medical facilities"
       ],
+      "rail_transit": [
+        "rail construction",
+        "railway construction",
+        "rail infrastructure",
+        "railway infrastructure",
+        "rail project",
+        "rail projects",
+        "metro construction",
+        "metro project",
+        "metro projects",
+        "rail systems",
+        "railway systems",
+        "trackwork",
+        "track works"
+      ],
       "rams_reliability_systems_assurance": [
         "rams",
         "reliability engineering",
@@ -693,10 +708,14 @@
         "director environmental",
         "contracts administrator",
         "contract administrator",
+        "contract adiministrator",
         "commercial manager",
         "senior commercial manager",
         "commercial head",
         "head of commercial",
+        "business development manager",
+        "business development director",
+        "head of business development",
         "asset management",
         "organizational development",
         "organization development",
@@ -811,6 +830,52 @@
             "geometric design"
           ],
           "minimum_jd_terms": 2
+        },
+        {
+          "title_terms": [
+            "engineering manager",
+            "engineering director",
+            "head of engineering",
+            "technical manager",
+            "technical director"
+          ],
+          "jd_terms": [
+            "software engineering",
+            "software development",
+            "java",
+            "golang",
+            "kubernetes",
+            "ci/cd",
+            "microservices",
+            "distributed systems",
+            "backend engineering",
+            "cloud platform",
+            "aws",
+            "gcp",
+            "azure",
+            "devops"
+          ],
+          "minimum_jd_terms": 2
+        },
+        {
+          "title_terms": [
+            "construction lead",
+            "construction manager",
+            "construction director",
+            "project manager",
+            "project director"
+          ],
+          "jd_terms": [
+            "rail construction",
+            "railway construction",
+            "rail infrastructure",
+            "railway infrastructure",
+            "rail project",
+            "metro construction",
+            "rail systems",
+            "trackwork"
+          ],
+          "minimum_jd_terms": 1
         }
       ],
       "mep_specialist_terms": [
@@ -1608,6 +1673,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "c0756035e5881ac70d2fc8f58644a6e4bc97c6f75fb8d32e7a16b63d83efe8dd",
+  "bundle_hash": "3f32fc7fa82618908daa7628f07e5d05b7cc5e7c0bbbc6d26965cc524b15e4b8",
   "cache_reused": false
 }
