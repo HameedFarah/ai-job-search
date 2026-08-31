@@ -2,10 +2,10 @@
 """Validate a Career Engine outreach CSV through Outscraper, fail closed.
 
 This runner is intentionally small and runtime-oriented. The Outscraper API key
-is read only from the environment (normally injected by the canonical Infisical
-runtime manifest) and is never written to output. It does not send email and it
-does not promote a row to send-ready merely because a mailbox is receiving;
-company/source identity remains a separate Career Engine gate.
+is read only from the environment (normally injected by the dedicated canonical
+Infisical runtime manifest) and is never written to output. It does not send
+email and it does not promote a row to send-ready merely because a mailbox is
+receiving; company/source identity remains a separate Career Engine gate.
 """
 from __future__ import annotations
 
@@ -71,6 +71,14 @@ def main() -> int:
     if not key:
         raise SystemExit("OUTSCRAPER_API_KEY is not present in the runtime environment")
 
+    client = OutscraperClient(key)
+    account_probe = client.balance()
+    if account_probe.get("status") != "success":
+        raise SystemExit(
+            "Outscraper account probe failed closed: "
+            + str(account_probe.get("status") or "unknown")
+        )
+
     batch_size = max(1, min(int(args.batch_size), 1000))
     input_path = Path(args.input)
     output_path = Path(args.output_jsonl)
@@ -84,7 +92,7 @@ def main() -> int:
         max_domains=0,
     )
     records = validate_emails(
-        OutscraperClient(key),
+        client,
         emails,
         budget,
         batch_size=batch_size,
@@ -112,6 +120,7 @@ def main() -> int:
         "input_rows": len(rows),
         "unique_emails": len(emails),
         "provider": "outscraper",
+        "account_probe": "success",
         "counts": dict(sorted(counts.items())),
         "receiving": counts.get("RECEIVING", 0),
         "invalid": counts.get("INVALID", 0),
