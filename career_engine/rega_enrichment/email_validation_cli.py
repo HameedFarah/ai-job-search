@@ -15,7 +15,7 @@ import os
 from collections import Counter
 from pathlib import Path
 
-from .outscraper_validation import validate_emails
+from .outscraper_validation import MAX_BATCH_SIZE, validate_emails
 from .provider_clients import OutscraperClient, ProviderBudget
 
 
@@ -46,10 +46,17 @@ def _safe_record(item: dict) -> dict:
     }
 
 
-def run(input_path: Path, output_path: Path, *, column: str = "Email", batch_size: int = 250, allow_existing_credit: bool = False) -> dict:
+def run(
+    input_path: Path,
+    output_path: Path,
+    *,
+    column: str = "Email",
+    batch_size: int = MAX_BATCH_SIZE,
+    allow_existing_credit: bool = False,
+) -> dict:
     emails = _read_emails(input_path, column)
     unique = list(dict.fromkeys(email.strip().lower() for email in emails if email.strip()))
-    batch_size = max(1, min(int(batch_size), 1000))
+    batch_size = max(1, min(int(batch_size), MAX_BATCH_SIZE))
     key = os.environ.get("OUTSCRAPER_API_KEY", "").strip()
     client = OutscraperClient(key)
     calls = max(1, math.ceil(len(unique) / batch_size)) if unique else 1
@@ -101,7 +108,12 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="CSV or newline-delimited email file")
     parser.add_argument("--output", required=True, help="Sanitized JSONL validation output")
     parser.add_argument("--column", default="Email", help="CSV email column name; default Email")
-    parser.add_argument("--batch-size", type=int, default=250, help="1-1000; default 250")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=MAX_BATCH_SIZE,
+        help=f"1-{MAX_BATCH_SIZE}; default {MAX_BATCH_SIZE}",
+    )
     parser.add_argument(
         "--allow-existing-credit",
         action="store_true",
