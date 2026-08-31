@@ -2,7 +2,7 @@ import json
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
-from career_engine.rega_enrichment.outscraper_validation import validate_emails
+from career_engine.rega_enrichment.outscraper_validation import MAX_BATCH_SIZE, validate_emails
 from career_engine.rega_enrichment.provider_clients import OutscraperClient, ProviderBudget
 
 
@@ -120,8 +120,9 @@ class OutscraperValidationTests(unittest.TestCase):
         self.assertFalse(result[0]["metadata"]["safe_to_send"])
         self.assertEqual(called, [])
 
-    def test_splits_batches_at_1000(self):
-        emails = [f"person{i}@example.com" for i in range(1001)]
+    def test_caps_batches_at_public_api_limit(self):
+        self.assertEqual(MAX_BATCH_SIZE, 25)
+        emails = [f"person{i}@example.com" for i in range(26)]
         calls = []
 
         def _open(request, timeout=15):
@@ -137,10 +138,13 @@ class OutscraperValidationTests(unittest.TestCase):
         result = validate_emails(
             client,
             emails,
-            ProviderBudget(allow_existing_credit=True, max_calls=2, max_credits=1001),
+            ProviderBudget(allow_existing_credit=True, max_calls=2, max_credits=26),
+            batch_size=1000,
         )
-        self.assertEqual(len(result), 1001)
+        self.assertEqual(len(result), 26)
         self.assertEqual(len(calls), 2)
+        self.assertLessEqual(calls[0].full_url.count("query="), MAX_BATCH_SIZE)
+        self.assertLessEqual(calls[1].full_url.count("query="), MAX_BATCH_SIZE)
         self.assertTrue(all(item["status"] == "RECEIVING" for item in result))
 
 
