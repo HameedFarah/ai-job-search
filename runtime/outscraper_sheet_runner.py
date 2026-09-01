@@ -378,6 +378,41 @@ def write_state_updates(
     return len(rows)
 
 
+CAMPAIGN_FIELD_INDEX = {
+    "Gmail_Draft_ID": 8,
+    "Gmail_Message_ID": 9,
+    "Send_State": 14,
+    "Sent_Message_ID": 15,
+    "Terminal_Outcome": 16,
+}
+
+
+def write_campaign_updates(
+    token: str,
+    rows: list[tuple[str, str, dict[str, str]]],
+    spreadsheet_id: str = SPREADSHEET_ID,
+) -> int:
+    """Write bounded campaign provenance fields using immutable row developer metadata."""
+    if len(rows) > MAX_WRITE_ROWS:
+        raise RuntimeError("campaign write batch exceeds bounded limit")
+    identities = [(queue_id, email) for queue_id, email, _values in rows]
+    if len(set((qid.strip(), email.strip().lower()) for qid, email in identities)) != len(identities):
+        raise RuntimeError("campaign write batch contains duplicate immutable identities")
+    metadata_ids = _verified_metadata_ids(token, identities, spreadsheet_id)
+    data = []
+    for queue_id, _email, values in rows:
+        unknown = set(values) - set(CAMPAIGN_FIELD_INDEX)
+        if unknown:
+            raise RuntimeError(f"campaign update contains unsupported fields: {sorted(unknown)}")
+        cells: list[object | None] = [None] * len(EXPECTED_HEADERS)
+        for field, value in values.items():
+            cells[CAMPAIGN_FIELD_INDEX[field]] = value
+        data.append(_data_filter_range(metadata_ids[queue_id.strip()], cells))
+    if data:
+        _metadata_write(token, data, spreadsheet_id)
+    return len(rows)
+
+
 def verify_readback(before: list[dict[str, str]], after: list[dict[str, str]]) -> dict:
     emails = [str(row.get("Email") or "").strip().lower() for row in after]
     evidence_complete = all(row.get("Outscraper_Evidence") for row in after if row.get("Outscraper_Status"))

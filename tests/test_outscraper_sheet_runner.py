@@ -13,6 +13,7 @@ from runtime.outscraper_sheet_runner import (
     rclone_access_token,
     send_state,
     sheets_request,
+    write_campaign_updates,
     write_state_updates,
     write_updates,
 )
@@ -67,6 +68,25 @@ class SheetRunnerTests(unittest.TestCase):
             row = data[0]["values"][0]
             self.assertEqual(row[14], "QUEUED")
             self.assertTrue(all(value is None for i, value in enumerate(row) if i != 14))
+
+    def test_campaign_write_tracks_draft_and_sent_provenance_by_metadata(self):
+        with patch("runtime.outscraper_sheet_runner._verified_metadata_ids", return_value={"q1": 88}), \
+             patch("runtime.outscraper_sheet_runner._metadata_write") as write:
+            values = {
+                "Gmail_Draft_ID": "draft-1",
+                "Gmail_Message_ID": "message-1",
+                "Send_State": "DRAFT_VERIFIED_READY_TO_SEND",
+                "Sent_Message_ID": "sent-1",
+                "Terminal_Outcome": "SENT",
+            }
+            self.assertEqual(write_campaign_updates("token", [("q1", "a@example.com", values)]), 1)
+            data = write.call_args.args[1]
+            self.assertEqual(data[0]["dataFilter"], {"developerMetadataLookup": {"metadataId": 88}})
+            row = data[0]["values"][0]
+            self.assertEqual((row[8], row[9], row[14], row[15], row[16]), ("draft-1", "message-1", "DRAFT_VERIFIED_READY_TO_SEND", "sent-1", "SENT"))
+            self.assertTrue(all(value is None for i, value in enumerate(row) if i not in {8, 9, 14, 15, 16}))
+        with self.assertRaises(RuntimeError):
+            write_campaign_updates("token", [("q1", "a@example.com", {"Notes": "unsupported"})])
 
     def test_read_queue_pads_only_omitted_trailing_blanks(self):
         with patch("runtime.outscraper_sheet_runner.sheets_request", return_value={"values": [list(EXPECTED_HEADERS), ["q1", "A@Example.com"]]}):
