@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from email import policy
@@ -18,6 +19,9 @@ from email.parser import BytesParser
 from email.utils import parseaddr
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from career_engine.gmail import (
     CAREER_OUTWARD_EMAIL,
