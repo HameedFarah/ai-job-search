@@ -4,7 +4,7 @@
 Reconciles the ``Auto Send Queue`` tab in the canonical spreadsheet against
 both connected-Gmail accounts, enforces company/domain dedupe, priority
 ordering, hard exclusions, permanent-bounce protection, cadence and daily
-caps, and the 08:00-18:59 Asia/Riyadh send window.
+caps, and the 08:00-19:00 Asia/Riyadh send window.
 
 This module is deliberately *state-only* — it never sends email or mutates
 the spreadsheet unless an explicit ``--apply`` flag is given to the caller.
@@ -29,6 +29,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -38,7 +39,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import getaddresses
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -108,6 +109,40 @@ WINDOW_END_HOUR = 19
 # Absolute exclusion lists
 EXCLUDED_COMPANIES = {"ttw", "Arab Sustainable Architecture", "arab sustainable architecture"}
 EXCLUDED_COMPANIES_LOW = {c.lower() for c in EXCLUDED_COMPANIES}
+# Known current-employer domain evidence. Other protected-company domains are
+# resolved through the canonical master company index.
+EXCLUDED_DOMAINS = {"ttwsa.com"}
+
+# Shared/public mailbox providers must never be deduped globally by domain.
+PUBLIC_EMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
+    "yahoo.com", "yahoo.co.uk", "icloud.com", "me.com", "aol.com",
+    "proton.me", "protonmail.com",
+}
+
+# Hard mailbox-role exclusions from the canonical outreach contract. An
+# explicit OWNER_APPROVED marker in Evidence_or_Notes may override executive
+# routing only; legal/privacy/finance/abuse/support routes remain blocked.
+BLOCKED_MAILBOX_LOCALS = {
+    "privacy", "legal", "finance", "investor", "investors", "abuse", "support",
+    "billing", "accounts", "compliance", "security",
+}
+EXECUTIVE_MAILBOX_LOCALS = {"ceo", "executive", "president", "chairman"}
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$")
+
+# Verified cross-domain replacements for companies already contacted in this
+# campaign. These exact replacement routes must remain blocked even though the
+# replacement domain differs from the historical contacted domain.
+KNOWN_ALREADY_CONTACTED_ALIASES = {
+    "info@masaralzamel.com": "Al Zamel",
+    "info@hmfaqih.com": "Hassan Faqih",
+    "info@marina-seas.sa": "Sarai",
+}
+KNOWN_ALREADY_CONTACTED_DOMAINS = {
+    "masaralzamel.com", "alzamel-realestate.com",
+    "hmfaqih.com", "hassanfaqih.com",
+    "marina-seas.sa", "sarai.com",
+}
 
 # Jordan-held (from Engineering offices.xlsx / Sheet1 + HOLD tracker)
 JORDAN_HOLD_SOURCE = "Engineering offices.xlsx / Sheet1"
@@ -149,7 +184,7 @@ def _stable_id_for(email: str, company: str = "") -> str:
 
 def _read_queue_sheet(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> list[dict[str, str]]:
     """Read every row from Auto Send Queue without mutation."""
-    encoded = f"{QUEUE_SHEET_NAME}!A:K"
+    encoded = quote(f"{QUEUE_SHEET_NAME}!A:K", safe="!:")
     body = sheets_request(token, "GET",
                           f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{encoded}")
     values = body.get("values")
@@ -201,6 +236,31 @@ def _company_key(value: str) -> str:
 def _email_domain(value: str) -> str:
     email = str(value or "").strip().lower()
     return email.rsplit("@", 1)[1] if "@" in email else ""
+
+
+def _valid_email(value: str) -> bool:
+    return bool(EMAIL_RE.fullmatch(str(value or "").strip().lower()))
+
+
+def _is_public_email_domain(domain: str) -> bool:
+    return str(domain or "").strip().lower() in PUBLIC_EMAIL_DOMAINS
+
+
+def _mailbox_local(value: str) -> str:
+    email = str(value or "").strip().lower()
+    return email.split("@", 1)[0] if "@" in email else ""
+
+
+def _is_inappropriate_mailbox(email: str, evidence: str = "") -> bool:
+    local = _mailbox_local(email)
+    if not local:
+        return False
+    if local in BLOCKED_MAILBOX_LOCALS:
+        return True
+    if local in EXECUTIVE_MAILBOX_LOCALS:
+        marker = str(evidence or "").upper()
+        return "OWNER_APPROVED" not in marker and "EXECUTIVE_APPROVED" not in marker
+    return False
 
 
 def _emails_from_master_row(row: dict[str, str]) -> set[str]:
@@ -290,30 +350,37 @@ def normalise_row(row: dict[str, str]) -> dict[str, Any]:
     last_error = str(row.get("Last_Error") or "").strip()
     evidence = str(row.get("Evidence_or_Notes") or "").strip()
 
-    # Blank defaults. Invalid nonblank values fail closed to HOLD rather than
-    # being silently interpreted as send-authorized input.
-    normalise_error = ""
+    # Blank defaults. Invalid nonblank values and unsafe recipient identities
+    # fail closed to HOLD rather than being silently interpreted as sendable.
+    errors: list[str] = []
     if not priority:
         priority = DEFAULT_PRIORITY
     elif priority not in VALID_PRIORITIES:
-        normalise_error = f"invalid priority: {priority}"
+        errors.append(f"invalid priority: {priority}")
         priority = DEFAULT_PRIORITY
     if not status:
         status = DEFAULT_STATUS
     elif status not in VALID_STATUSES:
-        normalise_error = f"invalid status: {status}"
+        errors.append(f"invalid status: {status}")
         status = "HOLD"
-    if normalise_error and status == DEFAULT_STATUS:
+
+    if not email:
+        errors.append("missing email")
+    elif not _valid_email(email):
+        errors.append("malformed email")
+    elif _is_inappropriate_mailbox(email, evidence):
+        errors.append("inappropriate mailbox")
+
+    if errors:
         status = "HOLD"
+    normalise_error = "; ".join(errors)
+
     if not queue_id and email:
         queue_id = _stable_id_for(email, company)
     if not added_at and email:
         added_at = _utc_now()
 
-    # Derive domain
-    domain = ""
-    if "@" in email:
-        domain = email.split("@", 1)[1].lower()
+    domain = _email_domain(email) if _valid_email(email) else ""
 
     return {
         "queue_id": queue_id,
@@ -402,11 +469,14 @@ def _is_jordan_held(row: dict[str, Any]) -> bool:
 
 def _is_company_excluded(company: str, domain: str) -> bool:
     """TTW and Arab Sustainable Architecture always blocked."""
-    name = company.lower().strip()
+    name = str(company or "").lower().strip()
+    clean_domain = str(domain or "").lower().strip()
+    if clean_domain in EXCLUDED_DOMAINS:
+        return True
     if name in EXCLUDED_COMPANIES_LOW:
         return True
     for exc in EXCLUDED_COMPANIES_LOW:
-        if exc in name:
+        if exc and exc in name:
             return True
     return False
 
@@ -430,7 +500,7 @@ def _gmail_list_paginated(token: str, kind: str, query: str) -> list[dict]:
         params = {"q": query, "maxResults": 500}
         if page_token:
             params["pageToken"] = page_token
-        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        qs = urlencode(params)
         resp = sheets_request(token, "GET",
                               f"https://gmail.googleapis.com/gmail/v1/users/me/{kind}?{qs}")
         items = resp.get(key, []) or []
@@ -449,7 +519,7 @@ def _message_to_addrs(token: str, msg_id: str) -> set[str]:
         ("metadataHeaders", "Cc"),
         ("metadataHeaders", "Bcc"),
     ]
-    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    qs = urlencode(params)
     data = sheets_request(token, "GET",
                           f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}?{qs}")
     headers = (data.get("payload") or {}).get("headers") or []
@@ -487,8 +557,13 @@ def run_gws_context(args: list[str], config_dir: Path, *, timeout: int = 120) ->
         raise RuntimeError(f"invalid JSON from gws in config context {config_dir.name}") from exc
 
 
-def gmail_access_token_for_context(config_dir: Path, *, timeout: int = 30) -> str:
-    """Refresh an access token from one gws config context without logging secrets."""
+def _context_oauth_credentials(config_dir: Path, *, timeout: int = 30) -> dict[str, str]:
+    """Load refresh credentials from an isolated Gmail context without exposing secrets.
+
+    Prefer the native gws encrypted export. If that context is not exportable, reuse
+    the already-authorized local token file in the same isolated account directory.
+    """
+    required = ("client_id", "client_secret", "refresh_token")
     completed = subprocess.run(
         ["gws", "auth", "export", "--unmasked"],
         capture_output=True,
@@ -497,19 +572,44 @@ def gmail_access_token_for_context(config_dir: Path, *, timeout: int = 30) -> st
         check=False,
         env=_gws_env(config_dir),
     )
-    if completed.returncode != 0:
-        raise RuntimeError(f"gws auth export failed in config context {config_dir.name}")
-    start = completed.stdout.find("{")
-    if start < 0:
-        raise RuntimeError(f"gws auth export returned no credentials in {config_dir.name}")
-    creds = json.loads(completed.stdout[start:])
-    required = ("client_id", "client_secret", "refresh_token")
-    if any(not creds.get(key) for key in required):
-        raise RuntimeError(f"gws credentials incomplete in config context {config_dir.name}")
+    if completed.returncode == 0:
+        start = completed.stdout.find("{")
+        if start >= 0:
+            try:
+                raw = json.loads(completed.stdout[start:])
+            except json.JSONDecodeError:
+                raw = {}
+            creds = {key: str(raw.get(key) or "").strip() for key in required}
+            if all(creds.values()):
+                return creds
+
+    for name in ("google_token.json", "credentials.json", "token.json"):
+        path = config_dir / name
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        candidates = [raw]
+        for nested in ("installed", "web", "oauth"):
+            value = raw.get(nested) if isinstance(raw, dict) else None
+            if isinstance(value, dict):
+                candidates.append(value)
+        for candidate in candidates:
+            creds = {key: str(candidate.get(key) or "").strip() for key in required}
+            if all(creds.values()):
+                return creds
+    raise RuntimeError(f"OAuth refresh credentials unavailable in config context {config_dir.name}")
+
+
+def gmail_access_token_for_context(config_dir: Path, *, timeout: int = 30) -> str:
+    """Refresh an access token from one isolated account context without logging secrets."""
+    creds = _context_oauth_credentials(config_dir, timeout=timeout)
     body = urlencode({
-        "client_id": str(creds["client_id"]),
-        "client_secret": str(creds["client_secret"]),
-        "refresh_token": str(creds["refresh_token"]),
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "refresh_token": creds["refresh_token"],
         "grant_type": "refresh_token",
     }).encode("utf-8")
     request = Request(
@@ -518,8 +618,11 @@ def gmail_access_token_for_context(config_dir: Path, *, timeout: int = 30) -> st
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
-    with urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8") or "{}")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+    except Exception as exc:
+        raise RuntimeError(f"OAuth refresh failed for config context {config_dir.name}: {type(exc).__name__}") from exc
     token = str(payload.get("access_token") or "").strip()
     if not token:
         raise RuntimeError(f"OAuth refresh returned no token for config context {config_dir.name}")
@@ -527,8 +630,8 @@ def gmail_access_token_for_context(config_dir: Path, *, timeout: int = 30) -> st
 
 
 def _profile_email(config_dir: Path) -> str:
-    params = json.dumps({"userId": "me"}, separators=(",", ":"))
-    profile = run_gws_context(["gmail", "users", "getProfile", "--params", params], config_dir)
+    token = gmail_access_token_for_context(config_dir)
+    profile = sheets_request(token, "GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile")
     return str(profile.get("emailAddress") or "").strip().lower()
 
 
@@ -688,12 +791,15 @@ class QueueReconciler:
             email = email.lower().strip()
             self.blocked_emails.add(email)
             domain = _email_domain(email)
-            if domain:
+            if domain and not _is_public_email_domain(domain):
                 self.blocked_domains.add(domain)
             company = str(email_to_company.get(email) or "")
             if company:
                 self.blocked_companies.add(company)
-                self.blocked_domains.update(company_domains.get(company, set()))
+                self.blocked_domains.update(
+                    d for d in company_domains.get(company, set())
+                    if not _is_public_email_domain(d)
+                )
         return self.sent_by_email
 
     def apply_exclusions(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -732,6 +838,11 @@ class QueueReconciler:
                 skipped.append({**row, "skip_reason": "company_excluded"})
                 continue
 
+            # Verified cross-domain aliases for companies already contacted.
+            if email in KNOWN_ALREADY_CONTACTED_ALIASES or domain in KNOWN_ALREADY_CONTACTED_DOMAINS:
+                skipped.append({**row, "skip_reason": "known_contacted_company_alias"})
+                continue
+
             # Canonical hard rejects and permanent bounce evidence.
             if email in self.master.get("hard_blocked_emails", set()):
                 skipped.append({**row, "skip_reason": "canonical_hard_block"})
@@ -766,7 +877,7 @@ class QueueReconciler:
             sent_domain = str(entry.get("domain") or _email_domain(str(entry.get("email") or ""))).lower()
             if sent_company:
                 sent_companies.add(sent_company)
-            if sent_domain:
+            if sent_domain and not _is_public_email_domain(sent_domain):
                 sent_domains.add(sent_domain)
 
         selected_companies: set[str] = set()
@@ -787,13 +898,13 @@ class QueueReconciler:
                 continue
             if effective_company and effective_company in selected_companies:
                 continue
-            if domain and domain in selected_domains:
+            if domain and not _is_public_email_domain(domain) and domain in selected_domains:
                 continue
 
             result.append(row)
             if effective_company:
                 selected_companies.add(effective_company)
-            if domain:
+            if domain and not _is_public_email_domain(domain):
                 selected_domains.add(domain)
         return result
 

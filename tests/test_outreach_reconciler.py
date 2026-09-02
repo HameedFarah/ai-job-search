@@ -165,7 +165,8 @@ def test_runtime_reread_selects_new_important():
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = QueueLedger(Path("/dev/null"))
     r.master = _master_index([])
-    next_first = r.select_next(items_initial, now_utc=datetime.now(timezone.utc))
+    in_window = datetime(2026, 9, 2, 9, 0, tzinfo=timezone.utc)  # 12:00 Riyadh
+    next_first = r.select_next(items_initial, now_utc=in_window)
     assert next_first is not None
     assert next_first["email"] == "a@b.com"
 
@@ -174,7 +175,7 @@ def test_runtime_reread_selects_new_important():
         {"email": "important@b.com", "priority": "IMPORTANT", "added_at": "2026-09-02T00:00:00Z"},
         {"email": "a@b.com", "priority": "NORMAL", "added_at": "2025-01-01T00:00:00Z"},
     ]
-    next_second = r.select_next(items_reread, now_utc=datetime.now(timezone.utc))
+    next_second = r.select_next(items_reread, now_utc=in_window)
     assert next_second is not None
     assert next_second["email"] == "important@b.com"
 
@@ -247,7 +248,7 @@ def test_cadence_enforced_90s():
 
 
 def test_cadence_passes_after_90s():
-    now = datetime.now(timezone.utc)
+    now = datetime(2026, 9, 2, 9, 0, tzinfo=timezone.utc)  # 12:00 Riyadh
     last_send = now - timedelta(seconds=91)
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = QueueLedger(Path("/dev/null"))
@@ -564,3 +565,107 @@ def test_email_domain_extraction():
     from career_engine.outreach_reconciler import _email_domain
     assert _email_domain("User@EXAMPLE.COM") == "example.com"
     assert _email_domain("not-an-email") == ""
+
+
+# ---------------------------------------------------------------------------
+# Safety regressions found during 2026-09-02 production review
+# ---------------------------------------------------------------------------
+
+def test_malformed_emails_fail_closed():
+    for value in ("not-an-email", "user@@example.com", "user@example.", "user@domain"):
+        row = normalise_row({"Email": value})
+        assert row["status"] == "HOLD"
+        assert "malformed email" in row["normalise_error"]
+
+
+def test_inappropriate_mailboxes_fail_closed():
+    for value in ("support@example.com", "legal@example.com", "privacy@example.com", "finance@example.com", "abuse@example.com"):
+        row = normalise_row({"Email": value})
+        assert row["status"] == "HOLD"
+        assert "inappropriate mailbox" in row["normalise_error"]
+
+
+def test_executive_mailbox_requires_explicit_owner_approval():
+    blocked = normalise_row({"Email": "ceo@example.com"})
+    allowed = normalise_row({"Email": "ceo@example.com", "Evidence_or_Notes": "OWNER_APPROVED executive route"})
+    assert blocked["status"] == "HOLD"
+    assert allowed["status"] == "PENDING"
+
+
+def test_ttw_domain_blocked_even_when_company_blank():
+    assert _is_company_excluded("", "ttwsa.com") is True
+
+
+def test_public_provider_domain_not_globally_deduped(tmp_path):
+    from career_engine.outreach_reconciler import _is_public_email_domain
+    assert _is_public_email_domain("gmail.com") is True
+    ledger = QueueLedger(tmp_path / "ledger.json")
+    sent_qid = _stable_id_for("alice@gmail.com", "Company A")
+    ledger.mark_pending(sent_qid, {
+        "email": "alice@gmail.com", "company": "Company A", "priority": "NORMAL",
+        "added_at": "2026-09-02T00:00:00Z", "domain": "gmail.com",
+    })
+    ledger.mark_sent(sent_qid, "mid1", "2026-09-02T09:00:00+00:00")
+    r = QueueReconciler.__new__(QueueReconciler)
+    r.ledger = ledger
+    r.master = _master_index([])
+    candidate = {
+        "email": "bob@gmail.com", "queue_id": _stable_id_for("bob@gmail.com", "Company B"),
+        "domain": "gmail.com", "company": "Company B",
+    }
+    result = r.apply_ledge_dedupe([candidate])
+    assert [row["email"] for row in result] == ["bob@gmail.com"]
+
+
+def test_corporate_domain_remains_globally_deduped(tmp_path):
+    ledger = QueueLedger(tmp_path / "ledger.json")
+    sent_qid = _stable_id_for("alice@example.com", "Company A")
+    ledger.mark_pending(sent_qid, {
+        "email": "alice@example.com", "company": "Company A", "priority": "NORMAL",
+        "added_at": "2026-09-02T00:00:00Z", "domain": "example.com",
+    })
+    ledger.mark_sent(sent_qid, "mid1", "2026-09-02T09:00:00+00:00")
+    r = QueueReconciler.__new__(QueueReconciler)
+    r.ledger = ledger
+    r.master = _master_index([])
+    candidate = {
+        "email": "bob@example.com", "queue_id": _stable_id_for("bob@example.com", "Company B"),
+        "domain": "example.com", "company": "Company B",
+    }
+    assert r.apply_ledge_dedupe([candidate]) == []
+
+
+def test_context_credentials_can_use_isolated_token_file(tmp_path):
+    from career_engine.outreach_reconciler import _context_oauth_credentials
+    payload = {
+        "client_id": "client-id", "client_secret": "client-secret", "refresh_token": "refresh-token"
+    }
+    (tmp_path / "google_token.json").write_text(json.dumps(payload), encoding="utf-8")
+    creds = _context_oauth_credentials(tmp_path, timeout=1)
+    assert set(creds) == {"client_id", "client_secret", "refresh_token"}
+
+
+def test_known_cross_domain_replacements_are_blocked():
+    from career_engine.outreach_reconciler import KNOWN_ALREADY_CONTACTED_ALIASES, KNOWN_ALREADY_CONTACTED_DOMAINS
+    expected = {
+        "info@masaralzamel.com",
+        "info@hmfaqih.com",
+        "info@marina-seas.sa",
+    }
+    assert set(KNOWN_ALREADY_CONTACTED_ALIASES) == expected
+    assert "alzamel-realestate.com" in KNOWN_ALREADY_CONTACTED_DOMAINS
+    r = QueueReconciler.__new__(QueueReconciler)
+    r.ledger = QueueLedger(Path("/dev/null"))
+    r.master = _master_index([])
+    candidates = list(KNOWN_ALREADY_CONTACTED_ALIASES.items()) + [
+        ("info@alzamel-realestate.com", "Al Zamel"),
+        ("makkah@alzamel-realestate.com", "Al Zamel"),
+    ]
+    r.normalised = [normalise_row({"Email": email, "Company_or_Office": company}) for email, company in candidates]
+    r.blocked_emails = set()
+    r.blocked_domains = set()
+    r.blocked_companies = set()
+    filtered, skipped = r.apply_exclusions()
+    assert filtered == []
+    assert len(skipped) == len(candidates)
+    assert {row["skip_reason"] for row in skipped} == {"known_contacted_company_alias"}
