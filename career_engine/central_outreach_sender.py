@@ -66,6 +66,10 @@ DEFAULT_LEDGER = Path("runtime/acceptance/auto-send-queue/ledger.json")
 DEFAULT_STATUS = Path("runtime/acceptance/auto-send-queue/status.json")
 POLL_SECONDS = 60
 SUCCESS_CADENCE_SECONDS = 96
+# Do not begin a fresh Gmail transaction at the edge of the hard 19:00 stop.
+# This margin is deliberately larger than the normal API/readback latency and
+# still preserves the owner-approved operating window.
+MIN_SEND_START_BUFFER_SECONDS = 120
 
 
 def utc_now() -> str:
@@ -79,6 +83,14 @@ def _local_now() -> datetime:
 def _window_open(now: datetime | None = None) -> bool:
     local = (now or datetime.now(timezone.utc)).astimezone(RIYADH)
     return WINDOW_START_HOUR <= local.hour < WINDOW_END_HOUR
+
+
+def _seconds_until_window_close(now: datetime | None = None) -> float:
+    local = (now or datetime.now(timezone.utc)).astimezone(RIYADH)
+    if not _window_open(local):
+        return 0.0
+    close = local.replace(hour=WINDOW_END_HOUR, minute=0, second=0, microsecond=0)
+    return max(0.0, (close - local).total_seconds())
 
 
 def _atomic_status(path: Path, payload: dict[str, Any]) -> None:
@@ -219,10 +231,17 @@ def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
 
 
 def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list[dict[str, Any]]) -> None:
+    """Persist deterministic outcomes for rows rejected during live reconciliation."""
+    contacted_reasons = {
+        "already_sent_gmail", "domain_sent_gmail", "company_sent_gmail",
+        "known_contacted_company_alias",
+    }
+    hold_reasons = {
+        "jordan_held", "company_excluded", "canonical_hard_block",
+        "unresolved_company_identity",
+    }
     for row in skips:
         reason = str(row.get("skip_reason") or "")
-        if reason not in {"already_sent_gmail", "domain_sent_gmail", "company_sent_gmail"}:
-            continue
         email = str(row.get("email") or "").lower()
         # Restart recovery: a persisted SENDING row with an exact Gmail Sent hit
         # is the same transaction completing after a crash, not a generic skip.
@@ -240,8 +259,16 @@ def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list
                 })
                 _update_master_after_send(reconciler, email, message_id)
                 continue
+        if reason in contacted_reasons:
+            status = "SKIPPED_ALREADY_CONTACTED"
+        elif reason == "permanent_bounce":
+            status = "FAILED_PERMANENT"
+        elif reason in hold_reasons:
+            status = "HOLD"
+        else:
+            continue
         write_queue_fields(sheet_token, int(row["row_number"]), {
-            "Status": "SKIPPED_ALREADY_CONTACTED",
+            "Status": status,
             "Last_Error": reason,
         })
 
@@ -335,6 +362,11 @@ def run(*, ledger_path: Path, status_path: Path, poll_seconds: int = POLL_SECOND
                 return 0
             time.sleep(max(1, min(poll_seconds, SUCCESS_CADENCE_SECONDS)))
             continue
+
+        seconds_left = _seconds_until_window_close()
+        if seconds_left < MIN_SEND_START_BUFFER_SECONDS:
+            _status(status_path, "window-closing", seconds_until_close=round(seconds_left, 3))
+            return 0
 
         queue_id = str(selected["queue_id"])
         email = str(selected["email"]).lower()

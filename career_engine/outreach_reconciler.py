@@ -255,9 +255,13 @@ def _is_inappropriate_mailbox(email: str, evidence: str = "") -> bool:
     local = _mailbox_local(email)
     if not local:
         return False
-    if local in BLOCKED_MAILBOX_LOCALS:
+    # Treat common role-address variants (support-team, legal.office,
+    # ceo.office, etc.) the same as the bare role without overmatching words
+    # such as ``supporting`` or ``financeiro``.
+    role = re.split(r"[._+\-]", local, maxsplit=1)[0]
+    if local in BLOCKED_MAILBOX_LOCALS or role in BLOCKED_MAILBOX_LOCALS:
         return True
-    if local in EXECUTIVE_MAILBOX_LOCALS:
+    if local in EXECUTIVE_MAILBOX_LOCALS or role in EXECUTIVE_MAILBOX_LOCALS:
         marker = str(evidence or "").upper()
         return "OWNER_APPROVED" not in marker and "EXECUTIVE_APPROVED" not in marker
     return False
@@ -828,6 +832,13 @@ class QueueReconciler:
             company_key = _company_key(company)
             master_company = str(self.master.get("email_to_company", {}).get(email) or "")
             effective_company = master_company or company_key
+
+            # Owner-entered rows must have a resolvable company identity. A
+            # syntactically valid mailbox alone is not enough authorization to
+            # bypass company-level dedupe.
+            if not effective_company:
+                skipped.append({**row, "skip_reason": "unresolved_company_identity"})
+                continue
 
             # Jordan hold from queue evidence or canonical master Send_State.
             if (

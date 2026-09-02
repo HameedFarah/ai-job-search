@@ -606,6 +606,30 @@ def test_executive_mailbox_requires_explicit_owner_approval():
     assert allowed["status"] == "PENDING"
 
 
+def test_role_mailbox_variants_follow_same_exclusions():
+    assert normalise_row({"Email": "support-team@example.com"})["status"] == "HOLD"
+    assert normalise_row({"Email": "legal.office@example.com"})["status"] == "HOLD"
+    assert normalise_row({"Email": "ceo.office@example.com"})["status"] == "HOLD"
+    assert normalise_row({
+        "Email": "ceo.office@example.com",
+        "Evidence_or_Notes": "OWNER_APPROVED executive route",
+    })["status"] == "PENDING"
+    assert normalise_row({"Email": "supporting@example.com"})["status"] == "PENDING"
+
+
+def test_unresolved_company_identity_fails_closed():
+    r = QueueReconciler.__new__(QueueReconciler)
+    r.ledger = QueueLedger(Path("/dev/null"))
+    r.master = _master_index([])
+    r.blocked_emails = set()
+    r.blocked_domains = set()
+    r.blocked_companies = set()
+    r.normalised = [normalise_row({"Email": "careers@unknown-company.example"})]
+    filtered, skipped = r.apply_exclusions()
+    assert filtered == []
+    assert [row["skip_reason"] for row in skipped] == ["unresolved_company_identity"]
+
+
 def test_ttw_domain_blocked_even_when_company_blank():
     assert _is_company_excluded("", "ttwsa.com") is True
 

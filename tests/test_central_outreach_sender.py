@@ -15,6 +15,14 @@ def test_window_boundaries_are_exact():
     assert sender._window_open(datetime(2026, 9, 2, 4, 59, tzinfo=timezone.utc)) is False # 07:59 Riyadh
 
 
+def test_window_close_buffer_prevents_edge_send_start():
+    at_1858 = datetime(2026, 9, 2, 15, 58, 0, tzinfo=timezone.utc)
+    at_185901 = datetime(2026, 9, 2, 15, 59, 1, tzinfo=timezone.utc)
+    assert sender._seconds_until_window_close(at_1858) == 120
+    assert sender._seconds_until_window_close(at_185901) == 59
+    assert sender.MIN_SEND_START_BUFFER_SECONDS == 120
+
+
 def test_package_constants_are_canonical():
     assert sender.SUBJECT == "Abdelhamid Farah | Senior Design & Project Leadership"
     assert sender.CV_PATH.name == "Abdelhamid_Farah_CV_Senior_Design_Project_Leadership.pdf"
@@ -56,6 +64,23 @@ def test_permanent_recipient_error_classifier():
     for text in ("invalid recipient", "recipient not found", "SMTP 5.1.1", "no such user"):
         assert sender._is_permanent_recipient_error(RuntimeError(text)) is True
     assert sender._is_permanent_recipient_error(RuntimeError("temporary network reset")) is False
+
+
+def test_reconciliation_exclusion_outcomes_are_persisted(monkeypatch):
+    from types import SimpleNamespace
+
+    writes = []
+    monkeypatch.setattr(sender, "write_queue_fields", lambda token, row, updates: writes.append((row, dict(updates))))
+    reconciler = SimpleNamespace(sent_by_email={}, ledger=None)
+    sender._mark_gmail_skips("token", reconciler, [
+        {"row_number": 2, "status": "PENDING", "email": "a@example.com", "skip_reason": "known_contacted_company_alias"},
+        {"row_number": 3, "status": "PENDING", "email": "b@example.com", "skip_reason": "jordan_held"},
+        {"row_number": 4, "status": "PENDING", "email": "c@example.com", "skip_reason": "permanent_bounce"},
+        {"row_number": 5, "status": "PENDING", "email": "d@example.com", "skip_reason": "unresolved_company_identity"},
+    ])
+    assert [update[1]["Status"] for update in writes] == [
+        "SKIPPED_ALREADY_CONTACTED", "HOLD", "FAILED_PERMANENT", "HOLD"
+    ]
 
 
 def test_after_hours_run_exits_before_auth_or_sheet(monkeypatch, tmp_path):
@@ -149,6 +174,7 @@ def test_one_send_is_sending_then_verified_sent(monkeypatch, tmp_path):
 
     raw_row = {"Email": "person@example.com", "Company_or_Office": "Example Co", "__row_number": "2"}
     monkeypatch.setattr(sender, "_window_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr(sender, "_seconds_until_window_close", lambda *args, **kwargs: 3600.0)
     monkeypatch.setattr(sender, "verify_both_accounts_available", lambda: (True, "ok"))
     monkeypatch.setattr(sender, "gmail_access_token_for_context", lambda _context: "sender-token")
     monkeypatch.setattr(sender, "_sender_profile", lambda _token: sender.CAREER_OUTWARD_EMAIL)
