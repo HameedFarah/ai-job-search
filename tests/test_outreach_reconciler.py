@@ -472,6 +472,17 @@ def _dedupe_test_reconciler(email: str):
     return r
 
 
+def test_checkpoint_epoch_is_2026_and_keeps_five_minute_overlap():
+    import career_engine.outreach_reconciler as module
+
+    after_epoch = module._dedupe_checkpoint_after_epoch()
+    checkpoint = datetime.fromtimestamp(
+        after_epoch + module.DEDUPE_CHECKPOINT_OVERLAP_SECONDS,
+        tz=timezone.utc,
+    )
+    assert checkpoint == datetime(2026, 9, 2, 17, 23, 43, tzinfo=timezone.utc)
+
+
 def test_checkpoint_covered_queue_uses_incremental_gmail_scan(monkeypatch):
     import career_engine.outreach_reconciler as module
 
