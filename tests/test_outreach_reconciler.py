@@ -343,6 +343,24 @@ def test_ttw_blocked():
 def test_arab_sustainable_architecture_blocked():
     assert _is_company_excluded("Arab Sustainable Architecture", "") is True
     assert _is_company_excluded("arab sustainable architecture", "") is True
+    assert _is_company_excluded("arabsustainablearchitecture", "") is True
+
+
+def test_master_derived_asa_identity_is_blocked_when_queue_company_blank():
+    email = "careers@asa-example.com"
+    r = QueueReconciler.__new__(QueueReconciler)
+    r.ledger = QueueLedger(Path("/dev/null"))
+    r.master = _master_index([{
+        "Email": email,
+        "Company_or_Office": "Arab Sustainable Architecture",
+    }])
+    r.blocked_emails = set()
+    r.blocked_domains = set()
+    r.blocked_companies = set()
+    r.normalised = [normalise_row({"Email": email, "Company_or_Office": ""})]
+    filtered, skipped = r.apply_exclusions()
+    assert filtered == []
+    assert [row["skip_reason"] for row in skipped] == ["company_excluded"]
 
 
 def test_similar_company_names_not_blocked():

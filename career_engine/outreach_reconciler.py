@@ -474,13 +474,15 @@ def _is_jordan_held(row: dict[str, Any]) -> bool:
 def _is_company_excluded(company: str, domain: str) -> bool:
     """TTW and Arab Sustainable Architecture always blocked."""
     name = str(company or "").lower().strip()
+    compact_name = "".join(ch for ch in name if ch.isalnum())
     clean_domain = str(domain or "").lower().strip()
     if clean_domain in EXCLUDED_DOMAINS:
         return True
     if name in EXCLUDED_COMPANIES_LOW:
         return True
     for exc in EXCLUDED_COMPANIES_LOW:
-        if exc and exc in name:
+        compact_exc = "".join(ch for ch in exc if ch.isalnum())
+        if exc and (exc in name or compact_exc and compact_exc in compact_name):
             return True
     return False
 
@@ -849,8 +851,9 @@ class QueueReconciler:
                 skipped.append({**row, "skip_reason": "jordan_held"})
                 continue
 
-            # TTW / ASA exclusions
-            if _is_company_excluded(company, domain):
+            # TTW / ASA exclusions. Check both the owner-entered display name
+            # and the canonical master-derived company identity.
+            if _is_company_excluded(company, domain) or _is_company_excluded(effective_company, domain):
                 skipped.append({**row, "skip_reason": "company_excluded"})
                 continue
 
