@@ -144,6 +144,15 @@ KNOWN_ALREADY_CONTACTED_DOMAINS = {
     "marina-seas.sa", "sarai.com",
 }
 
+# Accepted two-account full-history census for the currently seeded queue.
+# The source artifact itself is immutable acceptance evidence; production only
+# trusts it when the exact bytes and expected 38+1 eligible set match. A
+# five-minute overlap is re-read from BOTH Gmail histories every cycle.
+DEDUPE_CHECKPOINT_PATH = REPO_ROOT / "runtime/acceptance/auto-send-queue/live-candidate-dedupe.json"
+DEDUPE_CHECKPOINT_SHA256 = "581ed4123022752aec0c1a2764863d0a770457f91a0e80949693d5a7203f1a9d"
+DEDUPE_CHECKPOINT_UTC = "2026-09-02T17:23:43+00:00"
+DEDUPE_CHECKPOINT_OVERLAP_SECONDS = 300
+
 # Jordan-held (from Engineering offices.xlsx / Sheet1 + HOLD tracker)
 JORDAN_HOLD_SOURCE = "Engineering offices.xlsx / Sheet1"
 JORDAN_HOLD_KEY = "HOLD_OWNER_JORDAN_ENG_OFFICES"
@@ -646,12 +655,59 @@ def _profile_email(config_dir: Path) -> str:
     return str(profile.get("emailAddress") or "").strip().lower()
 
 
-def gmail_dedupe_for_queue() -> dict[str, str]:
-    """Return {recipient_email: message_id} from BOTH Gmail config contexts."""
+def _accepted_dedupe_checkpoint_eligible_emails(path: Path = DEDUPE_CHECKPOINT_PATH) -> set[str]:
+    """Return the exact eligible set from the accepted full-history census.
+
+    This is fail-closed: missing, changed, malformed, or count-drifted evidence
+    cannot be used to shorten Gmail history enumeration.
+    """
+    if not path.is_file():
+        raise RuntimeError("accepted Gmail dedupe checkpoint is missing")
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != DEDUPE_CHECKPOINT_SHA256:
+        raise RuntimeError("accepted Gmail dedupe checkpoint hash mismatch")
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("accepted Gmail dedupe checkpoint is malformed") from exc
+    if payload.get("schema") != "career-live-candidate-dedupe/1":
+        raise RuntimeError("accepted Gmail dedupe checkpoint schema mismatch")
+    eligible: set[str] = set()
+    for group in ("balady", "rega"):
+        rows = payload.get(group)
+        if not isinstance(rows, list):
+            raise RuntimeError(f"accepted Gmail dedupe checkpoint missing {group} rows")
+        for row in rows:
+            if str(row.get("reason") or "") == "eligible":
+                email = str(row.get("email") or "").strip().lower()
+                if not _valid_email(email):
+                    raise RuntimeError("accepted Gmail dedupe checkpoint contains invalid eligible email")
+                eligible.add(email)
+    summary = payload.get("summary") or {}
+    balady_count = int(((summary.get("balady") or {}).get("eligible") or 0))
+    rega_count = int(((summary.get("rega") or {}).get("eligible") or 0))
+    if balady_count != 38 or rega_count != 1 or len(eligible) != 39:
+        raise RuntimeError("accepted Gmail dedupe checkpoint eligible counts drifted")
+    return eligible
+
+
+def _dedupe_checkpoint_after_epoch() -> int:
+    checkpoint = datetime.fromisoformat(DEDUPE_CHECKPOINT_UTC).astimezone(timezone.utc)
+    return max(0, int(checkpoint.timestamp()) - DEDUPE_CHECKPOINT_OVERLAP_SECONDS)
+
+
+def gmail_dedupe_for_queue(*, after_epoch: int | None = None) -> dict[str, str]:
+    """Return {recipient_email: message_id} from BOTH Gmail config contexts.
+
+    ``after_epoch`` permits a restart-safe incremental scan when an immutable
+    full-history acceptance checkpoint already covers every currently sendable
+    row. Without it, the function retains the conservative Aug-1 full scan.
+    """
     contexts = (
         (CAREER_GMAIL_ACCOUNT, PRIMARY_GWS_CONFIG_DIR),
         (CAREER_OUTWARD_EMAIL, SENDER_GWS_CONFIG_DIR),
     )
+    query = f"after:{int(after_epoch)}" if after_epoch is not None else "after:2026/08/01"
     sent_by_email: dict[str, str] = {}
     for expected_email, config_dir in contexts:
         actual = _profile_email(config_dir)
@@ -660,7 +716,7 @@ def gmail_dedupe_for_queue() -> dict[str, str]:
                 f"Gmail config context {config_dir.name} authenticated as {actual or 'unknown'}, expected {expected_email}"
             )
         token = gmail_access_token_for_context(config_dir)
-        msgs = _gmail_list_paginated(token, "messages", "after:2026/08/01")
+        msgs = _gmail_list_paginated(token, "messages", query)
         for message in msgs:
             message_id = str(message.get("id") or "")
             if not message_id:
@@ -773,6 +829,8 @@ class QueueReconciler:
         self.normalised: list[dict[str, Any]] = []
         self.ledger = QueueLedger(ledger_path) if ledger_path else QueueLedger(Path("/dev/null"))
         self.sent_by_email: dict[str, str] = {}
+        self.gmail_dedupe_loaded = False
+        self.gmail_dedupe_mode = "uninitialized"
         self.blocked_domains: set[str] = set()
         self.blocked_emails: set[str] = set()
         self.blocked_companies: set[str] = set()
@@ -794,7 +852,28 @@ class QueueReconciler:
         ok, detail = verify_both_accounts_available()
         if not ok:
             raise RuntimeError(f"FAIL_CLOSED_BOTH_GMAIL_REQUIRED: {detail}")
-        self.sent_by_email = gmail_dedupe_for_queue()
+
+        active_emails = {
+            str(row.get("email") or "").strip().lower()
+            for row in self.normalised
+            if str(row.get("status") or "").upper() in {"PENDING", "SENDING", "FAILED_TEMPORARY"}
+            and _valid_email(str(row.get("email") or ""))
+        }
+        try:
+            checkpoint_eligible = _accepted_dedupe_checkpoint_eligible_emails()
+        except RuntimeError:
+            checkpoint_eligible = set()
+
+        if active_emails and active_emails.issubset(checkpoint_eligible):
+            self.gmail_dedupe_mode = "accepted-checkpoint-plus-incremental"
+            self.sent_by_email = gmail_dedupe_for_queue(after_epoch=_dedupe_checkpoint_after_epoch())
+        else:
+            # New or previously-unaccepted rows must still receive a complete
+            # historical census before they can become sendable.
+            self.gmail_dedupe_mode = "full-history"
+            self.sent_by_email = gmail_dedupe_for_queue()
+        self.gmail_dedupe_loaded = True
+
         # Build blocked sets from Gmail-sent emails and canonical master aliases.
         email_to_company = self.master.get("email_to_company", {})
         company_domains = self.master.get("company_domains", {})
@@ -941,7 +1020,7 @@ class QueueReconciler:
         if not self.normalised:
             self.read_sheet()
             self.normalise_all()
-        if not self.sent_by_email:
+        if not getattr(self, "gmail_dedupe_loaded", False):
             self.fetch_gmail_dedupe()
 
         filtered, skip_excluded = self.apply_exclusions()
@@ -1065,6 +1144,7 @@ def status_command(args: argparse.Namespace) -> dict[str, Any]:
         },
         "gmail_dedupe": {
             "primary_account": CAREER_GMAIL_ACCOUNT,
+            "mode": reconciler.gmail_dedupe_mode,
             "sent_count": len(gmail_sent),
             "unique_domains": len({e.split("@", 1)[1] for e in gmail_sent if "@" in e}),
         },

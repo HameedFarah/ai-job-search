@@ -435,6 +435,79 @@ def test_gmail_sent_listing_uses_sent_label_and_encoded_query(monkeypatch):
     assert parsed["maxResults"] == ["500"]
 
 
+def test_accepted_checkpoint_manifest_is_hash_and_count_guarded(monkeypatch, tmp_path):
+    import hashlib
+    import career_engine.outreach_reconciler as module
+
+    payload = {
+        "schema": "career-live-candidate-dedupe/1",
+        "balady": [
+            {"email": f"eligible{i}@balady{i}.example", "reason": "eligible"}
+            for i in range(38)
+        ],
+        "rega": [{"email": "info@arbahtaiba.example", "reason": "eligible"}],
+        "summary": {"balady": {"eligible": 38}, "rega": {"eligible": 1}},
+    }
+    path = tmp_path / "checkpoint.json"
+    data = json.dumps(payload, sort_keys=True).encode("utf-8")
+    path.write_bytes(data)
+    monkeypatch.setattr(module, "DEDUPE_CHECKPOINT_SHA256", hashlib.sha256(data).hexdigest())
+    assert len(module._accepted_dedupe_checkpoint_eligible_emails(path)) == 39
+
+    path.write_bytes(data + b"\n")
+    with pytest.raises(RuntimeError, match="hash mismatch"):
+        module._accepted_dedupe_checkpoint_eligible_emails(path)
+
+
+def _dedupe_test_reconciler(email: str):
+    r = QueueReconciler.__new__(QueueReconciler)
+    r.normalised = [normalise_row({"Email": email, "Company_or_Office": "Example Co"})]
+    r.master = _master_index([])
+    r.blocked_emails = set()
+    r.blocked_domains = set()
+    r.blocked_companies = set()
+    r.sent_by_email = {}
+    r.gmail_dedupe_loaded = False
+    r.gmail_dedupe_mode = "uninitialized"
+    return r
+
+
+def test_checkpoint_covered_queue_uses_incremental_gmail_scan(monkeypatch):
+    import career_engine.outreach_reconciler as module
+
+    email = "careers@example.com"
+    r = _dedupe_test_reconciler(email)
+    calls = []
+    monkeypatch.setattr(module, "verify_both_accounts_available", lambda: (True, "ok"))
+    monkeypatch.setattr(module, "_accepted_dedupe_checkpoint_eligible_emails", lambda: {email})
+    monkeypatch.setattr(
+        module,
+        "gmail_dedupe_for_queue",
+        lambda *, after_epoch=None: calls.append(after_epoch) or {},
+    )
+    assert r.fetch_gmail_dedupe() == {}
+    assert r.gmail_dedupe_loaded is True
+    assert r.gmail_dedupe_mode == "accepted-checkpoint-plus-incremental"
+    assert calls == [module._dedupe_checkpoint_after_epoch()]
+
+
+def test_uncovered_queue_falls_back_to_full_history(monkeypatch):
+    import career_engine.outreach_reconciler as module
+
+    r = _dedupe_test_reconciler("new@example.com")
+    calls = []
+    monkeypatch.setattr(module, "verify_both_accounts_available", lambda: (True, "ok"))
+    monkeypatch.setattr(module, "_accepted_dedupe_checkpoint_eligible_emails", lambda: {"other@example.com"})
+    monkeypatch.setattr(
+        module,
+        "gmail_dedupe_for_queue",
+        lambda *, after_epoch=None: calls.append(after_epoch) or {},
+    )
+    assert r.fetch_gmail_dedupe() == {}
+    assert r.gmail_dedupe_mode == "full-history"
+    assert calls == [None]
+
+
 def test_gmail_access_token_for_context_raises_on_fail():
     """If the gws auth context fails, gmail_access_token_for_context raises RuntimeError."""
     from career_engine.outreach_reconciler import gmail_access_token_for_context
