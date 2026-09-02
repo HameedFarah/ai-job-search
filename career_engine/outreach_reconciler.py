@@ -497,9 +497,14 @@ def _gmail_list_paginated(token: str, kind: str, query: str) -> list[dict]:
     out: list[dict] = []
     page_token = ""
     while True:
-        params = {"q": query, "maxResults": 500}
+        params: list[tuple[str, str | int]] = [("q", query), ("maxResults", 500)]
+        if kind == "messages":
+            # Use the immutable Gmail SENT label rather than the textual
+            # ``in:sent`` search operator, whose parsing/case behavior has
+            # already produced misleading campaign-census results.
+            params.append(("labelIds", "SENT"))
         if page_token:
-            params["pageToken"] = page_token
+            params.append(("pageToken", page_token))
         qs = urlencode(params)
         resp = sheets_request(token, "GET",
                               f"https://gmail.googleapis.com/gmail/v1/users/me/{kind}?{qs}")
@@ -649,7 +654,7 @@ def gmail_dedupe_for_queue() -> dict[str, str]:
                 f"Gmail config context {config_dir.name} authenticated as {actual or 'unknown'}, expected {expected_email}"
             )
         token = gmail_access_token_for_context(config_dir)
-        msgs = _gmail_list_paginated(token, "messages", "in:sent after:2026/08/01")
+        msgs = _gmail_list_paginated(token, "messages", "after:2026/08/01")
         for message in msgs:
             message_id = str(message.get("id") or "")
             if not message_id:

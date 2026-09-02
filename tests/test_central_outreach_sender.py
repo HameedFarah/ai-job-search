@@ -24,6 +24,19 @@ def test_package_constants_are_canonical():
     assert sender.SUCCESS_CADENCE_SECONDS >= 90
 
 
+def test_daily_cap_listing_uses_sent_label_and_riyadh_midnight(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    urls = []
+    monkeypatch.setattr(sender, "_local_now", lambda: datetime(2026, 9, 2, 12, 0, tzinfo=sender.RIYADH))
+    monkeypatch.setattr(sender, "_gmail_json", lambda token, method, url, payload=None: urls.append(url) or {"messages": [{"id": "m1"}]})
+    assert sender._sender_sent_today_count("token") == 1
+    parsed = parse_qs(urlparse(urls[0]).query)
+    assert parsed["labelIds"] == ["SENT"]
+    assert parsed["maxResults"] == ["500"]
+    assert parsed["q"][0].startswith("after:")
+
+
 def test_message_item_uses_exact_sender_package():
     item = sender._message_item({"queue_id": "Q1", "email": "person@example.com"})
     assert item["email"] == "person@example.com"

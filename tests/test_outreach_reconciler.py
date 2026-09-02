@@ -403,6 +403,20 @@ def test_gmail_api_403_raises_runtime_error():
     assert len(sig.parameters) == 3  # token, kind, query
 
 
+def test_gmail_sent_listing_uses_sent_label_and_encoded_query(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    import career_engine.outreach_reconciler as module
+
+    urls = []
+    monkeypatch.setattr(module, "sheets_request", lambda token, method, url: urls.append(url) or {"messages": []})
+    module._gmail_list_paginated("token", "messages", "after:2026/08/01")
+    assert len(urls) == 1
+    parsed = parse_qs(urlparse(urls[0]).query)
+    assert parsed["q"] == ["after:2026/08/01"]
+    assert parsed["labelIds"] == ["SENT"]
+    assert parsed["maxResults"] == ["500"]
+
+
 def test_gmail_access_token_for_context_raises_on_fail():
     """If the gws auth context fails, gmail_access_token_for_context raises RuntimeError."""
     from career_engine.outreach_reconciler import gmail_access_token_for_context

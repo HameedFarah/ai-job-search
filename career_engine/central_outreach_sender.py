@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -103,15 +104,21 @@ def _sender_profile(token: str) -> str:
 
 
 def _sender_sent_today_count(token: str) -> int:
-    """Conservative daily safeguard: count every message in sender Sent today."""
+    """Conservative daily safeguard: count every sender SENT message since Riyadh midnight."""
     local = _local_now()
-    query = f"in:Sent after:{local.strftime('%Y/%m/%d')}"
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    query = f"after:{int(midnight.timestamp())}"
     total = 0
     page_token = ""
     while True:
-        url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=" + query.replace(" ", "%20") + "&maxResults=500"
+        params: list[tuple[str, str | int]] = [
+            ("q", query),
+            ("maxResults", 500),
+            ("labelIds", "SENT"),
+        ]
         if page_token:
-            url += "&pageToken=" + page_token
+            params.append(("pageToken", page_token))
+        url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?" + urlencode(params)
         payload = _gmail_json(token, "GET", url)
         total += len(payload.get("messages") or [])
         page_token = str(payload.get("nextPageToken") or "")
