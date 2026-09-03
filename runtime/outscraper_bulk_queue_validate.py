@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Task-only bounded Outscraper validation for the authoritative Send Queue.
+"""Bounded Outscraper validation for the authoritative live Send Queue.
 
-No email send path exists here. Uses the existing canonical validator, existing
-rclone Google auth, and the dedicated Infisical-injected Outscraper key.
+No email-send path exists here. The runner selects only rows explicitly staged
+as PENDING_OUTSCRAPER_VALIDATION (or NETWORK_FAILED when retry is requested),
+uses the existing canonical validator, existing rclone Google auth, and the
+Infisical-injected Outscraper key, then writes provider evidence back with
+immutable Queue_ID metadata and exact readback verification.
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ from runtime.outscraper_sheet_runner import (
 )
 
 RATE_USD_PER_EMAIL_UPPER_BOUND = 0.003
-EXPECTED_ROWS = 1236
+PENDING_STATE = "PENDING_OUTSCRAPER_VALIDATION"
 JOURNAL_PATH = Path("runtime/acceptance/outscraper-queue-journal.json")
 
 
@@ -47,7 +50,7 @@ def load_journal(path: Path = JOURNAL_PATH) -> dict:
     return value
 
 
-def journal_replay_items(journal: dict, selected_emails: set[str]) -> list[dict]:
+def journal_replay_items(journal: dict, selected: list[dict[str, str]]) -> list[dict]:
     state = str(journal.get("state") or "")
     if state == "inflight":
         raise RuntimeError("prior Outscraper queue call is ambiguous; refusing automatic paid-call repeat")
@@ -55,11 +58,22 @@ def journal_replay_items(journal: dict, selected_emails: set[str]) -> list[dict]
         return []
     if state != "complete":
         raise RuntimeError("Outscraper queue journal has unknown state")
+
+    selected_pairs = {(item["queue_id"], item["email"]) for item in selected}
+    journal_selected = [item for item in journal.get("selected", []) if isinstance(item, dict)]
+    journal_pairs = {
+        (str(item.get("queue_id") or "").strip(), str(item.get("email") or "").strip().lower())
+        for item in journal_selected
+    }
+    if selected_pairs != journal_pairs:
+        raise RuntimeError("completed Outscraper journal does not match current pending queue")
+
     results = [dict(item) for item in journal.get("results", []) if isinstance(item, dict)]
     by_email = {str(item.get("email") or "").strip().lower(): item for item in results}
-    if selected_emails and not selected_emails.issubset(set(by_email)):
-        raise RuntimeError("completed Outscraper journal does not match current pending queue")
-    return [by_email[email] for email in sorted(selected_emails)]
+    selected_emails = {item["email"] for item in selected}
+    if set(by_email) != selected_emails:
+        raise RuntimeError("completed Outscraper journal results do not match current pending queue")
+    return [by_email[item["email"]] for item in selected]
 
 
 def safe_item(record: dict) -> dict:
@@ -86,11 +100,36 @@ def balance_snapshot(client: OutscraperClient) -> dict:
     }
 
 
+def _preflight_queue(rows: list[dict[str, str]]) -> None:
+    if not rows:
+        raise SystemExit("authoritative Send Queue is empty")
+    queue_ids = [str(row.get("Queue_ID") or "").strip() for row in rows]
+    emails = [str(row.get("Email") or "").strip().lower() for row in rows]
+    if any(not value for value in queue_ids) or any(not value for value in emails):
+        raise SystemExit("authoritative Send Queue contains blank immutable identity")
+    if len(set(queue_ids)) != len(queue_ids) or len(set(emails)) != len(emails):
+        raise SystemExit("authoritative Send Queue row/uniqueness preflight failed")
+
+
+def _eligible_pending(row: dict[str, str], retry_network_failed: bool) -> bool:
+    status = str(row.get("Outscraper_Status") or "").strip().upper()
+    evidence = str(row.get("Outscraper_Evidence") or "").strip()
+    state = str(row.get("Send_State") or "").strip().upper()
+    if retry_network_failed:
+        return status == "NETWORK_FAILED"
+    return state == PENDING_STATE and not status and not evidence
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=0, help="Validate at most N selected rows; 0 means all")
     parser.add_argument("--batch-size", type=int, default=10, help="Provider batch size, bounded to 1..25")
-    parser.add_argument("--retry-network-failed", action="store_true", help="Select NETWORK_FAILED rows instead of evidence-empty rows")
+    parser.add_argument("--retry-network-failed", action="store_true", help="Select NETWORK_FAILED rows instead of fresh pending rows")
+    parser.add_argument(
+        "--source-dataset-contains",
+        default="",
+        help="Optional case-insensitive Source_Dataset filter, e.g. REGA or BALADY",
+    )
     parser.add_argument("--apply", action="store_true", help="Required to call provider and write Sheet")
     parser.add_argument("--spreadsheet-id", default=SPREADSHEET_ID)
     args = parser.parse_args()
@@ -103,34 +142,39 @@ def main() -> int:
 
     token = rclone_access_token(os.environ.get("RCLONE_GDRIVE_REMOTE", "gdrive"))
     rows = read_queue(token, args.spreadsheet_id)
-    emails = [str(row.get("Email") or "").strip().lower() for row in rows]
-    if len(rows) != EXPECTED_ROWS or len({e for e in emails if e}) != EXPECTED_ROWS:
-        raise SystemExit("authoritative queue row/uniqueness preflight failed")
+    _preflight_queue(rows)
+    before_queue_ids = {str(row.get("Queue_ID") or "").strip() for row in rows}
 
-    batch_size = max(1, min(int(args.batch_size), MAX_BATCH_SIZE))
-    pending = [
-        (str(row.get("Queue_ID") or "").strip(), row, email)
-        for row, email in zip(rows, emails)
-        if email and (
-            str(row.get("Outscraper_Status") or "").strip().upper() == "NETWORK_FAILED"
-            if args.retry_network_failed
-            else not str(row.get("Outscraper_Evidence") or "").strip()
-        )
-    ]
+    source_filter = str(args.source_dataset_contains or "").strip().lower()
+    pending = []
+    for row in rows:
+        if source_filter and source_filter not in str(row.get("Source_Dataset") or "").lower():
+            continue
+        if not _eligible_pending(row, bool(args.retry_network_failed)):
+            continue
+        queue_id = str(row.get("Queue_ID") or "").strip()
+        email = str(row.get("Email") or "").strip().lower()
+        pending.append((queue_id, row, email))
+
     if args.limit > 0:
         pending = pending[: args.limit]
     if not pending:
-        print(json.dumps({"ok": True, "selected": 0, "writes": 0, "sends": 0, "provider_calls": 0, "secret_values_in_output": False}, sort_keys=True))
+        print(json.dumps({
+            "ok": True,
+            "queue_rows": len(rows),
+            "selected": 0,
+            "writes": 0,
+            "sends": 0,
+            "provider_calls": 0,
+            "source_dataset_filter": source_filter,
+            "secret_values_in_output": False,
+        }, sort_keys=True))
         return 0
 
-    selected = [
-        {"queue_id": queue_id, "email": email}
-        for queue_id, _row, email in pending
-    ]
-    selected_emails = {item["email"] for item in selected}
+    selected = [{"queue_id": queue_id, "email": email} for queue_id, _row, email in pending]
     journal = load_journal()
     try:
-        replay_items = journal_replay_items(journal, selected_emails)
+        replay_items = journal_replay_items(journal, selected)
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -142,6 +186,7 @@ def main() -> int:
     if float(before["balance"]) < estimate:
         raise SystemExit("existing Outscraper balance is below conservative validation cost bound")
 
+    batch_size = max(1, min(int(args.batch_size), MAX_BATCH_SIZE))
     if replay_items:
         items = replay_items
         budget = ProviderBudget(allow_existing_credit=True, max_calls=0, max_credits=0, max_domains=0)
@@ -150,6 +195,7 @@ def main() -> int:
             "state": "inflight",
             "selected": selected,
             "retry_network_failed": bool(args.retry_network_failed),
+            "source_dataset_filter": source_filter,
             "batch_size": batch_size,
         })
         budget = ProviderBudget(
@@ -161,17 +207,20 @@ def main() -> int:
         records = validate_emails(client, [email for _, _, email in pending], budget, batch_size=batch_size)
         items = [safe_item(record) for record in records]
         by_email_after_call = {item["email"]: item for item in items if item["email"]}
+        selected_emails = {item["email"] for item in selected}
         if set(by_email_after_call) != selected_emails:
             raise SystemExit("validator did not return exactly one result per selected email")
         atomic_json(JOURNAL_PATH, {
             "state": "complete",
             "selected": selected,
             "retry_network_failed": bool(args.retry_network_failed),
+            "source_dataset_filter": source_filter,
             "batch_size": batch_size,
             "results": items,
         })
 
     by_email = {item["email"]: item for item in items if item.get("email")}
+    selected_emails = {item["email"] for item in selected}
     if set(by_email) != selected_emails:
         raise SystemExit("Outscraper journal/results do not match current selected emails")
 
@@ -185,24 +234,38 @@ def main() -> int:
     artifact_path.write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in items), encoding="utf-8")
 
     after_rows = read_queue(token, args.spreadsheet_id)
-    if len(after_rows) != EXPECTED_ROWS:
-        raise SystemExit("Sheet readback row count changed")
-    selected_emails = {email for _, _, email in pending}
-    readback = [row for row in after_rows if str(row.get("Email") or "").strip().lower() in selected_emails]
-    if len(readback) != len(pending):
-        raise SystemExit("Sheet readback selected row count mismatch")
-    readback_by_email = {str(row.get("Email") or "").strip().lower(): row for row in readback}
-    fields = ("Send_State", "Outscraper_Status", "Outscraper_Verification", "Outscraper_Replacement_Email", "Outscraper_Evidence", "Outscraper_Checked_At")
-    for _, _, email in pending:
+    _preflight_queue(after_rows)
+    after_queue_ids = {str(row.get("Queue_ID") or "").strip() for row in after_rows}
+    if not before_queue_ids.issubset(after_queue_ids):
+        raise SystemExit("Sheet readback lost pre-existing queue rows")
+
+    readback_by_id = {
+        str(row.get("Queue_ID") or "").strip(): row
+        for row in after_rows
+    }
+    fields = (
+        "Send_State",
+        "Outscraper_Status",
+        "Outscraper_Verification",
+        "Outscraper_Replacement_Email",
+        "Outscraper_Evidence",
+        "Outscraper_Checked_At",
+    )
+    for queue_id, _, email in pending:
         expected = _sheet_values(by_email[email])
-        actual = readback_by_email.get(email)
-        if actual is None or any(str(actual.get(field) or "") != str(expected.get(field) or "") for field in fields):
+        actual = readback_by_id.get(queue_id)
+        if actual is None:
+            raise SystemExit("Sheet readback target Queue_ID missing")
+        if str(actual.get("Email") or "").strip().lower() != email:
+            raise SystemExit("Sheet readback immutable identity mismatch")
+        if any(str(actual.get(field) or "") != str(expected.get(field) or "") for field in fields):
             raise SystemExit("Sheet readback exact field verification failed")
 
     atomic_json(JOURNAL_PATH, {
         "state": "applied",
         "selected": selected,
         "retry_network_failed": bool(args.retry_network_failed),
+        "source_dataset_filter": source_filter,
         "batch_size": batch_size,
         "results": items,
     })
@@ -213,27 +276,35 @@ def main() -> int:
     balance_delta = round(float(after["balance"]) - float(before["balance"]), 6)
 
     provider_counts = dict(Counter(item["provider_status"] for item in items))
+    selected_ids = {queue_id for queue_id, _, _ in pending}
+    readback = [row for row in after_rows if str(row.get("Queue_ID") or "").strip() in selected_ids]
     state_counts = dict(Counter(str(row.get("Send_State") or "") for row in readback))
-    remaining = sum(not str(row.get("Outscraper_Evidence") or "").strip() for row in after_rows)
+    remaining = sum(_eligible_pending(row, False) for row in after_rows)
     summary = {
         "ok": True,
+        "queue_rows_before": len(rows),
+        "queue_rows_after": len(after_rows),
         "selected": len(pending),
         "batch_size_used": batch_size,
         "batch_size_max": MAX_BATCH_SIZE,
         "provider_calls": budget.calls,
         "provider_counts": provider_counts,
         "sheet_state_counts_for_selected": state_counts,
-        "remaining_without_outscraper_evidence": remaining,
+        "remaining_pending_outscraper_validation": remaining,
         "balance_before": before["balance"],
         "balance_after": after["balance"],
         "balance_delta": balance_delta,
         "conservative_cost_bound_usd": estimate,
+        "source_dataset_filter": source_filter,
         "artifact": str(artifact_path),
         "writes": len(updates),
         "sends": 0,
         "secret_values_in_output": False,
     }
-    (artifact_dir / f"outscraper-queue-summary-{len(pending)}.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (artifact_dir / f"outscraper-queue-summary-{len(pending)}.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps(summary, sort_keys=True))
     return 0
 
