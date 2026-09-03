@@ -77,6 +77,9 @@ def test_account_level_error_classifier():
     for text in ("Gmail API request failed (403)", "Gmail API request failed (429)", "quota exceeded", "sending limit"):
         assert sender._is_account_level_error(RuntimeError(text)) is True
     assert sender._is_account_level_error(RuntimeError("recipient not found")) is False
+    # systemd treats this exact code as a deliberate hard stop and restarts
+    # other non-zero infrastructure failures only.
+    assert sender.ACCOUNT_LEVEL_STOP_EXIT_CODE == 75
 
 
 def test_permanent_recipient_error_classifier():

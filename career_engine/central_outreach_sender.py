@@ -76,6 +76,10 @@ SUCCESS_CADENCE_SECONDS = 96
 # This margin is deliberately larger than the normal API/readback latency and
 # still preserves the owner-approved operating window.
 MIN_SEND_START_BUFFER_SECONDS = 120
+# Distinguish a deliberate Gmail account-level stop from transient infrastructure
+# failures so systemd may safely restart the latter without retrying a restricted
+# sending account.
+ACCOUNT_LEVEL_STOP_EXIT_CODE = 75
 
 
 def utc_now() -> str:
@@ -428,7 +432,7 @@ def run(*, ledger_path: Path, status_path: Path, poll_seconds: int = POLL_SECOND
                     "Last_Error": "account-level Gmail restriction; sender stopped",
                 })
                 _status(status_path, "account-level-stop", error_type=type(exc).__name__)
-                return 2
+                return ACCOUNT_LEVEL_STOP_EXIT_CODE
 
             permanent = _is_permanent_recipient_error(exc)
             reconciler.ledger.mark_failed(queue_id, type(exc).__name__, permanent=permanent)
