@@ -26,9 +26,15 @@ def test_window_close_buffer_prevents_edge_send_start():
 def test_package_constants_are_canonical():
     assert sender.SUBJECT == "Abdelhamid Farah | Senior Design & Project Leadership"
     assert sender.CV_PATH.name == "Abdelhamid_Farah_CV_Senior_Design_Project_Leadership.pdf"
+    assert sender.CV_PATH.is_absolute()
+    assert sender.CV_PATH.parent == sender.REPO_ROOT / "runtime"
     assert sender.CV_SHA == "e35be83899bb6b05904b5b34754d7b834a7839bc5e89d8d569fe17595c50e0d5"
     assert sender.PORTFOLIO_PATH.name == "Abdelhamid Farah-Portfolio-2026.pdf"
+    assert sender.PORTFOLIO_PATH.is_absolute()
+    assert sender.PORTFOLIO_PATH.parent == sender.REPO_ROOT / "runtime"
     assert sender.PORTFOLIO_SHA == "64f2a3b7caa1a827f8d03bf10cfa098b3c78dab73c0aa783d84e1784a4a05075"
+    assert sender.DEFAULT_LEDGER.is_absolute()
+    assert sender.DEFAULT_STATUS.is_absolute()
     assert sender.SUCCESS_CADENCE_SECONDS >= 90
 
 

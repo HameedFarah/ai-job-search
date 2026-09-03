@@ -57,13 +57,17 @@ Kind regards,
 Abdelhamid Farah
 hameedfarah@gmail.com"""
 
-CV_PATH = Path("runtime/Abdelhamid_Farah_CV_Senior_Design_Project_Leadership.pdf")
+CV_PATH = REPO_ROOT / "runtime/Abdelhamid_Farah_CV_Senior_Design_Project_Leadership.pdf"
 CV_SHA = "e35be83899bb6b05904b5b34754d7b834a7839bc5e89d8d569fe17595c50e0d5"
-PORTFOLIO_PATH = Path("runtime/Abdelhamid Farah-Portfolio-2026.pdf")
+PORTFOLIO_PATH = REPO_ROOT / "runtime/Abdelhamid Farah-Portfolio-2026.pdf"
 PORTFOLIO_SHA = "64f2a3b7caa1a827f8d03bf10cfa098b3c78dab73c0aa783d84e1784a4a05075"
 
-DEFAULT_LEDGER = Path("runtime/acceptance/auto-send-queue/ledger.json")
-DEFAULT_STATUS = Path("runtime/acceptance/auto-send-queue/status.json")
+# These defaults must be independent of the caller's current working directory.
+# A diagnostic/manual invocation from outside the repo must never create a
+# competing ledger/status tree or fail package validation because of relative
+# paths.
+DEFAULT_LEDGER = REPO_ROOT / "runtime/acceptance/auto-send-queue/ledger.json"
+DEFAULT_STATUS = REPO_ROOT / "runtime/acceptance/auto-send-queue/status.json"
 POLL_SECONDS = 60
 SUCCESS_CADENCE_SECONDS = 96
 # Do not begin a fresh Gmail transaction at the edge of the hard 19:00 stop.
