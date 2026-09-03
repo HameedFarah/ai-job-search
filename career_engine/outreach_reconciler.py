@@ -834,6 +834,7 @@ class QueueReconciler:
         self.blocked_domains: set[str] = set()
         self.blocked_emails: set[str] = set()
         self.blocked_companies: set[str] = set()
+        self.permanently_bounced_mailboxes: set[str] = set()
         self.master_rows: list[dict[str, str]] = []
         self.master: dict[str, Any] = _master_index([])
 
@@ -877,6 +878,7 @@ class QueueReconciler:
         # Build blocked sets from Gmail-sent emails and canonical master aliases.
         email_to_company = self.master.get("email_to_company", {})
         company_domains = self.master.get("company_domains", {})
+        self.permanently_bounced_mailboxes = set(self.master.get("permanent_bounce_emails", []))
         for email, _mid in self.sent_by_email.items():
             email = email.lower().strip()
             self.blocked_emails.add(email)
@@ -950,12 +952,28 @@ class QueueReconciler:
                 continue
 
             # Company/domain dedupe against both Gmail histories.
+            # Bounce-aware domain dedupe: if ALL blocked emails for a domain
+            # are permanently bounced, the domain block is lifted for
+            # non-bounced replacement mailboxes at that domain. A terminal
+            # bounce for one mailbox must not permanently poison the domain
+            # when the bounced mailbox is NOT permanently failed, the domain
+            # stays blocked.
             if email in self.blocked_emails:
                 skipped.append({**row, "skip_reason": "already_sent_gmail"})
                 continue
             if domain in self.blocked_domains:
-                skipped.append({**row, "skip_reason": "domain_sent_gmail"})
-                continue
+                # Public email providers are never deduped by domain.
+                if not _is_public_email_domain(domain):
+                    blocked_in_domain = {
+                        e for e in self.blocked_emails
+                        if _email_domain(e) == domain
+                    }
+                    if not (blocked_in_domain and blocked_in_domain.issubset(self.permanently_bounced_mailboxes)):
+                        skipped.append({**row, "skip_reason": "domain_sent_gmail"})
+                        continue
+                else:
+                    # Public domains are exempt from domain dedupe.
+                    pass  # do NOT skip
             if effective_company and effective_company in self.blocked_companies:
                 skipped.append({**row, "skip_reason": "company_sent_gmail"})
                 continue
@@ -973,6 +991,11 @@ class QueueReconciler:
                 continue
             sent_company = _company_key(str(entry.get("company") or ""))
             sent_domain = str(entry.get("domain") or _email_domain(str(entry.get("email") or ""))).lower()
+            sent_email = str(entry.get("email") or "").strip().lower()
+            # Ledger SENT entries for permanently bounced mailboxes must NOT
+            # poison the domain for verified replacement addresses.
+            if sent_email in self.permanently_bounced_mailboxes:
+                continue
             if sent_company:
                 sent_companies.add(sent_company)
             if sent_domain and not _is_public_email_domain(sent_domain):

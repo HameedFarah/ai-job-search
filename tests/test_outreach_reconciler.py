@@ -549,7 +549,10 @@ def test_restartsafe_ledger_prevents_dupe_sent():
         r = QueueReconciler.__new__(QueueReconciler)
         r.ledger = ledger2
         r.master = _master_index([])
-
+        r.permanently_bounced_mailboxes = set()
+        r.blocked_emails = set()
+        r.blocked_domains = set()
+        r.blocked_companies = set()
         # A fresh row with the same queue_id should be skipped
         result = r.apply_ledge_dedupe([
             {"email": "sent@example.com", "queue_id": qid, "domain": "example.com", "company": "Test Co"},
@@ -749,6 +752,10 @@ def test_public_provider_domain_not_globally_deduped(tmp_path):
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = ledger
     r.master = _master_index([])
+    r.permanently_bounced_mailboxes = set()
+    r.blocked_emails = set()
+    r.blocked_domains = set()
+    r.blocked_companies = set()
     candidate = {
         "email": "bob@gmail.com", "queue_id": _stable_id_for("bob@gmail.com", "Company B"),
         "domain": "gmail.com", "company": "Company B",
@@ -768,6 +775,7 @@ def test_corporate_domain_remains_globally_deduped(tmp_path):
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = ledger
     r.master = _master_index([])
+    r.permanently_bounced_mailboxes = set()
     candidate = {
         "email": "bob@example.com", "queue_id": _stable_id_for("bob@example.com", "Company B"),
         "domain": "example.com", "company": "Company B",
@@ -809,3 +817,178 @@ def test_known_cross_domain_replacements_are_blocked():
     assert filtered == []
     assert len(skipped) == len(candidates)
     assert {row["skip_reason"] for row in skipped} == {"known_contacted_company_alias"}
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: bounce replacement send eligibility (2026-09-03)
+# ---------------------------------------------------------------------------
+
+def test_same_domain_bounce_replacement_is_allowed():
+    """buiteir@mesc.solutions permanently bounced → info@mesc.solutions verified
+    and should NOT be blocked by domain dedupe when ALL blocked emails at that
+    domain are permanently bounced."""
+    r = _dedupe_test_reconciler("info@mesc.solutions")
+    # Master marks the bounced email as permanently bounced
+    r.master = _master_index([{
+        "Email": "buiteir@mesc.solutions",
+        "Company_or_Office": "MESC",
+        "Terminal_Outcome": "PERMANENT BOUNCE",
+    }])
+    r.permanently_bounced_mailboxes = {"buiteir@mesc.solutions"}
+    # Gmail dedupe blocks buiteir but NOT info (info was never sent to)
+    r.blocked_emails = {"buiteir@mesc.solutions"}
+    r.blocked_domains = {"mesc.solutions"}
+    r.blocked_companies = set()
+    # Normalise and run exclusions
+    r.normalised = [
+        normalise_row({"Email": "info@mesc.solutions", "Company_or_Office": "MESC"}),
+        normalise_row({"Email": "buiteir@mesc.solutions", "Company_or_Office": "MESC"}),
+    ]
+    filtered, skipped = r.apply_exclusions()
+    # info@mesc.solutions should pass (all blocked mesc.solutions emails are bounced)
+    eligible_emails = {row["email"] for row in filtered}
+    assert "info@mesc.solutions" in eligible_emails
+    # But buiteir should be skipped as permanent_bounce
+    bounce_skips = [row for row in skipped if row["skip_reason"] == "permanent_bounce"]
+    assert len(bounce_skips) == 1
+    assert bounce_skips[0]["email"] == "buiteir@mesc.solutions"
+
+
+def test_successful_contact_blocks_replacement():
+    """If ANY successful prior contact exists for the company/domain (Gmail or
+    ledger), replacement must remain blocked — even after a bounce for another mailbox."""
+    r = _dedupe_test_reconciler("info@mesc.solutions")
+    r.master = _master_index([])
+    r.permanently_bounced_mailboxes = {"old@mesc.solutions"}
+    # Both the old (bounced) AND info were sent to via Gmail
+    r.blocked_emails = {"old@mesc.solutions", "info@mesc.solutions"}
+    r.blocked_domains = {"mesc.solutions"}
+    r.blocked_companies = {"mesc"}
+    r.normalised = [
+        normalise_row({"Email": "info@mesc.solutions", "Company_or_Office": "MESC"}),
+    ]
+    filtered, skipped = r.apply_exclusions()
+    # info is blocked because it's in blocked_emails (already_sent_gmail)
+    assert filtered == []
+    assert skipped[0]["skip_reason"] == "already_sent_gmail"
+
+
+def test_success_in_ledger_blocks_replacement():
+    """A ledger SENT entry for a non-bounced mailbox at the domain blocks
+    the replacement. Only bounced-mailbox ledger entries are excluded from
+    poisoning sent_domains."""
+    tmp = Path("/tmp/test_bounce_ledger.json")
+    try:
+        ledger = QueueLedger(tmp)
+        bounced_qid = _stable_id_for("buiteir@mesc.solutions")
+        successful_qid = _stable_id_for("other@mesc.solutions")
+        ledger.mark_pending(bounced_qid, {
+            "email": "buiteir@mesc.solutions", "company": "MESC",
+            "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "domain": "mesc.solutions",
+        })
+        ledger.mark_sent(bounced_qid, "mid_bounce", "2026-09-01T01:00:00Z")
+        ledger.mark_pending(successful_qid, {
+            "email": "other@mesc.solutions", "company": "MESC",
+            "priority": "NORMAL", "added_at": "2026-09-01T02:00:00Z", "domain": "mesc.solutions",
+        })
+        ledger.mark_sent(successful_qid, "mid_success", "2026-09-01T03:00:00Z")
+        ledger.save()
+
+        r = QueueReconciler.__new__(QueueReconciler)
+        r.ledger = QueueLedger(tmp)
+        r.master = _master_index([])
+        r.permanently_bounced_mailboxes = {"buiteir@mesc.solutions"}
+        candidate = {
+            "email": "info@mesc.solutions",
+            "queue_id": _stable_id_for("info@mesc.solutions"),
+            "domain": "mesc.solutions",
+            "company": "MESC",
+        }
+        result = r.apply_ledge_dedupe([candidate])
+        # info@mesc is blocked because other@mesc.solutions was successfully sent (not bounced)
+        assert result == []
+
+        # Now use a clean ledger with only bounced mailbox — bounced-only ledger should NOT block
+        tmp2 = Path("/tmp/test_bounce_ledger2.json")
+        try:
+            ledger2 = QueueLedger(tmp2)
+            ledger2.mark_pending(bounced_qid, {
+                "email": "buiteir@mesc.solutions", "company": "MESC",
+                "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "domain": "mesc.solutions",
+            })
+            ledger2.mark_sent(bounced_qid, "mid_bounce", "2026-09-01T01:00:00Z")
+            ledger2.save()
+
+            r2 = QueueReconciler.__new__(QueueReconciler)
+            r2.ledger = QueueLedger(tmp2)
+            r2.master = _master_index([])
+            r2.permanently_bounced_mailboxes = {"buiteir@mesc.solutions"}
+            result2 = r2.apply_ledge_dedupe([candidate])
+            # info@mesc should now pass through (bounced mailbox ledger entry is excluded)
+            assert len(result2) == 1
+            assert result2[0]["email"] == "info@mesc.solutions"
+        finally:
+            tmp2.unlink(missing_ok=True)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def test_exact_mailbox_block_still_works():
+    """Exact permanently bounced mailbox must NEVER be retried, regardless of
+    domain dedupe lifting."""
+    r = _dedupe_test_reconciler("buiteir@mesc.solutions")
+    r.master = _master_index([{
+        "Email": "buiteir@mesc.solutions",
+        "Company_or_Office": "MESC",
+        "Terminal_Outcome": "PERMANENT BOUNCE",
+    }])
+    r.permanently_bounced_mailboxes = {"buiteir@mesc.solutions"}
+    r.blocked_emails = {"buiteir@mesc.solutions"}
+    r.blocked_domains = {"mesc.solutions"}
+    r.blocked_companies = set()
+    r.normalised = [
+        normalise_row({"Email": "buiteir@mesc.solutions", "Company_or_Office": "MESC"}),
+    ]
+    filtered, skipped = r.apply_exclusions()
+    assert filtered == []
+    assert skipped[0]["skip_reason"] == "permanent_bounce"
+
+
+def test_public_email_domain_not_affected_by_bounce_lift():
+    """Public email providers (gmail.com, etc.) must NOT be subject to bounce-domain
+    lifting — they are never deduped by domain in the first place."""
+    from career_engine.outreach_reconciler import _is_public_email_domain
+    assert _is_public_email_domain("gmail.com") is True
+    # The bounce-lift logic should not matter for public domains because
+    # domain_sent_gmail dedupe is already skipped for public domains.
+    r = _dedupe_test_reconciler("alice@gmail.com")
+    r.master = _master_index([])
+    r.permanently_bounced_mailboxes = {"bob@gmail.com"}
+    r.blocked_emails = {"bob@gmail.com"}
+    r.blocked_domains = {"gmail.com"}  # This shouldn't happen in practice but test safety
+    r.blocked_companies = set()
+    r.normalised = [
+        normalise_row({"Email": "alice@gmail.com", "Company_or_Office": "Company A"}),
+    ]
+    filtered, skipped = r.apply_exclusions()
+    # alice@gmail.com should pass because gmail.com is public
+    assert filtered == [r.normalised[0]]
+
+
+def test_partial_bounce_domain_still_blocked():
+    """If only SOME (not ALL) blocked emails at a domain are bounced,
+    the domain block must remain in force."""
+    r = _dedupe_test_reconciler("info@mesc.solutions")
+    r.master = _master_index([])
+    # Only buiteir is bounced, but other@mesc was successfully sent
+    r.permanently_bounced_mailboxes = {"buiteir@mesc.solutions"}
+    r.blocked_emails = {"buiteir@mesc.solutions", "other@mesc.solutions"}
+    r.blocked_domains = {"mesc.solutions"}
+    r.blocked_companies = set()
+    r.normalised = [
+        normalise_row({"Email": "info@mesc.solutions", "Company_or_Office": "MESC"}),
+    ]
+    filtered, skipped = r.apply_exclusions()
+    # info is blocked because not ALL blocked emails at mesc.solutions are bounced
+    assert filtered == []
+    assert skipped[0]["skip_reason"] == "domain_sent_gmail"
