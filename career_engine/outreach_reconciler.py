@@ -106,8 +106,19 @@ MAX_DAILY = 300
 WINDOW_START_HOUR = 8
 WINDOW_END_HOUR = 19
 
-# Absolute exclusion lists
-EXCLUDED_COMPANIES = {"ttw", "Arab Sustainable Architecture", "arab sustainable architecture"}
+# Absolute exclusion lists. Keep all known English/Arabic aliases here so every
+# queue consumer and replenisher inherits the same protected-employer gate.
+EXCLUDED_COMPANIES = {
+    "ttw",
+    "tubaila",
+    "tubaila team workshop",
+    "طبيلة",
+    "Arab Sustainable Architecture",
+    "arab sustainable architecture",
+    "العمارة المستدامة",
+    "رمك",
+    "rmk",
+}
 EXCLUDED_COMPANIES_LOW = {c.lower() for c in EXCLUDED_COMPANIES}
 # Known current-employer domain evidence. Other protected-company domains are
 # resolved through the canonical master company index.

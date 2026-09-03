@@ -338,12 +338,22 @@ def test_jordan_hold_with_jordan_in_evidence():
 def test_ttw_blocked():
     assert _is_company_excluded("ttw", "") is True
     assert _is_company_excluded("TTW", "") is True
+    assert _is_company_excluded("Tubaila Team Workshop", "") is True
+    assert _is_company_excluded("Tubaila", "") is True
+    assert _is_company_excluded("شركة طبيلة للاستشارات الهندسية", "") is True
 
 
 def test_arab_sustainable_architecture_blocked():
     assert _is_company_excluded("Arab Sustainable Architecture", "") is True
     assert _is_company_excluded("arab sustainable architecture", "") is True
     assert _is_company_excluded("arabsustainablearchitecture", "") is True
+    assert _is_company_excluded("شركة العمارة المستدامة للاستشارات الهندسية شركة شخص واحد", "") is True
+
+
+def test_rmk_blocked_in_arabic_and_english_aliases():
+    assert _is_company_excluded("رمك للاستشارات الهندسية", "") is True
+    assert _is_company_excluded("RMK Engineering Consultants", "") is True
+
 
 
 def test_master_derived_asa_identity_is_blocked_when_queue_company_blank():
