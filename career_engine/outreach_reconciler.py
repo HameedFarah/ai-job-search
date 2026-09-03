@@ -881,7 +881,13 @@ class QueueReconciler:
         self.permanently_bounced_mailboxes = set(self.master.get("permanent_bounce_emails", []))
         for email, _mid in self.sent_by_email.items():
             email = email.lower().strip()
+            # Every historical recipient remains an exact-address block. A
+            # terminally bounced mailbox, however, is not evidence that the
+            # company/domain was successfully contacted. Do not let that
+            # failed delivery poison a verified replacement route.
             self.blocked_emails.add(email)
+            if email in self.permanently_bounced_mailboxes:
+                continue
             domain = _email_domain(email)
             if domain and not _is_public_email_domain(domain):
                 self.blocked_domains.add(domain)

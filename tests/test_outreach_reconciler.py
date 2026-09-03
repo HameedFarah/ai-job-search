@@ -823,6 +823,41 @@ def test_known_cross_domain_replacements_are_blocked():
 # Regression tests: bounce replacement send eligibility (2026-09-03)
 # ---------------------------------------------------------------------------
 
+def test_fetch_gmail_dedupe_does_not_treat_terminal_bounce_as_success(monkeypatch):
+    """A Gmail SENT record that later terminally bounced remains an exact-address
+    block, but must not create company/domain success blocks for a replacement."""
+    import career_engine.outreach_reconciler as module
+
+    bounced = "buiteir@mesc.solutions"
+    replacement = "info@mesc.solutions"
+    r = _dedupe_test_reconciler(replacement)
+    r.master = _master_index([{
+        "Email": bounced,
+        "Company_or_Office": "MESC",
+        "Terminal_Outcome": "PERMANENT BOUNCE",
+    }])
+    r.normalised = [normalise_row({
+        "Email": replacement,
+        "Company_or_Office": "MESC",
+    })]
+    monkeypatch.setattr(module, "verify_both_accounts_available", lambda: (True, "ok"))
+    monkeypatch.setattr(module, "_accepted_dedupe_checkpoint_eligible_emails", lambda: set())
+    monkeypatch.setattr(
+        module,
+        "gmail_dedupe_for_queue",
+        lambda *, after_epoch=None: {bounced: "gmail-mid-bounced"},
+    )
+
+    r.fetch_gmail_dedupe()
+
+    assert bounced in r.blocked_emails
+    assert "mesc.solutions" not in r.blocked_domains
+    assert "mesc" not in r.blocked_companies
+    filtered, skipped = r.apply_exclusions()
+    assert [row["email"] for row in filtered] == [replacement]
+    assert skipped == []
+
+
 def test_same_domain_bounce_replacement_is_allowed():
     """buiteir@mesc.solutions permanently bounced → info@mesc.solutions verified
     and should NOT be blocked by domain dedupe when ALL blocked emails at that
