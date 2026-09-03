@@ -83,6 +83,37 @@ def test_reconciliation_exclusion_outcomes_are_persisted(monkeypatch):
     ]
 
 
+def test_master_success_uses_sent_pending_dsn(monkeypatch):
+    from types import SimpleNamespace
+
+    batches = []
+    reconciler = SimpleNamespace(
+        master={"email_to_company": {"person@example.com": "exampleco"}},
+        master_rows=[{
+            "Queue_ID": "SEND-1",
+            "Email": "person@example.com",
+            "Company_or_Office": "Example Co",
+            "Send_State": "READY_VERIFIED_OUTSCRAPER",
+        }],
+    )
+    monkeypatch.setattr(sender, "rclone_access_token", lambda: "sheet-token")
+    monkeypatch.setattr(
+        sender,
+        "write_campaign_updates",
+        lambda token, updates, spreadsheet_id: batches.extend(updates),
+    )
+    sender._update_master_after_send(reconciler, "person@example.com", "mid123")
+    assert batches == [(
+        "SEND-1",
+        "person@example.com",
+        {
+            "Send_State": "SENT",
+            "Sent_Message_ID": "mid123",
+            "Terminal_Outcome": "sent_pending_dsn",
+        },
+    )]
+
+
 def test_after_hours_run_exits_before_auth_or_sheet(monkeypatch, tmp_path):
     events = []
     monkeypatch.setattr(sender, "_window_open", lambda *args, **kwargs: False)

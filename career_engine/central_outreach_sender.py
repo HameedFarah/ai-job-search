@@ -286,7 +286,7 @@ def _update_master_after_send(reconciler: QueueReconciler, email: str, message_i
             updates.append((queue_id, row_email, {
                 "Send_State": "SENT",
                 "Sent_Message_ID": message_id,
-                "Terminal_Outcome": "SENT",
+                "Terminal_Outcome": "sent_pending_dsn",
             }))
         elif target_company and row_company == target_company:
             state = str(row.get("Send_State") or "").upper()
