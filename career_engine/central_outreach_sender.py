@@ -9,6 +9,7 @@ checks in ``runtime.outreach_campaign_controller``.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import sys
 import time
@@ -68,6 +69,7 @@ PORTFOLIO_SHA = "64f2a3b7caa1a827f8d03bf10cfa098b3c78dab73c0aa783d84e1784a4a0507
 # paths.
 DEFAULT_LEDGER = REPO_ROOT / "runtime/acceptance/auto-send-queue/ledger.json"
 DEFAULT_STATUS = REPO_ROOT / "runtime/acceptance/auto-send-queue/status.json"
+DEFAULT_LOCK = REPO_ROOT / "runtime/acceptance/auto-send-queue/sender.lock"
 POLL_SECONDS = 60
 SUCCESS_CADENCE_SECONDS = 96
 # Do not begin a fresh Gmail transaction at the edge of the hard 19:00 stop.
@@ -108,6 +110,18 @@ def _status(path: Path, phase: str, **extra: Any) -> None:
     payload = {"at": utc_now(), "phase": phase, **extra}
     _atomic_status(path, payload)
     print(json.dumps(payload, sort_keys=True), flush=True)
+
+
+def _acquire_singleton_lock(path: Path):
+    """Hold one process-wide sender lock for the lifetime of the invocation."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
 
 
 def _gmail_json(token: str, method: str, url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -436,21 +450,29 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Career Engine continuous Auto Send Queue sender")
     parser.add_argument("--ledger", default=str(DEFAULT_LEDGER))
     parser.add_argument("--status", default=str(DEFAULT_STATUS))
+    parser.add_argument("--lock", default=str(DEFAULT_LOCK))
     parser.add_argument("--poll-seconds", type=int, default=POLL_SECONDS)
     parser.add_argument("--once", action="store_true", help="Process at most one selection cycle")
     args = parser.parse_args()
     if args.poll_seconds <= 0:
         raise SystemExit("poll-seconds must be positive")
+    status_path = Path(args.status)
+    lock_handle = _acquire_singleton_lock(Path(args.lock))
+    if lock_handle is None:
+        _status(status_path, "singleton-active")
+        return 0
     try:
         return run(
             ledger_path=Path(args.ledger),
-            status_path=Path(args.status),
+            status_path=status_path,
             poll_seconds=args.poll_seconds,
             once=args.once,
         )
     except Exception as exc:
-        _status(Path(args.status), "fatal", error_type=type(exc).__name__, error=str(exc)[:500])
+        _status(status_path, "fatal", error_type=type(exc).__name__, error=str(exc)[:500])
         return 2
+    finally:
+        lock_handle.close()
 
 
 if __name__ == "__main__":

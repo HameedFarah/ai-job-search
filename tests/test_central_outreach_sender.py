@@ -35,7 +35,20 @@ def test_package_constants_are_canonical():
     assert sender.PORTFOLIO_SHA == "64f2a3b7caa1a827f8d03bf10cfa098b3c78dab73c0aa783d84e1784a4a05075"
     assert sender.DEFAULT_LEDGER.is_absolute()
     assert sender.DEFAULT_STATUS.is_absolute()
+    assert sender.DEFAULT_LOCK.is_absolute()
     assert sender.SUCCESS_CADENCE_SECONDS >= 90
+
+
+def test_singleton_lock_is_exclusive(tmp_path):
+    lock_path = tmp_path / "sender.lock"
+    first = sender._acquire_singleton_lock(lock_path)
+    assert first is not None
+    second = sender._acquire_singleton_lock(lock_path)
+    assert second is None
+    first.close()
+    third = sender._acquire_singleton_lock(lock_path)
+    assert third is not None
+    third.close()
 
 
 def test_daily_cap_listing_uses_sent_label_and_riyadh_midnight(monkeypatch):
