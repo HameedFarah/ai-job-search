@@ -25,10 +25,9 @@
 
 name: CI
 
+# Automatic push/PR triggers are disabled. Run explicitly when a GitHub-hosted
+# CI pass is useful; normal Career Engine validation remains outside Actions.
 on:
-  push:
-    branches: [master]
-  pull_request:
   workflow_dispatch:
 
 permissions:
