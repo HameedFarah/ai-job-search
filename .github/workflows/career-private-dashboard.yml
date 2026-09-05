@@ -1,16 +1,9 @@
 name: Career private dashboard
 
+# Automatic branch/PR triggers are disabled. Run explicitly when these legacy
+# migration checks are needed.
 on:
-  push:
-    branches:
-      - fix/career-cloudflare-access-20260818
-  pull_request:
-    paths:
-      - 'dashboard/career-review/**'
-      - 'docs/implementation/career-cloudflare-access-20260818-*'
-      - 'docs/reports/2026-08-18__career-cloudflare-access-baseline.md'
-      - 'scripts/career-cloudflare-access-20260818-plan.mjs'
-      - '.github/workflows/career-private-dashboard.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
