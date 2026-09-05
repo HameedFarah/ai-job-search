@@ -10,9 +10,8 @@
 
 name: Upstream watch
 
+# Scheduled GitHub polling is disabled. Run manually when upstream triage is needed.
 on:
-  schedule:
-    - cron: "0 8 * * 1" # 08:00 UTC every Monday
   workflow_dispatch:
 
 permissions:
