@@ -4,9 +4,8 @@
 
 name: Managed ATS source watch
 
+# Scheduled GitHub polling is disabled. Run manually when upstream review is needed.
 on:
-  schedule:
-    - cron: "20 8 * * 1" # Monday 08:20 UTC, after the main upstream watch
   workflow_dispatch:
 
 permissions:
