@@ -243,6 +243,35 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
         if len(candidates) >= 10:
             break
 
+    # Exact/quoted search backends can transiently return an empty set while a
+    # simple company-name query succeeds. Use one bounded simple-name fallback
+    # before deciding whether discovery produced evidence at all.
+    if not candidates and company.english_name.strip():
+        fallback_query = company.english_name.strip()
+        for position, item in enumerate(searxng_qwant_search(fallback_query, limit=5), start=1):
+            url = str(item.get("url") or "").strip()
+            if not url.startswith(("http://", "https://")) or url in seen:
+                continue
+            seen.add(url)
+            candidates.append(CandidateResult(
+                company_id=company.company_id,
+                license_no=company.license_no,
+                query_id=f"{company.company_id}:simple-name-fallback",
+                url=url,
+                title=str(item.get("title") or "")[:500],
+                description=str(item.get("description") or "")[:2000],
+                engine="searxng-simple-name-fallback",
+                position=position,
+                retrieved_at=utc_now(),
+            ))
+
+    if not candidates:
+        return "", {
+            "basis": "free_discovery_unavailable",
+            "candidate_count": 0,
+            "retryable": True,
+        }
+
     best = None
     for candidate in candidates[:10]:
         verified = verify_candidate(candidate, company)
@@ -316,6 +345,17 @@ def persist_no_domain(token: str, headers: list[str], row: dict[str, str], disco
         "Send_Eligibility": "NO_VERIFIED_EMAIL_ROUTE",
         "Next_Action": "Manual identity/domain review",
         "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: no confirmed official domain; free candidates={discovery.get('candidate_count', 0)}"),
+    })
+
+
+def persist_discovery_unavailable(token: str, headers: list[str], row: dict[str, str]) -> None:
+    """Keep zero-result discovery retryable instead of inventing a negative."""
+    update_master_fields(token, headers, row, {
+        "Source_Date_or_Freshness": today(),
+        "Source_Status": "Discovery temporarily unavailable; not terminally researched",
+        "Send_Eligibility": "NO_EMAIL_DISCOVERED_NOT_RESEARCHED",
+        "Next_Action": "Retry automated identity/domain discovery",
+        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: free discovery returned zero candidates; retry required; not classified as no-domain"),
     })
 
 
@@ -617,6 +657,7 @@ def main() -> int:
         "skipped_company_already_covered": 0,
         "free_domain_discovered": 0,
         "free_domain_not_found": 0,
+        "free_discovery_unavailable": 0,
         "free_portal_routes_persisted": 0,
         "free_email_candidates": 0,
         "free_email_validations": 0,
@@ -691,9 +732,21 @@ def main() -> int:
         domain, discovery = free_discover_domain(row)
         processed_this_run += 1
         if not domain:
-            persist_no_domain(token, master_headers, row, discovery)
-            _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "no_route", "result": "free_discovery_no_confirmed_domain", "discovery": discovery, "at": utc_now()})
-            counts["free_domain_not_found"] += 1
+            if str(discovery.get("basis") or "") == "free_discovery_unavailable":
+                persist_discovery_unavailable(token, master_headers, row)
+                _checkpoint(checkpoints, checkpoint_path, master_id, {
+                    "master_id": master_id,
+                    "company": row.get("Company_or_Office", ""),
+                    "state": "retryable_discovery",
+                    "result": "free_discovery_unavailable",
+                    "discovery": discovery,
+                    "at": utc_now(),
+                })
+                counts["free_discovery_unavailable"] += 1
+            else:
+                persist_no_domain(token, master_headers, row, discovery)
+                _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "no_route", "result": "free_discovery_no_confirmed_domain", "discovery": discovery, "at": utc_now()})
+                counts["free_domain_not_found"] += 1
             continue
         counts["free_domain_discovered"] += 1
 

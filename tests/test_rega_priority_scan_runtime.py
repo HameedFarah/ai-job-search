@@ -1,6 +1,7 @@
 """Deterministic runtime safety tests for the portal-first REGA scanner."""
 import json
 
+from runtime import rega_priority_scan as scanner
 from runtime import run_outscraper_monitored as monitored
 from runtime import run_rega_priority_scan as entrypoint
 from runtime.rega_priority_scan import (
@@ -173,6 +174,84 @@ def test_reserve_blocked_paid_lookup_is_persisted_without_provider_retry(tmp_pat
 
 def test_company_name_normalization_is_stable_for_dedupe():
     assert normalized_company("  Example   Development  ") == "example development"
+
+
+def test_zero_search_candidates_remain_retryable(monkeypatch):
+    row = {
+        "Master_ID": "CE-ZERO",
+        "Source_Record_ID": "999",
+        "Company_or_Office": "Zero Results Development",
+        "Arabic_Name": "شركة نتائج صفر",
+        "Region": "Riyadh",
+        "Address_or_Website": "",
+        "Source_Verification": "Not researched",
+        "Source_Status": "Not researched",
+    }
+    monkeypatch.setattr(scanner, "searxng_qwant_search", lambda query, limit=5: [])
+
+    domain, detail = scanner.free_discover_domain(row)
+
+    assert domain == ""
+    assert detail == {
+        "basis": "free_discovery_unavailable",
+        "candidate_count": 0,
+        "retryable": True,
+    }
+
+
+def test_simple_company_name_fallback_can_recover_domain(monkeypatch):
+    row = {
+        "Master_ID": "CE-JED",
+        "Source_Record_ID": "513",
+        "Company_or_Office": "Central Jeddah Development",
+        "Arabic_Name": "شركة وسط جدة للتطوير",
+        "Region": "Jeddah",
+        "Address_or_Website": "",
+        "Source_Verification": "Not researched",
+        "Source_Status": "Not researched",
+    }
+    calls = []
+
+    def fake_search(query, limit=5):
+        calls.append(query)
+        if query == "Central Jeddah Development":
+            return [{
+                "url": "https://www.jeddahcentral.com/",
+                "title": "Jeddah Central Development Company - Home",
+                "description": "Official Jeddah Central Development Company website.",
+            }]
+        return []
+
+    def fake_verify(candidate, company):
+        candidate.verification_status = "confirmed"
+        candidate.verification_score = 24
+        candidate.verification_method = "hostname_token_match,title_token_match"
+        return candidate
+
+    monkeypatch.setattr(scanner, "searxng_qwant_search", fake_search)
+    monkeypatch.setattr(scanner, "verify_candidate", fake_verify)
+
+    domain, detail = scanner.free_discover_domain(row)
+
+    assert calls[-1] == "Central Jeddah Development"
+    assert domain == "jeddahcentral.com"
+    assert detail["basis"] == "searxng_qwant_plus_direct_identity_verification"
+
+
+def test_discovery_unavailable_restores_nonterminal_sheet_state(monkeypatch):
+    row = {"Master_ID": "CE-ZERO", "__row_number": "2", "Notes": ""}
+    captured = {}
+
+    def fake_update(token, headers, master_row, updates):
+        captured.update(updates)
+
+    monkeypatch.setattr(scanner, "update_master_fields", fake_update)
+    scanner.persist_discovery_unavailable("token", [], row)
+
+    assert captured["Send_Eligibility"] == "NO_EMAIL_DISCOVERED_NOT_RESEARCHED"
+    assert "temporarily unavailable" in captured["Source_Status"].lower()
+    assert "retry" in captured["Next_Action"].lower()
+    assert "not classified as no-domain" in captured["Notes"]
 
 
 def test_searxng_html_fallback_extracts_bounded_result_fields():
