@@ -7,7 +7,7 @@ Safety/priority rules:
 - terminal/already-contacted rows are never revalidated;
 - direct HR/careers/recruitment mailboxes are processed before generic routes;
 - current Sheet size is dynamic; only non-empty unique Queue_ID/email invariants apply;
-- provider spend is capped by current balance while preserving a small reserve.
+- provider spend is capped by current balance while preserving a $1 reserve by default.
 
 No email send path exists here. Uses the existing canonical validator, existing
 rclone Google auth, and the dedicated Infisical-injected Outscraper key.
@@ -35,7 +35,7 @@ from runtime.outscraper_sheet_runner import (
 )
 
 RATE_USD_PER_EMAIL_UPPER_BOUND = 0.003
-DEFAULT_RESERVE_USD = 0.50
+DEFAULT_RESERVE_USD = 1.00
 JOURNAL_PATH = Path("runtime/acceptance/outscraper-queue-journal.json")
 
 DIRECT_LOCALS = {
@@ -227,10 +227,7 @@ def main() -> int:
         }, sort_keys=True))
         return 0
 
-    selected = [
-        {"queue_id": queue_id, "email": email}
-        for queue_id, _row, email in pending
-    ]
+    selected = [{"queue_id": queue_id, "email": email} for queue_id, _row, email in pending]
     selected_emails = {item["email"] for item in selected}
     journal = load_journal()
     try:
