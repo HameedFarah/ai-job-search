@@ -1,11 +1,9 @@
-"""Portal-first, REGA-only employer route enrichment runtime.
+"""Portal-first, REGA-only employer-route enrichment.
 
-Master Tracker is the live authority. The scanner discovers/validates an official
-company domain, checks that first-party site for a real employment route, writes
-successful ATS/form routes back to Master Tracker, and uses Outscraper only when
-no stronger free route exists.
-
-No Gmail draft/send path exists in this module.
+The live Master Tracker is authoritative. This runtime discovers a verified
+company domain, checks first-party employment routes before paid enrichment,
+persists ATS/form successes back to Master Tracker, and queues only mailbox
+validator RECEIVING results. It has no Gmail draft/send path.
 """
 from __future__ import annotations
 
@@ -46,12 +44,24 @@ SENT_TRACKER_SHEET = "Sent Email Tracker"
 DEFAULT_ROOT = Path("runtime/acceptance/rega-priority-scan-v2")
 DEFAULT_RESERVE_USD = 1.00
 RECORD_USD_UPPER_BOUND = 0.003
+
 DIRECT_LOCALS = {"hr", "career", "careers", "job", "jobs", "recruit", "recruitment", "talent", "hiring"}
 GENERAL_LOCALS = {"info", "contact", "contactus", "hello", "admin", "office", "enquiry", "enquiries", "inquiry", "inquiries"}
 EXCLUDED_LOCALS = {
     "support", "privacy", "legal", "abuse", "finance", "financial", "billing", "accounts", "accounting",
     "sales", "security", "webmaster", "investor", "investors", "ir",
 }
+
+# Company-level queue coverage. HOLD/REJECTED/FAILED rows deliberately do not
+# block replacement discovery. Exact mailbox dedupe remains independent.
+SEND_QUEUE_COVERED_STATES = {
+    "READY_VERIFIED_OUTSCRAPER",
+    "SENT",
+    "ALREADY_SENT_DEDUPED",
+    "OWNER_APPROVED_UNKNOWN_OFFICIAL_SOURCE",
+    "SKIPPED_ALREADY_CONTACTED",
+}
+AUTO_QUEUE_COVERED_STATES = {"PENDING", "SENT", "SKIPPED_ALREADY_CONTACTED"}
 
 
 def utc_now() -> str:
@@ -88,9 +98,9 @@ def load_jsonl(path: Path) -> dict[str, dict]:
             if not line:
                 continue
             item = json.loads(line)
-            key = str(item.get("master_id") or "").strip()
-            if key:
-                out[key] = item
+            master_id = str(item.get("master_id") or "").strip()
+            if master_id:
+                out[master_id] = item
     return out
 
 
@@ -113,10 +123,10 @@ def read_table(token: str, sheet_name: str, a1_columns: str) -> tuple[list[str],
         return [], []
     headers = [str(x) for x in values[0]]
     rows: list[dict[str, str]] = []
-    for sheet_row_number, raw in enumerate(values[1:], start=2):
+    for row_number, raw in enumerate(values[1:], start=2):
         padded = raw + [""] * (len(headers) - len(raw))
         row = dict(zip(headers, padded[: len(headers)]))
-        row["__row_number"] = str(sheet_row_number)
+        row["__row_number"] = str(row_number)
         rows.append(row)
     return headers, rows
 
@@ -309,6 +319,17 @@ def persist_no_domain(token: str, headers: list[str], row: dict[str, str], disco
     })
 
 
+def persist_no_contact(token: str, headers: list[str], row: dict[str, str], domain: str, detail: str) -> None:
+    update_master_fields(token, headers, row, {
+        "Address_or_Website": str(row.get("Address_or_Website") or "").strip() or f"https://{domain}/",
+        "Source_Date_or_Freshness": today(),
+        "Source_Status": "Official domain verified; no usable recruiting route found",
+        "Send_Eligibility": "NO_VERIFIED_EMAIL_ROUTE",
+        "Next_Action": "Manual review only if strategically important",
+        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: {detail}"),
+    })
+
+
 def persist_non_sendable_email(token: str, headers: list[str], row: dict[str, str], domain: str, email: str, validation: dict, source_url: str) -> None:
     update_master_fields(token, headers, row, {
         "Address_or_Website": str(row.get("Address_or_Website") or "").strip() or f"https://{domain}/",
@@ -316,7 +337,7 @@ def persist_non_sendable_email(token: str, headers: list[str], row: dict[str, st
         "Source_Status": f"Official mailbox found; validator {validation['status']}; do not send",
         "Send_Eligibility": "NO_VERIFIED_EMAIL_ROUTE",
         "Next_Action": "Research another official employment route",
-        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: {email} found via {source_url}; validator={validation['status']}; not queued"),
+        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: {email} via {source_url}; validator={validation['status']}; not queued"),
     })
 
 
@@ -364,13 +385,18 @@ def contact_candidates(client: OutscraperClient, domain: str) -> list[dict]:
             "rank": rank,
             "kind": kind,
             "source_urls": [str(x) for x in meta.get("source_urls") or [] if str(x).startswith(("http://", "https://"))][:10],
-            "provider_status": str(item.get("status") or ""),
+            "route_source": "paid_domain_contacts",
         })
     return sorted(out, key=lambda x: (x["rank"], x["email"]))
 
 
 def validate_one(client: OutscraperClient, email: str) -> dict:
-    records = validate_emails(client, [email], ProviderBudget(allow_existing_credit=True, max_calls=1, max_credits=1, max_domains=0), batch_size=1)
+    records = validate_emails(
+        client,
+        [email],
+        ProviderBudget(allow_existing_credit=True, max_calls=1, max_credits=1, max_domains=0),
+        batch_size=1,
+    )
     if len(records) != 1:
         raise RuntimeError("Outscraper validator did not return exactly one record")
     record = records[0]
@@ -456,6 +482,9 @@ def _emails_from_rows(rows: list[dict[str, str]], possible_fields: tuple[str, ..
 
 
 def build_dedupe_state(master: list[dict[str, str]], send_queue: list[dict[str, str]], auto_queue: list[dict[str, str]], sent_rows: list[dict[str, str]]) -> dict[str, set[str]]:
+    # Exact mailbox dedupe is intentionally broader than company-level coverage:
+    # a held/failed historical row cannot be appended again under the unique
+    # Send Queue constraint, but its company may still receive a replacement.
     known_emails = _emails_from_rows(send_queue, ("Email",))
     known_emails |= _emails_from_rows(auto_queue, ("Email",))
     known_emails |= _emails_from_rows(sent_rows, ("Recipient_Email",))
@@ -472,13 +501,17 @@ def build_dedupe_state(master: list[dict[str, str]], send_queue: list[dict[str, 
         and not str(row.get("Bounce_State") or "").strip()
     }
     queued_companies = {
-        normalized_company(row.get("Company_or_Office", "")) for row in send_queue
+        normalized_company(row.get("Company_or_Office", ""))
+        for row in send_queue
+        if str(row.get("Send_State") or "").strip().upper() in SEND_QUEUE_COVERED_STATES
     } | {
-        normalized_company(row.get("Company_or_Office", "")) for row in auto_queue
+        normalized_company(row.get("Company_or_Office", ""))
+        for row in auto_queue
+        if str(row.get("Status") or "").strip().upper() in AUTO_QUEUE_COVERED_STATES
     }
     return {
-        "known_emails": known_emails,
-        "permanent_bounces": permanent_bounces,
+        "known_emails": {x for x in known_emails if x},
+        "permanent_bounces": {x for x in permanent_bounces if x},
         "contacted_companies": {x for x in contacted_companies if x},
         "queued_companies": {x for x in queued_companies if x},
     }
@@ -490,17 +523,52 @@ def read_dedupe_state(token: str, master: list[dict[str, str]], send_queue: list
     return build_dedupe_state(master, send_queue, auto_queue, sent_rows)
 
 
-def _checkpoint(checkpoints: dict[str, dict], path: Path, master_id: str, payload: dict) -> None:
-    checkpoints[master_id] = payload
-    atomic_jsonl(path, checkpoints)
-
-
 def _blocked_candidate(email: str, known_emails: set[str], permanent_bounces: set[str]) -> str:
+    email = str(email or "").strip().lower()
     if email in permanent_bounces:
         return "permanent_bounce_exact_mailbox_blocked"
     if email in known_emails:
         return "email_already_known_or_queued"
     return ""
+
+
+def select_best_eligible_candidate(candidates: list[dict], known_emails: set[str], permanent_bounces: set[str]) -> tuple[dict | None, dict[str, int]]:
+    rejected = {"permanent_bounce": 0, "known_email": 0}
+    for candidate in sorted(candidates, key=lambda x: (int(x.get("rank", 9)), str(x.get("email") or ""))):
+        email = str(candidate.get("email") or "").strip().lower()
+        reason = _blocked_candidate(email, known_emails, permanent_bounces)
+        if reason == "permanent_bounce_exact_mailbox_blocked":
+            rejected["permanent_bounce"] += 1
+            continue
+        if reason:
+            rejected["known_email"] += 1
+            continue
+        return candidate, rejected
+    return None, rejected
+
+
+def _checkpoint(checkpoints: dict[str, dict], path: Path, master_id: str, payload: dict) -> None:
+    checkpoints[master_id] = payload
+    atomic_jsonl(path, checkpoints)
+
+
+def _source_url(candidate: dict, domain: str) -> str:
+    urls = candidate.get("source_urls") or []
+    return str(urls[0]) if urls else f"https://{domain}/"
+
+
+def _persist_paid_terminal(token: str, headers: list[str], row: dict[str, str], prior: dict) -> None:
+    domain = str(prior.get("domain") or "")
+    result = str(prior.get("result") or "")
+    if result == "no_eligible_contact":
+        persist_no_contact(token, headers, row, domain, str(prior.get("detail") or "no eligible new company-domain mailbox"))
+        return
+    validation = dict(prior.get("validation") or {})
+    candidate = dict(prior.get("candidate") or {})
+    if result == "nonreceiving_contact" and validation and candidate:
+        persist_non_sendable_email(token, headers, row, domain, str(candidate.get("email") or ""), validation, _source_url(candidate, domain))
+        return
+    raise RuntimeError(f"invalid ready_terminal_write checkpoint for {row.get('Master_ID')}")
 
 
 def main() -> int:
@@ -546,7 +614,7 @@ def main() -> int:
         "rega_no_email_current": len(rega),
         "skipped_existing_ats_form_route": 0,
         "skipped_prior_successful_company_contact": 0,
-        "skipped_company_already_queued": 0,
+        "skipped_company_already_covered": 0,
         "free_domain_discovered": 0,
         "free_domain_not_found": 0,
         "free_portal_routes_persisted": 0,
@@ -555,12 +623,12 @@ def main() -> int:
         "paid_domain_lookups": 0,
         "paid_validations": 0,
         "receiving_routes_staged": 0,
-        "duplicate_existing_email": 0,
-        "permanent_bounce_blocked": 0,
+        "known_email_candidates_skipped": 0,
+        "permanent_bounce_candidates_skipped": 0,
         "provider_no_contact": 0,
         "provider_not_receiving": 0,
         "ambiguous_inflight_skipped": 0,
-        "resumed_ready_to_write": 0,
+        "resumed_ready_writes": 0,
         "balance_guard_stops": 0,
     }
 
@@ -571,12 +639,19 @@ def main() -> int:
         if not master_id:
             continue
         company_key = normalized_company(row.get("Company_or_Office", ""))
-        prior = checkpoints.get(master_id)
-        prior_state = str((prior or {}).get("state") or "")
+        prior = checkpoints.get(master_id) or {}
+        prior_state = str(prior.get("state") or "")
+
         if prior_state == "inflight":
             counts["ambiguous_inflight_skipped"] += 1
             continue
         if prior_state in {"complete", "staged", "no_route"}:
+            continue
+        if prior_state == "ready_terminal_write":
+            _persist_paid_terminal(token, master_headers, row, prior)
+            checkpoints[master_id].update(state="complete", at=utc_now())
+            atomic_jsonl(checkpoint_path, checkpoints)
+            counts["resumed_ready_writes"] += 1
             continue
         if prior_state == "ready_to_write":
             validation = dict(prior.get("validation") or {})
@@ -585,17 +660,19 @@ def main() -> int:
             email = str(validation.get("email") or candidate.get("email") or "").strip().lower()
             if not domain or not email or str(validation.get("status") or "").upper() != "RECEIVING" or not validation.get("safe_to_send"):
                 raise RuntimeError(f"invalid ready_to_write checkpoint for {master_id}")
+            if email in permanent_bounces:
+                raise RuntimeError(f"ready_to_write mailbox became a permanent bounce: {master_id}")
             queue_id = str(prior.get("queue_id") or "").strip() or next_queue_id(current_queue)
             if email not in known_emails:
                 append_queue_row(token, queue_row_values(queue_id=queue_id, row=row, domain=domain, candidate=candidate, validation=validation, config=config))
-                ensure_queue_metadata(token, SPREADSHEET_ID)
-                current_queue = read_queue(token, SPREADSHEET_ID)
                 known_emails.add(email)
                 newly_queued_emails.add(email)
-            persist_receiving_email(token, master_headers, row, domain, email, str(candidate.get("kind") or mailbox_rank(email)[1]), (candidate.get("source_urls") or [f"https://{domain}/"])[0])
+            ensure_queue_metadata(token, SPREADSHEET_ID)
+            current_queue = read_queue(token, SPREADSHEET_ID)
+            persist_receiving_email(token, master_headers, row, domain, email, str(candidate.get("kind") or mailbox_rank(email)[1]), _source_url(candidate, domain))
             checkpoints[master_id].update(state="staged", result="receiving_route_ready", queue_id=queue_id, at=utc_now())
             atomic_jsonl(checkpoint_path, checkpoints)
-            counts["resumed_ready_to_write"] += 1
+            counts["resumed_ready_writes"] += 1
             continue
 
         if has_usable_nonemail_route(row):
@@ -607,8 +684,8 @@ def main() -> int:
             counts["skipped_prior_successful_company_contact"] += 1
             continue
         if company_key and company_key in queued_companies:
-            _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "complete", "result": "company_already_queued", "at": utc_now()})
-            counts["skipped_company_already_queued"] += 1
+            _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "complete", "result": "company_already_covered_by_active_or_sent_queue", "at": utc_now()})
+            counts["skipped_company_already_covered"] += 1
             continue
 
         domain, discovery = free_discover_domain(row)
@@ -644,85 +721,100 @@ def main() -> int:
             continue
 
         candidate: dict | None = None
-        validation: dict | None = None
-        free_general_fallback: EmploymentRoute | None = None
+        free_general_fallback: dict | None = None
 
-        if free_route and free_route.is_email and free_route.email_kind == "recruitment":
+        if free_route and free_route.is_email:
             counts["free_email_candidates"] += 1
-            email = free_route.value.strip().lower()
-            blocked = _blocked_candidate(email, known_emails, permanent_bounces)
-            if blocked:
-                _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "complete", "result": blocked, "selected_email": email, "at": utc_now()})
-                counts["permanent_bounce_blocked" if blocked.startswith("permanent") else "duplicate_existing_email"] += 1
-                continue
+            free_candidate = {
+                "email": free_route.value.strip().lower(),
+                "rank": mailbox_rank(free_route.value)[0],
+                "kind": free_route.email_kind or mailbox_rank(free_route.value)[1],
+                "source_urls": [free_route.source_url],
+                "route_source": "free_first_party_site",
+            }
+            reason = _blocked_candidate(free_candidate["email"], known_emails, permanent_bounces)
+            if reason == "permanent_bounce_exact_mailbox_blocked":
+                counts["permanent_bounce_candidates_skipped"] += 1
+            elif reason:
+                counts["known_email_candidates_skipped"] += 1
+            elif free_candidate["kind"] == "recruitment":
+                candidate = free_candidate
+            else:
+                free_general_fallback = free_candidate
+
+        # A free, unblocked recruitment mailbox is stronger than paid contact
+        # hunting. It still requires real mailbox validation before queueing.
+        if candidate is not None:
             if balance(client) - reserve < RECORD_USD_UPPER_BOUND:
                 counts["balance_guard_stops"] += 1
                 break
             _checkpoint(checkpoints, checkpoint_path, master_id, {
-                "master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "inflight",
-                "phase": "outscraper_email_validation", "domain": domain, "selected_email": email,
-                "route_source": "free_first_party_site", "at": utc_now(),
+                "master_id": master_id,
+                "company": row.get("Company_or_Office", ""),
+                "state": "inflight",
+                "phase": "outscraper_email_validation",
+                "domain": domain,
+                "candidate": candidate,
+                "at": utc_now(),
             })
-            validation = validate_one(client, email)
+            validation = validate_one(client, candidate["email"])
             counts["free_email_validations"] += 1
-            candidate = {"email": email, "kind": "recruitment", "source_urls": [free_route.source_url], "route_source": "free_first_party_site"}
         else:
-            if free_route and free_route.is_email:
-                counts["free_email_candidates"] += 1
-                free_general_fallback = free_route
+            # No usable free recruitment mailbox. One domain-contact lookup may
+            # find a stronger or replacement route; free general is fallback.
             if balance(client) - reserve < (2 * RECORD_USD_UPPER_BOUND):
                 counts["balance_guard_stops"] += 1
                 break
             _checkpoint(checkpoints, checkpoint_path, master_id, {
-                "master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "inflight",
-                "phase": "outscraper_domain_contacts", "domain": domain, "discovery": discovery, "at": utc_now(),
+                "master_id": master_id,
+                "company": row.get("Company_or_Office", ""),
+                "state": "inflight",
+                "phase": "outscraper_domain_contacts",
+                "domain": domain,
+                "discovery": discovery,
+                "at": utc_now(),
             })
-            candidates = contact_candidates(client, domain)
+            provider_candidates = contact_candidates(client, domain)
             counts["paid_domain_lookups"] += 1
-            if candidates:
-                candidate = candidates[0]
-            elif free_general_fallback is not None:
-                candidate = {
-                    "email": free_general_fallback.value.strip().lower(),
-                    "kind": "general",
-                    "source_urls": [free_general_fallback.source_url],
-                    "route_source": "free_first_party_general_fallback",
-                }
-            else:
-                update_master_fields(token, master_headers, row, {
-                    "Address_or_Website": str(row.get("Address_or_Website") or "").strip() or f"https://{domain}/",
-                    "Source_Date_or_Freshness": today(),
-                    "Source_Status": "Official domain verified; no recruiting route found",
-                    "Send_Eligibility": "NO_VERIFIED_EMAIL_ROUTE",
-                    "Next_Action": "Manual review only if strategically important",
-                    "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: no free employment route and Outscraper returned no suitable company-domain contact"),
-                })
-                checkpoints[master_id].update(state="no_route", result="outscraper_no_suitable_contact", at=utc_now())
+            candidate, rejected = select_best_eligible_candidate(provider_candidates, known_emails, permanent_bounces)
+            counts["permanent_bounce_candidates_skipped"] += rejected["permanent_bounce"]
+            counts["known_email_candidates_skipped"] += rejected["known_email"]
+            if candidate is None and free_general_fallback is not None:
+                candidate = free_general_fallback
+            if candidate is None:
+                checkpoints[master_id].update(
+                    state="ready_terminal_write",
+                    result="no_eligible_contact",
+                    detail="no free employment portal and no eligible new company-domain mailbox after one paid domain lookup",
+                    at=utc_now(),
+                )
+                atomic_jsonl(checkpoint_path, checkpoints)
+                _persist_paid_terminal(token, master_headers, row, checkpoints[master_id])
+                checkpoints[master_id].update(state="no_route", at=utc_now())
                 atomic_jsonl(checkpoint_path, checkpoints)
                 counts["provider_no_contact"] += 1
-                continue
-
-            email = str(candidate["email"]).strip().lower()
-            blocked = _blocked_candidate(email, known_emails, permanent_bounces)
-            if blocked:
-                checkpoints[master_id].update(state="complete", result=blocked, selected_email=email, at=utc_now())
-                atomic_jsonl(checkpoint_path, checkpoints)
-                counts["permanent_bounce_blocked" if blocked.startswith("permanent") else "duplicate_existing_email"] += 1
                 continue
             if balance(client) - reserve < RECORD_USD_UPPER_BOUND:
                 checkpoints[master_id].update(state="complete", result="reserve_reached_before_validation", at=utc_now())
                 atomic_jsonl(checkpoint_path, checkpoints)
                 counts["balance_guard_stops"] += 1
                 break
-            checkpoints[master_id].update(phase="outscraper_email_validation", selected_email=email, at=utc_now())
+            checkpoints[master_id].update(phase="outscraper_email_validation", candidate=candidate, selected_email=candidate["email"], at=utc_now())
             atomic_jsonl(checkpoint_path, checkpoints)
-            validation = validate_one(client, email)
+            validation = validate_one(client, candidate["email"])
             counts["paid_validations"] += 1
 
-        assert candidate is not None and validation is not None
         if validation["status"] != "RECEIVING" or not validation["safe_to_send"]:
-            persist_non_sendable_email(token, master_headers, row, domain, str(candidate["email"]), validation, (candidate.get("source_urls") or [f"https://{domain}/"])[0])
-            checkpoints[master_id].update(state="complete", result="best_contact_not_receiving", validation=validation, at=utc_now())
+            checkpoints[master_id].update(
+                state="ready_terminal_write",
+                result="nonreceiving_contact",
+                candidate=candidate,
+                validation=validation,
+                at=utc_now(),
+            )
+            atomic_jsonl(checkpoint_path, checkpoints)
+            _persist_paid_terminal(token, master_headers, row, checkpoints[master_id])
+            checkpoints[master_id].update(state="complete", result="best_contact_not_receiving", at=utc_now())
             atomic_jsonl(checkpoint_path, checkpoints)
             counts["provider_not_receiving"] += 1
             continue
@@ -746,7 +838,7 @@ def main() -> int:
         newly_queued_emails.add(validation["email"])
         if company_key:
             queued_companies.add(company_key)
-        persist_receiving_email(token, master_headers, row, domain, validation["email"], str(candidate.get("kind") or mailbox_rank(validation["email"])[1]), (candidate.get("source_urls") or [f"https://{domain}/"])[0])
+        persist_receiving_email(token, master_headers, row, domain, validation["email"], str(candidate.get("kind") or mailbox_rank(validation["email"])[1]), _source_url(candidate, domain))
         checkpoints[master_id].update(state="staged", result="receiving_route_ready", queue_id=queue_id, at=utc_now())
         atomic_jsonl(checkpoint_path, checkpoints)
         counts["receiving_routes_staged"] += 1
