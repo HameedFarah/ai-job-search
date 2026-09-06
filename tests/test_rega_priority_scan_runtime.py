@@ -1,6 +1,7 @@
 """Deterministic runtime safety tests for the portal-first REGA scanner."""
 import json
 
+from runtime import run_outscraper_monitored as monitored
 from runtime import run_rega_priority_scan as entrypoint
 from runtime.rega_priority_scan import (
     _blocked_candidate,
@@ -172,3 +173,22 @@ def test_reserve_blocked_paid_lookup_is_persisted_without_provider_retry(tmp_pat
 
 def test_company_name_normalization_is_stable_for_dedupe():
     assert normalized_company("  Example   Development  ") == "example development"
+
+
+def test_searxng_html_fallback_extracts_bounded_result_fields():
+    html = """
+    <div id="urls">
+      <article class="result result-default category-general">
+        <a href="https://www.jeddahcentral.com/" class="url_header">site</a>
+        <h3><a href="https://www.jeddahcentral.com/">Jeddah Central Development Company - Home</a></h3>
+        <p class="content">Official Jeddah Central Development Company website.</p>
+      </article>
+    </div>
+    """
+    results = monitored._normalize_html_results(html, limit=1)
+    assert results == [{
+        "url": "https://www.jeddahcentral.com/",
+        "title": "Jeddah Central Development Company - Home",
+        "description": "Official Jeddah Central Development Company website.",
+        "engine": "searxng-html",
+    }]
