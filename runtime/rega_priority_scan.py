@@ -16,6 +16,7 @@ import re
 import sys
 import urllib.parse
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -44,6 +45,7 @@ SENT_TRACKER_SHEET = "Sent Email Tracker"
 DEFAULT_ROOT = Path("runtime/acceptance/rega-priority-scan-v2")
 DEFAULT_RESERVE_USD = 1.00
 RECORD_USD_UPPER_BOUND = 0.003
+RIYADH_TZ = ZoneInfo("Asia/Riyadh")
 
 DIRECT_LOCALS = {"hr", "career", "careers", "job", "jobs", "recruit", "recruitment", "talent", "hiring"}
 GENERAL_LOCALS = {"info", "contact", "contactus", "hello", "admin", "office", "enquiry", "enquiries", "inquiry", "inquiries"}
@@ -69,7 +71,7 @@ def utc_now() -> str:
 
 
 def today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(RIYADH_TZ).date().isoformat()
 
 
 def atomic_json(path: Path, payload: dict) -> None:

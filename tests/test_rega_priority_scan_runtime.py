@@ -1,4 +1,5 @@
 """Deterministic runtime safety tests for the portal-first REGA scanner."""
+from datetime import datetime
 import json
 
 from runtime import rega_priority_scan as scanner
@@ -174,6 +175,19 @@ def test_reserve_blocked_paid_lookup_is_persisted_without_provider_retry(tmp_pat
 
 def test_company_name_normalization_is_stable_for_dedupe():
     assert normalized_company("  Example   Development  ") == "example development"
+
+
+def test_campaign_freshness_date_uses_riyadh_timezone(monkeypatch):
+    real_datetime = datetime
+
+    class FixedDateTime:
+        @classmethod
+        def now(cls, tz):
+            assert getattr(tz, "key", "") == "Asia/Riyadh"
+            return real_datetime(2026, 9, 7, 0, 5, tzinfo=tz)
+
+    monkeypatch.setattr(scanner, "datetime", FixedDateTime)
+    assert scanner.today() == "2026-09-07"
 
 
 def test_zero_search_candidates_remain_retryable(monkeypatch):
