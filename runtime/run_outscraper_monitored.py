@@ -21,6 +21,7 @@ or engineering-office Outscraper path, and no Gmail send path.
 from __future__ import annotations
 
 import argparse
+from html.parser import HTMLParser
 import os
 import sys
 from pathlib import Path
@@ -64,6 +65,69 @@ def _normalize_results(data: dict, engine: str, limit: int) -> list[dict]:
     return out
 
 
+class _SearxHtmlResultsParser(HTMLParser):
+    """Extract the same bounded result fields from SearXNG's local HTML surface."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(convert_charrefs=True)
+        self.limit = limit
+        self.results: list[dict] = []
+        self._article_depth = 0
+        self._current: dict[str, str] | None = None
+        self._capture_title = False
+        self._capture_description = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_map = {key: value or "" for key, value in attrs}
+        classes = set(attrs_map.get("class", "").split())
+        if tag == "article" and "result" in classes and len(self.results) < self.limit:
+            self._article_depth = 1
+            self._current = {"url": "", "title": "", "description": "", "engine": "searxng-html"}
+            return
+        if not self._current:
+            return
+        self._article_depth += 1
+        if tag == "a" and not self._current["url"]:
+            href = attrs_map.get("href", "").strip()
+            if href.startswith(("http://", "https://")):
+                self._current["url"] = href
+        if tag == "h3":
+            self._capture_title = True
+        elif tag == "p" and "content" in classes:
+            self._capture_description = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self._current:
+            return
+        if tag == "h3":
+            self._capture_title = False
+        elif tag == "p":
+            self._capture_description = False
+        if tag == "article" and self._article_depth == 1:
+            if self._current["url"]:
+                self._current["title"] = " ".join(self._current["title"].split())
+                self._current["description"] = " ".join(self._current["description"].split())[:2000]
+                self.results.append(self._current)
+            self._current = None
+            self._article_depth = 0
+            return
+        self._article_depth = max(0, self._article_depth - 1)
+
+    def handle_data(self, data: str) -> None:
+        if not self._current:
+            return
+        if self._capture_title:
+            self._current["title"] += data + " "
+        elif self._capture_description:
+            self._current["description"] += data + " "
+
+
+def _normalize_html_results(text: str, limit: int) -> list[dict]:
+    parser = _SearxHtmlResultsParser(limit)
+    parser.feed(text)
+    return parser.results[:limit]
+
+
 def free_searxng_search(query: str, limit: int = 5) -> list[dict]:
     """Free/local REGA discovery with bounded multi-engine fallback.
 
@@ -98,6 +162,24 @@ def free_searxng_search(query: str, limit: int = 5) -> list[dict]:
                     return found
         except Exception:
             continue
+
+    # Some upstream engines can fail or challenge only on SearXNG's JSON route
+    # while the ordinary local results page still contains usable results from
+    # other configured free engines. Reuse that first-party local surface rather
+    # than incorrectly treating an adapter failure as "no official domain".
+    try:
+        with httpx.Client(timeout=12) as client:
+            response = client.get(
+                f"{base}/search",
+                params={"q": query},
+                headers={"Accept": "text/html"},
+            )
+            response.raise_for_status()
+            found = _normalize_html_results(response.text, limit)
+            if found:
+                return found
+    except Exception:
+        pass
     return []
 
 
