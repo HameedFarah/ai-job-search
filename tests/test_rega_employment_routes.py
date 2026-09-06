@@ -55,6 +55,18 @@ def test_soft_404_careers_path_is_not_promoted():
     assert route.value == "info@example.com"
 
 
+def test_careers_path_redirecting_to_homepage_is_not_promoted():
+    root = "https://example.com/"
+    careers = "https://example.com/careers"
+    homepage = '<html><title>Example</title><body><a href="/careers">Careers</a><form>Contact us</form></body></html>'
+    client = FakeClient({
+        root: FakeResponse(root, homepage),
+        careers: FakeResponse(root, homepage),
+    })
+    route = discover_employment_route(root, client=client)
+    assert route is None
+
+
 def test_first_party_application_page_is_a_successful_portal_route():
     root = "https://example.com/"
     careers = "https://example.com/careers"
