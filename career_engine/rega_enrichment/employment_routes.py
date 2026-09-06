@@ -118,6 +118,24 @@ def _looks_like_soft_404(title: str, text: str, status_code: int) -> bool:
     return any(term in haystack for term in SOFT_404_TERMS)
 
 
+def _is_homepage_alias(requested_url: str, final_url: str, html: str, home_url: str, home_html: str) -> bool:
+    """Reject guessed careers paths that only resolve back to the homepage.
+
+    Many sites return a branded HTTP 200 homepage for unknown paths. Without
+    this guard, a generic contact form plus a Careers navigation label could be
+    misclassified as a candidate-intake route.
+    """
+    requested = urlsplit(requested_url)
+    final = urlsplit(final_url)
+    home = urlsplit(home_url)
+    requested_path = requested.path.rstrip("/") or "/"
+    final_path = final.path.rstrip("/") or "/"
+    home_path = home.path.rstrip("/") or "/"
+    if requested_path != "/" and final_path == home_path:
+        return True
+    return bool(html and home_html and html.strip() == home_html.strip() and requested_path != home_path)
+
+
 def _extract_emails(text: str, mailtos: Iterable[str], official_host: str) -> list[tuple[str, str]]:
     candidates: list[str] = []
     candidates.extend(mailtos)
@@ -217,6 +235,8 @@ def discover_employment_route(
                     continue
                 html = response.text or ""
             except Exception:
+                continue
+            if _is_homepage_alias(clean, str(response.url), html, str(home_resp.url), home_html):
                 continue
             parsed = _parse_html(html)
             text = " ".join(parsed.text_parts)
