@@ -1,4 +1,7 @@
 """Deterministic runtime safety tests for the portal-first REGA scanner."""
+import json
+
+from runtime import run_rega_priority_scan as entrypoint
 from runtime.rega_priority_scan import (
     _blocked_candidate,
     build_dedupe_state,
@@ -133,6 +136,38 @@ def test_no_eligible_candidate_is_explicit():
     )
     assert selected is None
     assert rejected["permanent_bounce"] == 1
+
+
+def test_reserve_blocked_paid_lookup_is_persisted_without_provider_retry(tmp_path, monkeypatch):
+    root = tmp_path / "scan"
+    root.mkdir()
+    checkpoint = {
+        "master_id": "CE-00999",
+        "company": "Reserve Co",
+        "state": "complete",
+        "result": "reserve_reached_before_validation",
+        "domain": "example.com",
+    }
+    (root / "checkpoint.jsonl").write_text(json.dumps(checkpoint) + "\n", encoding="utf-8")
+
+    row = {"Master_ID": "CE-00999", "Company_or_Office": "Reserve Co", "__row_number": "2"}
+    calls = []
+    monkeypatch.setattr(entrypoint, "rclone_access_token", lambda _remote: "token")
+    monkeypatch.setattr(entrypoint, "read_master", lambda _token: (["Master_ID"], [row]))
+    monkeypatch.setattr(
+        entrypoint,
+        "persist_no_contact",
+        lambda token, headers, master_row, domain, detail: calls.append((token, master_row["Master_ID"], domain, detail)),
+    )
+
+    assert entrypoint._persist_reserve_blocked_terminal(root) == 1
+    assert len(calls) == 1
+    assert calls[0][1:3] == ("CE-00999", "example.com")
+    assert "reserve blocked mailbox validation" in calls[0][3]
+    persisted = entrypoint.load_jsonl(root / "checkpoint.jsonl")["CE-00999"]
+    assert persisted["state"] == "no_route"
+    assert persisted["result"] == "reserve_reached_before_validation_persisted"
+    assert persisted["master_tracker_persisted"] is True
 
 
 def test_company_name_normalization_is_stable_for_dedupe():
