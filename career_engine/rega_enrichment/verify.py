@@ -80,6 +80,56 @@ def _label_matches_token(label: str, token: str) -> bool:
                 return True
     return False
 
+
+def _compound_label_token_hits(label: str, tokens: list[str]) -> set[str]:
+    """Accept only a near-exact concatenation of 2+ distinctive company tokens.
+
+    Some legitimate brand domains concatenate multiple words into one DNS label
+    (for example ``jeddahcentral.com``). A single embedded token remains
+    insufficient because it can occur in an unrelated brand. After removing the
+    matched distinctive tokens, at most three residual characters are allowed so
+    domains such as ``centraljeddahnews.com`` do not become identity evidence.
+    """
+    candidates = sorted({tok for tok in tokens if len(tok) >= 4 and tok in label}, key=len, reverse=True)
+    if len(candidates) < 2:
+        return set()
+    residual = label
+    used: list[str] = []
+    for tok in candidates:
+        if tok in residual:
+            residual = residual.replace(tok, "", 1)
+            used.append(tok)
+    if len(used) >= 2 and len(residual) <= 3:
+        return set(used)
+    return set()
+
+
+def _hostname_token_hits(host_labels: list[str], tokens: list[str]) -> set[str]:
+    hits = {
+        tok
+        for tok in tokens
+        if any(_label_matches_token(label, tok) for label in host_labels)
+    }
+    for label in host_labels:
+        hits.update(_compound_label_token_hits(label, tokens))
+    return hits
+
+
+def _token_matches_normalized_text(text_norm: str, token: str) -> bool:
+    """Bounded one-edit token matching for title/content text, not hostname state."""
+    if token in text_norm:
+        return True
+    if len(token) < 5:
+        return False
+    for i in range(len(token)):
+        if token[:i] + token[i + 1:] in text_norm:
+            return True
+    for i in range(len(token) + 1):
+        for char in "abcdefghijklmnopqrstuvwxyz":
+            if token[:i] + char + token[i:] in text_norm:
+                return True
+    return False
+
 def fetch_via_firecrawl_extract(url: str) -> tuple[str, str, str]:
     """Fetch via Firecrawl extract, returns (title, markdown, html)."""
     key = api_key()
@@ -164,26 +214,11 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     # Fast path: snippet-only if discovery already gives strong identity (saves quota, avoids hang on makkiyoon.com)
     title_snippet = candidate.title or ""
     desc_snippet = candidate.description or ""
-    host_norm_snippet = host_norm
     eng_tokens_snippet = eng_tokens
+    host_token_hits = _hostname_token_hits(host_labels, eng_tokens_snippet)
     quick_score = 0
     for tok in eng_tokens_snippet:
-        # Fuzzy host check for transliteration (makkyoon vs makkiyoon)
-        host_hit = any(_label_matches_token(label, tok) for label in host_labels)
-        if not host_hit and len(tok) >= 5:
-            for i in range(len(tok)):
-                if tok[:i] + tok[i+1:] in host_norm_snippet:
-                    host_hit = True
-                    break
-            if not host_hit:
-                for i in range(len(tok)+1):
-                    for c in "abcdefghijklmnopqrstuvwxyz":
-                        if tok[:i] + c + tok[i:] in host_norm_snippet:
-                            host_hit = True
-                            break
-                    if host_hit:
-                        break
-        if host_hit:
+        if tok in host_token_hits:
             quick_score += 8
         if tok in title_snippet.lower():
             quick_score += 4
@@ -191,13 +226,7 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
         quick_score += 1
     if ".sa" in host.lower():
         quick_score += 3
-    # Use fuzzy host check for snippet path as well
-    def _host_hit_fuzzy(host_norm, toks):
-        for tok in toks:
-            if any(_label_matches_token(label, tok) for label in host_labels):
-                return True
-        return False
-    if quick_score >= 12 and _host_hit_fuzzy(host_norm_snippet, eng_tokens_snippet):
+    if quick_score >= 12 and host_token_hits:
         title = title_snippet
         content = desc_snippet
         source_type = "discovery_snippet"
@@ -253,37 +282,41 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     evidence_parts: list[str] = []
     methods: list[str] = []
 
-    # Host token matches — strongest signal (with fuzzy for transliteration variants like makkyoon vs makkiyoon)
-    def _fuzzy_in(host_norm: str, tok: str) -> bool:
-        return any(_label_matches_token(label, tok) for label in host_labels)
-
+    # Host token matches — strongest signal. Multi-token concatenated brand labels
+    # are accepted only by _compound_label_token_hits; single embedded tokens are not.
     host_hits = 0
     for tok in eng_tokens:
-        if _fuzzy_in(host_norm, tok):
+        if tok in host_token_hits:
             host_hits += 1
             score += 8
-            evidence_parts.append(f"host token '{tok}' in {host} (fuzzy)" if tok not in host_norm else f"host token '{tok}' in {host}")
+            evidence_parts.append(f"host token '{tok}' in {host} (verified label/compound match)")
             methods.append("hostname_token_match")
-    # Title token matches (also fuzzy for Spelling variants)
+    # Title token matches use title text only; hostname state must not leak into
+    # independent corroboration.
     title_hits = 0
+    title_norm = re.sub(r"[^a-z0-9]", "", title_l)
     for tok in eng_tokens:
-        if tok in title_l or _fuzzy_in(re.sub(r"[^a-z0-9]", "", title_l), tok):
+        if tok in title_l or _token_matches_normalized_text(title_norm, tok):
             title_hits += 1
             score += 4
             evidence_parts.append(f"title token '{tok}'")
             methods.append("title_token_match")
-    # Content exact English name (with fuzzy for transliteration)
+    # Content identity is corroboration independent from hostname matching.
     english_l = company.english_name.lower()
+    content_norm = re.sub(r"[^a-z0-9]", "", content_l)
     if english_l and len(english_l) >= 5 and english_l in content_l:
         score += 6
-        evidence_parts.append(f"full English name in content")
+        evidence_parts.append("full English name in content")
         methods.append("content_identity_match")
-    elif english_l and any(tok in content_l or _fuzzy_in(re.sub(r"[^a-z0-9]", "", content_l), tok) for tok in eng_tokens):
-        # partial (including fuzzy)
-        partial_hits = sum(1 for tok in eng_tokens if tok in content_l or _fuzzy_in(re.sub(r"[^a-z0-9]", "", content_l), tok))
-        score += partial_hits * 1
+    elif english_l and any(tok in content_l or _token_matches_normalized_text(content_norm, tok) for tok in eng_tokens):
+        partial_hits = sum(
+            1
+            for tok in eng_tokens
+            if tok in content_l or _token_matches_normalized_text(content_norm, tok)
+        )
+        score += partial_hits
         if partial_hits:
-            evidence_parts.append(f"{partial_hits} distinctive tokens in content (fuzzy)")
+            evidence_parts.append(f"{partial_hits} distinctive tokens in content (bounded fuzzy)")
             methods.append("content_identity_match")
     # Also check brand token directly in content (covers Makkiyoon vs Makkyoon)
     elif any(tok in content_l for tok in [t for t in re.findall(r"[a-z]+", english_l) if len(t)>=4]):
@@ -337,8 +370,11 @@ def verify_candidate(candidate: CandidateResult, company: CompanyRecord) -> Cand
     has_title = title_hits >= 1
     has_full_english = english_l in content_l
     has_arabic = arabic_name and (arabic_name in content or arabic_partial)
-    # Also consider fuzzy content token as signal
-    has_content_token = any(tok in content_l or _fuzzy_in(re.sub(r"[^a-z0-9]", "", content_l), tok) for tok in eng_tokens)
+    # Also consider bounded fuzzy content-token evidence as an independent signal.
+    has_content_token = any(
+        tok in content_l or _token_matches_normalized_text(content_norm, tok)
+        for tok in eng_tokens
+    )
 
     # Determine verification status — allow host+content_token or host+arabic_partial as candidate
     # Confirmed requires score >= 18 (strong identity); candidate >= 14; below that unconfirmed/rejected

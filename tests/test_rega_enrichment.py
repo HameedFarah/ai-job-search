@@ -145,6 +145,59 @@ def test_blocked_unrelated_domains():
         v.fetch_direct = orig_direct
         v.fetch_via_firecrawl_extract = orig_fire
 
+def test_concatenated_multi_token_brand_domain_is_confirmed(monkeypatch):
+    c = _make_company(
+        english_name="Central Jeddah Development",
+        arabic_name="شركة وسط جدة للتطوير",
+        location="Jeddah",
+    )
+    cand = CandidateResult(
+        company_id="1",
+        license_no="999",
+        query_id="1:abc",
+        url="https://www.jeddahcentral.com/",
+        title="Jeddah Central Development Company - Home",
+        description="Official Jeddah Central Development Company website in Saudi Arabia.",
+        engine="searxng-html",
+    )
+    import career_engine.rega_enrichment.verify as v
+    monkeypatch.setattr(v, "fetch_direct", lambda url: (_ for _ in ()).throw(RuntimeError("snippet only")))
+    monkeypatch.setattr(v, "fetch_via_firecrawl_extract", lambda url: (_ for _ in ()).throw(RuntimeError("disabled")))
+
+    result = verify_candidate(cand, c)
+
+    assert result.verification_status == "confirmed"
+    assert result.verification_score >= 18
+    assert "hostname_token_match" in result.verification_method
+    assert "jeddah" in result.verification_evidence
+    assert "central" in result.verification_evidence
+
+
+def test_concatenated_host_with_unrelated_residual_is_not_identity_evidence(monkeypatch):
+    c = _make_company(
+        english_name="Central Jeddah Development",
+        arabic_name="شركة وسط جدة للتطوير",
+        location="Jeddah",
+    )
+    cand = CandidateResult(
+        company_id="1",
+        license_no="999",
+        query_id="1:abc",
+        url="https://centraljeddahnews.com/",
+        title="Central Jeddah development news",
+        description="News coverage about development projects in Central Jeddah.",
+        engine="searxng-html",
+    )
+    import career_engine.rega_enrichment.verify as v
+    monkeypatch.setattr(v, "fetch_direct", lambda url: (_ for _ in ()).throw(RuntimeError("snippet only")))
+    monkeypatch.setattr(v, "fetch_via_firecrawl_extract", lambda url: (_ for _ in ()).throw(RuntimeError("disabled")))
+
+    result = verify_candidate(cand, c)
+
+    assert result.verification_status not in ("confirmed", "candidate")
+    assert "hostname_token_match" not in result.verification_method
+
+
 def test_fuzzy_makkyoon():
     c = _make_company(english_name="Makkyoon Urban Developers", arabic_name="شركة مكيون مطورون عمرانيون مساهمة مقفلة", location="Makkah", company_id="2", license_no="365")
     # Official domain uses makkiyoon with i, English has makkyoon without i — should fuzzy match
