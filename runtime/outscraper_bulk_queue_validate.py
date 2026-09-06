@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Task-only bounded Outscraper validation for the authoritative Send Queue.
+"""REGA-only bounded Outscraper validation for the authoritative Send Queue.
+
+Safety/priority rules:
+- paid Outscraper calls are restricted to rows whose Source_Dataset is REGA;
+- Balady/engineering-office/non-REGA rows are never selected;
+- terminal/already-contacted rows are never revalidated;
+- direct HR/careers/recruitment mailboxes are processed before generic routes;
+- current Sheet size is dynamic; only non-empty unique Queue_ID/email invariants apply;
+- provider spend is capped by current balance while preserving a small reserve.
 
 No email send path exists here. Uses the existing canonical validator, existing
 rclone Google auth, and the dedicated Infisical-injected Outscraper key.
@@ -27,8 +35,29 @@ from runtime.outscraper_sheet_runner import (
 )
 
 RATE_USD_PER_EMAIL_UPPER_BOUND = 0.003
-EXPECTED_ROWS = 1236
+DEFAULT_RESERVE_USD = 0.50
 JOURNAL_PATH = Path("runtime/acceptance/outscraper-queue-journal.json")
+
+DIRECT_LOCALS = {
+    "hr", "career", "careers", "job", "jobs", "recruit", "recruitment", "talent", "hiring"
+}
+GENERAL_LOCALS = {
+    "info", "contact", "contactus", "hello", "admin", "office",
+    "enquiry", "enquiries", "inquiry", "inquiries"
+}
+TERMINAL_STATES = {
+    "SENT",
+    "ALREADY_SENT_DEDUPED",
+    "SKIPPED_ALREADY_CONTACTED",
+    "FAILED_PERMANENT",
+    "REJECTED_OUTSCRAPER_INVALID",
+    "REJECTED_REPLACEMENT_INVALID",
+    "REJECTED_REPLACEMENT_BLACKLISTED",
+    "HOLD_WRONG_COMPANY_DOMAIN",
+    "HOLD_OUTREACH_INAPPROPRIATE_MAILBOX",
+    "HOLD_NO_VERIFIED_EMAIL_FOUND",
+    "HOLD_DUPLICATE_REPLACEMENT",
+}
 
 
 def atomic_json(path: Path, payload: dict) -> None:
@@ -86,11 +115,37 @@ def balance_snapshot(client: OutscraperClient) -> dict:
     }
 
 
+def is_rega_row(row: dict[str, str]) -> bool:
+    return "rega" in str(row.get("Source_Dataset") or "").strip().lower()
+
+
+def is_terminal_row(row: dict[str, str]) -> bool:
+    state = str(row.get("Send_State") or "").strip().upper()
+    outcome = str(row.get("Terminal_Outcome") or "").strip()
+    return state in TERMINAL_STATES or bool(outcome)
+
+
+def row_priority(item: tuple[str, dict[str, str], str]) -> tuple[int, int, str, str]:
+    queue_id, row, email = item
+    local = email.split("@", 1)[0].lower() if "@" in email else ""
+    if local in DIRECT_LOCALS:
+        mailbox_rank = 0
+    elif local in GENERAL_LOCALS:
+        mailbox_rank = 2
+    else:
+        mailbox_rank = 1
+
+    verification = str(row.get("Source_Verification") or "").strip().lower()
+    official_rank = 0 if "official" in verification or "verified" in verification else 1
+    return mailbox_rank, official_rank, str(row.get("Company_or_Office") or "").lower(), queue_id
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=0, help="Validate at most N selected rows; 0 means all")
+    parser.add_argument("--limit", type=int, default=0, help="Validate at most N selected REGA rows; 0 means affordable maximum")
     parser.add_argument("--batch-size", type=int, default=10, help="Provider batch size, bounded to 1..25")
-    parser.add_argument("--retry-network-failed", action="store_true", help="Select NETWORK_FAILED rows instead of evidence-empty rows")
+    parser.add_argument("--retry-network-failed", action="store_true", help="Select REGA NETWORK_FAILED rows instead of evidence-empty rows")
+    parser.add_argument("--reserve-usd", type=float, default=DEFAULT_RESERVE_USD, help="Keep this provider balance unspent")
     parser.add_argument("--apply", action="store_true", help="Required to call provider and write Sheet")
     parser.add_argument("--spreadsheet-id", default=SPREADSHEET_ID)
     args = parser.parse_args()
@@ -103,24 +158,73 @@ def main() -> int:
 
     token = rclone_access_token(os.environ.get("RCLONE_GDRIVE_REMOTE", "gdrive"))
     rows = read_queue(token, args.spreadsheet_id)
+    if not rows:
+        raise SystemExit("authoritative Send Queue is empty")
+
+    queue_ids = [str(row.get("Queue_ID") or "").strip() for row in rows]
     emails = [str(row.get("Email") or "").strip().lower() for row in rows]
-    if len(rows) != EXPECTED_ROWS or len({e for e in emails if e}) != EXPECTED_ROWS:
-        raise SystemExit("authoritative queue row/uniqueness preflight failed")
+    nonempty_ids = [value for value in queue_ids if value]
+    nonempty_emails = [value for value in emails if value]
+    if len(nonempty_ids) != len(rows) or len(set(nonempty_ids)) != len(nonempty_ids):
+        raise SystemExit("authoritative Send Queue Queue_ID invariant failed")
+    if len(nonempty_emails) != len(rows) or len(set(nonempty_emails)) != len(nonempty_emails):
+        raise SystemExit("authoritative Send Queue email uniqueness invariant failed")
 
     batch_size = max(1, min(int(args.batch_size), MAX_BATCH_SIZE))
     pending = [
         (str(row.get("Queue_ID") or "").strip(), row, email)
         for row, email in zip(rows, emails)
-        if email and (
-            str(row.get("Outscraper_Status") or "").strip().upper() == "NETWORK_FAILED"
-            if args.retry_network_failed
-            else not str(row.get("Outscraper_Evidence") or "").strip()
+        if (
+            email
+            and is_rega_row(row)
+            and not is_terminal_row(row)
+            and (
+                str(row.get("Outscraper_Status") or "").strip().upper() == "NETWORK_FAILED"
+                if args.retry_network_failed
+                else not str(row.get("Outscraper_Evidence") or "").strip()
+            )
         )
     ]
+    pending.sort(key=row_priority)
+
+    client = OutscraperClient(key)
+    before = balance_snapshot(client)
+    if before["status"] != "success" or before["account_status"] != "valid" or not isinstance(before["balance"], (int, float)):
+        raise SystemExit("Outscraper account/balance preflight failed")
+
+    reserve = max(0.0, float(args.reserve_usd))
+    spendable = max(0.0, float(before["balance"]) - reserve)
+    affordable = int(math.floor(spendable / RATE_USD_PER_EMAIL_UPPER_BOUND))
     if args.limit > 0:
-        pending = pending[: args.limit]
+        affordable = min(affordable, int(args.limit))
+    pending = pending[:affordable]
+
     if not pending:
-        print(json.dumps({"ok": True, "selected": 0, "writes": 0, "sends": 0, "provider_calls": 0, "secret_values_in_output": False}, sort_keys=True))
+        remaining_rega = sum(
+            1
+            for row in rows
+            if is_rega_row(row)
+            and not is_terminal_row(row)
+            and (
+                str(row.get("Outscraper_Status") or "").strip().upper() == "NETWORK_FAILED"
+                if args.retry_network_failed
+                else not str(row.get("Outscraper_Evidence") or "").strip()
+            )
+        )
+        print(json.dumps({
+            "ok": True,
+            "selected": 0,
+            "remaining_rega_pending": remaining_rega,
+            "balance_before": before["balance"],
+            "reserve_usd": reserve,
+            "spendable_usd": round(spendable, 6),
+            "reason": "no_affordable_or_pending_rega_rows",
+            "writes": 0,
+            "sends": 0,
+            "provider_calls": 0,
+            "non_rega_selected": 0,
+            "secret_values_in_output": False,
+        }, sort_keys=True))
         return 0
 
     selected = [
@@ -134,13 +238,9 @@ def main() -> int:
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
-    client = OutscraperClient(key)
-    before = balance_snapshot(client)
     estimate = round(len(pending) * RATE_USD_PER_EMAIL_UPPER_BOUND, 6)
-    if before["status"] != "success" or before["account_status"] != "valid" or not isinstance(before["balance"], (int, float)):
-        raise SystemExit("Outscraper account/balance preflight failed")
-    if float(before["balance"]) < estimate:
-        raise SystemExit("existing Outscraper balance is below conservative validation cost bound")
+    if estimate > spendable + 1e-9:
+        raise SystemExit("internal affordable-selection invariant failed")
 
     if replay_items:
         items = replay_items
@@ -148,9 +248,11 @@ def main() -> int:
     else:
         atomic_json(JOURNAL_PATH, {
             "state": "inflight",
+            "scope": "REGA_ONLY",
             "selected": selected,
             "retry_network_failed": bool(args.retry_network_failed),
             "batch_size": batch_size,
+            "reserve_usd": reserve,
         })
         budget = ProviderBudget(
             allow_existing_credit=True,
@@ -165,9 +267,11 @@ def main() -> int:
             raise SystemExit("validator did not return exactly one result per selected email")
         atomic_json(JOURNAL_PATH, {
             "state": "complete",
+            "scope": "REGA_ONLY",
             "selected": selected,
             "retry_network_failed": bool(args.retry_network_failed),
             "batch_size": batch_size,
+            "reserve_usd": reserve,
             "results": items,
         })
 
@@ -181,13 +285,12 @@ def main() -> int:
 
     artifact_dir = Path("runtime/acceptance")
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = artifact_dir / f"outscraper-queue-results-{len(pending)}.jsonl"
+    artifact_path = artifact_dir / f"outscraper-rega-results-{len(pending)}.jsonl"
     artifact_path.write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in items), encoding="utf-8")
 
     after_rows = read_queue(token, args.spreadsheet_id)
-    if len(after_rows) != EXPECTED_ROWS:
-        raise SystemExit("Sheet readback row count changed")
-    selected_emails = {email for _, _, email in pending}
+    if len(after_rows) < len(rows):
+        raise SystemExit("Sheet readback unexpectedly lost rows")
     readback = [row for row in after_rows if str(row.get("Email") or "").strip().lower() in selected_emails]
     if len(readback) != len(pending):
         raise SystemExit("Sheet readback selected row count mismatch")
@@ -201,9 +304,11 @@ def main() -> int:
 
     atomic_json(JOURNAL_PATH, {
         "state": "applied",
+        "scope": "REGA_ONLY",
         "selected": selected,
         "retry_network_failed": bool(args.retry_network_failed),
         "batch_size": batch_size,
+        "reserve_usd": reserve,
         "results": items,
     })
 
@@ -214,26 +319,38 @@ def main() -> int:
 
     provider_counts = dict(Counter(item["provider_status"] for item in items))
     state_counts = dict(Counter(str(row.get("Send_State") or "") for row in readback))
-    remaining = sum(not str(row.get("Outscraper_Evidence") or "").strip() for row in after_rows)
+    remaining = sum(
+        1
+        for row in after_rows
+        if is_rega_row(row)
+        and not is_terminal_row(row)
+        and not str(row.get("Outscraper_Evidence") or "").strip()
+    )
     summary = {
         "ok": True,
+        "scope": "REGA_ONLY",
         "selected": len(pending),
         "batch_size_used": batch_size,
         "batch_size_max": MAX_BATCH_SIZE,
         "provider_calls": budget.calls,
         "provider_counts": provider_counts,
         "sheet_state_counts_for_selected": state_counts,
-        "remaining_without_outscraper_evidence": remaining,
+        "remaining_rega_without_outscraper_evidence": remaining,
         "balance_before": before["balance"],
         "balance_after": after["balance"],
         "balance_delta": balance_delta,
+        "reserve_usd": reserve,
         "conservative_cost_bound_usd": estimate,
         "artifact": str(artifact_path),
         "writes": len(updates),
         "sends": 0,
+        "non_rega_selected": 0,
         "secret_values_in_output": False,
     }
-    (artifact_dir / f"outscraper-queue-summary-{len(pending)}.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (artifact_dir / f"outscraper-rega-summary-{len(pending)}.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps(summary, sort_keys=True))
     return 0
 
