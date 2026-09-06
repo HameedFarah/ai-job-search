@@ -6,11 +6,15 @@ The prior implementation was frozen to the obsolete 1,236-row Send Queue and
 from an old timer/service could waste provider credit or fail closed as the live
 Career Engine grows.
 
-This compatibility entrypoint therefore delegates all live paid execution to
-``runtime/run_rega_priority_scan.py``. The delegated workflow is dynamically
-sourced from the current Master Tracker, spends Outscraper credit on REGA only,
-uses free discovery before paid lookup, validates only one best mailbox per
-company, preserves a provider balance reserve, and has no Gmail send path.
+This entrypoint delegates live execution to ``run_rega_priority_scan`` and also
+strengthens its zero-paid-cost discovery step: Qwant is tried first, then the
+local SearXNG instance is allowed to use its configured/default engines, followed
+by bounded DuckDuckGo/Google/Bing fallbacks. Search results are still independently
+identity-verified before a domain can reach Outscraper.
+
+Paid execution remains REGA-only, with one domain-contact lookup and one best
+mailbox validation at most per company, a $1 default balance reserve, no Balady
+or engineering-office Outscraper path, and no Gmail send path.
 
 ``mailbox_route_kind`` remains here for legacy read-only/preparation imports.
 """
@@ -20,6 +24,8 @@ import argparse
 import os
 import sys
 from pathlib import Path
+
+import httpx
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DIRECT_LOCALS = {"hr", "career", "careers", "job", "jobs", "recruit", "recruitment", "talent", "hiring"}
@@ -41,6 +47,60 @@ def mailbox_route_kind(email: str) -> str:
     return "other"
 
 
+def _normalize_results(data: dict, engine: str, limit: int) -> list[dict]:
+    out: list[dict] = []
+    for row in (data.get("results") or [])[:limit]:
+        if not isinstance(row, dict):
+            continue
+        url = str(row.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        out.append({
+            "url": url,
+            "title": str(row.get("title") or "").strip(),
+            "description": str(row.get("content") or "").strip()[:2000],
+            "engine": engine,
+        })
+    return out
+
+
+def free_searxng_search(query: str, limit: int = 5) -> list[dict]:
+    """Free/local REGA discovery with bounded multi-engine fallback.
+
+    No Outscraper, DataForSEO, Firecrawl, or other paid provider is called here.
+    The scanner's independent identity verification remains mandatory after this
+    discovery step.
+    """
+    from career_engine.rega_enrichment.discovery import searxng_qwant_search
+
+    qwant = searxng_qwant_search(query, limit=limit)
+    if qwant:
+        return qwant
+
+    base = os.getenv("SEARXNG_URL", "http://127.0.0.1:8888").rstrip("/")
+    attempts: list[tuple[str, dict[str, str]]] = [
+        ("searxng-default", {"q": query, "format": "json"}),
+        ("searxng-duckduckgo", {"q": query, "format": "json", "engines": "duckduckgo"}),
+        ("searxng-google", {"q": query, "format": "json", "engines": "google"}),
+        ("searxng-bing", {"q": query, "format": "json", "engines": "bing"}),
+    ]
+    for label, params in attempts:
+        try:
+            with httpx.Client(timeout=12) as client:
+                response = client.get(
+                    f"{base}/search",
+                    params=params,
+                    headers={"Accept": "application/json"},
+                )
+                response.raise_for_status()
+                found = _normalize_results(response.json(), label, limit)
+                if found:
+                    return found
+        except Exception:
+            continue
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true", help="Required for live provider/Sheet execution")
@@ -57,19 +117,24 @@ def main() -> int:
     if not args.apply:
         raise SystemExit("refusing live REGA priority scan without --apply")
 
-    target = REPO_ROOT / "runtime" / "run_rega_priority_scan.py"
-    cmd = [
-        sys.executable,
-        str(target),
+    # Import after parsing; the target module explicitly disables paid Firecrawl
+    # and DataForSEO discovery fallbacks for this REGA run.
+    from runtime import run_rega_priority_scan as scanner
+
+    # Replace only the scanner module's discovery function. Its downstream
+    # verify_candidate step still independently establishes company identity.
+    scanner.searxng_qwant_search = free_searxng_search
+
+    forwarded = [
+        str(REPO_ROOT / "runtime" / "run_rega_priority_scan.py"),
         "--apply",
         "--reserve-usd",
         str(max(0.0, float(args.reserve_usd))),
     ]
     if int(args.max_companies) > 0:
-        cmd += ["--max-companies", str(int(args.max_companies))]
-
-    os.execv(sys.executable, cmd)
-    return 1
+        forwarded += ["--max-companies", str(int(args.max_companies))]
+    sys.argv = forwarded
+    return scanner.main()
 
 
 if __name__ == "__main__":
