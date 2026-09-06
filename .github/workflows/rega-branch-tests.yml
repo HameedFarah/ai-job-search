@@ -23,4 +23,4 @@ jobs:
           python -m py_compile runtime/rega_priority_scan.py
           python -m py_compile runtime/run_rega_priority_scan.py
       - name: Run focused REGA tests
-        run: pytest -q tests/test_rega_employment_routes.py
+        run: pytest -q tests/test_rega_employment_routes.py tests/test_rega_priority_scan_runtime.py
