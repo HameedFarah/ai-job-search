@@ -148,7 +148,7 @@ class ApifyClient(ProviderClient):
     def actor_status(self): return _record(self.provider,"","actor execution not enabled",status="not_configured_actor",cost_status="not_charged")
 
 class OutscraperClient(ProviderClient):
-    provider="outscraper"; root="https://api.outscraper.com"
+    provider="outscraper"; root="https://api.outscraper.com"; maps_root="https://api.outscraper.cloud"
     def __init__(self,key,opener=urlopen): super().__init__(opener); self.key=key
     def balance(self):
         source=self.root+"/profile/balance"
@@ -160,6 +160,44 @@ class OutscraperClient(ProviderClient):
             if isinstance(b.get("balance"),(int,float)): metadata["balance"]=b["balance"]
             if isinstance(b.get("account_status"),str): metadata["account_status"]=b["account_status"]
         return _record(self.provider,source,"balance probe",status="success" if s==200 else "auth_failed" if s in (401,403) else "quota_required" if s==402 else "failed",cost_status="free",**metadata)
+    def maps_businesses(self, query, budget, *, limit=3):
+        source=self.maps_root+"/google-maps-search"
+        if not self.key:
+            return [_record(self.provider,source,"",status="missing_credential",cost_status="not_charged")]
+        bounded_limit=max(1,min(int(limit),3))
+        if not budget.permit(billable=True,domains=bounded_limit):
+            return [_record(self.provider,source,"",status="budget_exhausted",cost_status="not_charged")]
+        request_url=source+"?"+urlencode({"query":query,"limit":bounded_limit,"async":"false"})
+        s,b=self._request("GET",request_url,{"X-API-KEY":self.key})
+        if s!=200 or not isinstance(b,dict):
+            return [self._failure("auth_failed" if s in (401,403) else "quota_required" if s in (402,429) else "failed",source)]
+        data=b.get("data") or []
+        rows=[]
+        def collect(value):
+            if isinstance(value,list):
+                for item in value: collect(item)
+            elif isinstance(value,dict):
+                if any(k in value for k in ("name","site","website","full_address","address","place_id","google_id")):
+                    rows.append(value)
+                elif "data" in value:
+                    collect(value.get("data"))
+        collect(data)
+        out=[]
+        for row in rows[:bounded_limit]:
+            site=str(row.get("site") or row.get("website") or "").strip()
+            out.append(_record(
+                self.provider,
+                source,
+                "Outscraper Google Maps business result",
+                cost_status="free_tier_or_existing_metered_credit",
+                name=str(row.get("name") or "").strip(),
+                site=site,
+                full_address=str(row.get("full_address") or row.get("address") or "").strip(),
+                phone=str(row.get("phone") or "").strip(),
+                category=str(row.get("category") or row.get("type") or "").strip(),
+                place_id=str(row.get("place_id") or "").strip(),
+            ))
+        return out or [_record(self.provider,source,"Google Maps search returned no businesses",status="not_found",cost_status="free_tier_or_existing_metered_credit",query=query)]
     def domain_contacts(self, domain, budget):
         source=self.root+"/emails-and-contacts"
         if not self.key:

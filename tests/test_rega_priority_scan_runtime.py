@@ -268,6 +268,105 @@ def test_discovery_unavailable_restores_nonterminal_sheet_state(monkeypatch):
     assert "not classified as no-domain" in captured["Notes"]
 
 
+def test_maps_fallback_requires_independent_identity_verification(monkeypatch):
+    row = {
+        "Master_ID": "CE-JED",
+        "Source_Record_ID": "513",
+        "Company_or_Office": "Central Jeddah Development",
+        "Arabic_Name": "شركة وسط جدة للتطوير",
+        "Region": "Jeddah",
+        "Address_or_Website": "",
+        "Source_Verification": "Not researched",
+        "Source_Status": "Not researched",
+    }
+
+    class FakeClient:
+        def maps_businesses(self, query, budget, *, limit=3):
+            assert query == "Central Jeddah Development, Jeddah, Saudi Arabia"
+            assert limit == 3
+            return [{
+                "status": "candidate",
+                "metadata": {
+                    "name": "Jeddah Central Development Company",
+                    "site": "https://www.jeddahcentral.com/",
+                    "full_address": "Jeddah, Saudi Arabia",
+                    "category": "Real estate developer",
+                },
+            }]
+
+    def fake_verify(candidate, company):
+        assert candidate.engine == "outscraper-google-maps"
+        assert candidate.url == "https://www.jeddahcentral.com/"
+        candidate.verification_status = "confirmed"
+        candidate.verification_score = 24
+        candidate.verification_method = "hostname_concat_brand,title_token_match"
+        return candidate
+
+    monkeypatch.setattr(scanner, "verify_candidate", fake_verify)
+    domain, detail = scanner.maps_discover_domain(FakeClient(), row)
+
+    assert domain == "jeddahcentral.com"
+    assert detail["basis"] == "outscraper_maps_plus_direct_identity_verification"
+    assert detail["verification_score"] == 24
+    assert detail["websites_evaluated"] == 1
+
+
+def test_maps_fallback_rejects_provider_business_without_verified_identity(monkeypatch):
+    row = {
+        "Master_ID": "CE-JED",
+        "Source_Record_ID": "513",
+        "Company_or_Office": "Central Jeddah Development",
+        "Arabic_Name": "شركة وسط جدة للتطوير",
+        "Region": "Jeddah",
+    }
+
+    class FakeClient:
+        def maps_businesses(self, query, budget, *, limit=3):
+            return [{
+                "status": "candidate",
+                "metadata": {
+                    "name": "Unrelated Central Trading",
+                    "site": "https://unrelated.example/",
+                    "full_address": "Jeddah, Saudi Arabia",
+                },
+            }]
+
+    def fake_verify(candidate, company):
+        candidate.verification_status = "rejected"
+        candidate.verification_score = 2
+        candidate.verification_method = "insufficient_identity"
+        return candidate
+
+    monkeypatch.setattr(scanner, "verify_candidate", fake_verify)
+    domain, detail = scanner.maps_discover_domain(FakeClient(), row)
+
+    assert domain == ""
+    assert detail["basis"] == "outscraper_maps_no_confirmed_domain"
+    assert detail["retryable"] is False
+    assert detail["websites_evaluated"] == 1
+
+
+def test_maps_provider_failure_remains_retryable():
+    row = {
+        "Master_ID": "CE-FAIL",
+        "Source_Record_ID": "514",
+        "Company_or_Office": "Provider Failure Development",
+        "Arabic_Name": "",
+        "Region": "Riyadh",
+    }
+
+    class FakeClient:
+        def maps_businesses(self, query, budget, *, limit=3):
+            return [{"status": "failed", "metadata": {}}]
+
+    domain, detail = scanner.maps_discover_domain(FakeClient(), row)
+
+    assert domain == ""
+    assert detail["basis"] == "outscraper_maps_provider_failure"
+    assert detail["retryable"] is True
+    assert detail["provider_status"] == "failed"
+
+
 def test_searxng_html_fallback_extracts_bounded_result_fields():
     html = """
     <div id="urls">

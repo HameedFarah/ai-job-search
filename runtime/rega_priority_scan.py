@@ -45,6 +45,8 @@ SENT_TRACKER_SHEET = "Sent Email Tracker"
 DEFAULT_ROOT = Path("runtime/acceptance/rega-priority-scan-v2")
 DEFAULT_RESERVE_USD = 1.00
 RECORD_USD_UPPER_BOUND = 0.003
+MAPS_RESULT_LIMIT = 3
+MAPS_USD_UPPER_BOUND = MAPS_RESULT_LIMIT * RECORD_USD_UPPER_BOUND
 RIYADH_TZ = ZoneInfo("Asia/Riyadh")
 
 DIRECT_LOCALS = {"hr", "career", "careers", "job", "jobs", "recruit", "recruitment", "talent", "hiring"}
@@ -292,6 +294,92 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
     }
 
 
+def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple[str, dict]:
+    """Use one bounded Maps business lookup, then independently verify any site."""
+    company = company_record(row)
+    identity_name = company.english_name.strip() or company.arabic_name.strip()
+    parts = [identity_name, company.location.strip(), "Saudi Arabia"]
+    query = ", ".join(part for part in parts if part)
+    records = client.maps_businesses(
+        query,
+        ProviderBudget(
+            allow_existing_credit=True,
+            max_calls=1,
+            max_credits=0,
+            max_domains=MAPS_RESULT_LIMIT,
+        ),
+        limit=MAPS_RESULT_LIMIT,
+    )
+    provider_statuses = [str(item.get("status") or "") for item in records]
+    if provider_statuses and all(status not in {"candidate", "success"} for status in provider_statuses):
+        status = provider_statuses[0]
+        if status in {"failed", "auth_failed", "quota_required", "budget_exhausted", "missing_credential"}:
+            return "", {
+                "basis": "outscraper_maps_provider_failure",
+                "provider_status": status,
+                "retryable": True,
+                "candidate_count": 0,
+            }
+        return "", {
+            "basis": "outscraper_maps_no_business_match",
+            "provider_status": status or "not_found",
+            "retryable": False,
+            "candidate_count": 0,
+        }
+
+    candidates: list[CandidateResult] = []
+    for position, item in enumerate(records[:MAPS_RESULT_LIMIT], start=1):
+        meta = dict(item.get("metadata") or {})
+        site = str(meta.get("site") or "").strip()
+        if not site:
+            continue
+        if not site.startswith(("http://", "https://")):
+            site = "https://" + site.lstrip("/")
+        description = " | ".join(
+            part for part in (
+                str(meta.get("full_address") or "").strip(),
+                str(meta.get("category") or "").strip(),
+            ) if part
+        )
+        candidates.append(CandidateResult(
+            company_id=company.company_id,
+            license_no=company.license_no,
+            query_id=f"{company.company_id}:outscraper-maps",
+            url=site,
+            title=str(meta.get("name") or "")[:500],
+            description=description[:2000],
+            engine="outscraper-google-maps",
+            position=position,
+            retrieved_at=utc_now(),
+        ))
+
+    best = None
+    for candidate in candidates:
+        verified = verify_candidate(candidate, company)
+        if verified.verification_status == "confirmed" and verified.verification_score >= 10:
+            if best is None or verified.verification_score > best.verification_score:
+                best = verified
+    if best is None:
+        return "", {
+            "basis": "outscraper_maps_no_confirmed_domain",
+            "provider_status": "success",
+            "retryable": False,
+            "candidate_count": len(records),
+            "websites_evaluated": len(candidates),
+        }
+    domain = normalized_domain(best.url)
+    return domain, {
+        "basis": "outscraper_maps_plus_direct_identity_verification",
+        "provider_status": "success",
+        "domain": domain,
+        "source_url": best.url,
+        "candidate_count": len(records),
+        "websites_evaluated": len(candidates),
+        "verification_score": best.verification_score,
+        "verification_method": best.verification_method,
+    }
+
+
 def _column_letter(index_one_based: int) -> str:
     out = ""
     n = index_one_based
@@ -341,23 +429,24 @@ def persist_portal_route(token: str, headers: list[str], row: dict[str, str], do
 
 
 def persist_no_domain(token: str, headers: list[str], row: dict[str, str], discovery: dict) -> None:
+    basis = str(discovery.get("basis") or "identity_discovery")
     update_master_fields(token, headers, row, {
         "Source_Date_or_Freshness": today(),
         "Source_Status": "No verified official domain",
         "Send_Eligibility": "NO_VERIFIED_EMAIL_ROUTE",
         "Next_Action": "Manual identity/domain review",
-        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: no confirmed official domain; free candidates={discovery.get('candidate_count', 0)}"),
+        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: no confirmed official domain after {basis}; candidates={discovery.get('candidate_count', 0)}"),
     })
 
 
-def persist_discovery_unavailable(token: str, headers: list[str], row: dict[str, str]) -> None:
-    """Keep zero-result discovery retryable instead of inventing a negative."""
+def persist_discovery_unavailable(token: str, headers: list[str], row: dict[str, str], detail: str = "free discovery returned zero candidates") -> None:
+    """Keep unavailable discovery retryable instead of inventing a negative."""
     update_master_fields(token, headers, row, {
         "Source_Date_or_Freshness": today(),
         "Source_Status": "Discovery temporarily unavailable; not terminally researched",
         "Send_Eligibility": "NO_EMAIL_DISCOVERED_NOT_RESEARCHED",
         "Next_Action": "Retry automated identity/domain discovery",
-        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: free discovery returned zero candidates; retry required; not classified as no-domain"),
+        "Notes": append_note(row.get("Notes", ""), f"REGA enrichment {today()}: {detail}; retry required; not classified as no-domain"),
     })
 
 
@@ -660,6 +749,11 @@ def main() -> int:
         "free_domain_discovered": 0,
         "free_domain_not_found": 0,
         "free_discovery_unavailable": 0,
+        "paid_maps_lookups": 0,
+        "maps_domain_discovered": 0,
+        "maps_no_confirmed_domain": 0,
+        "maps_provider_failures": 0,
+        "resumed_maps_ready": 0,
         "free_portal_routes_persisted": 0,
         "free_email_candidates": 0,
         "free_email_validations": 0,
@@ -684,12 +778,20 @@ def main() -> int:
         company_key = normalized_company(row.get("Company_or_Office", ""))
         prior = checkpoints.get(master_id) or {}
         prior_state = str(prior.get("state") or "")
+        resumed_domain = ""
+        resumed_discovery: dict = {}
 
         if prior_state == "inflight":
             counts["ambiguous_inflight_skipped"] += 1
             continue
         if prior_state in {"complete", "staged", "no_route"}:
             continue
+        if prior_state == "maps_ready":
+            resumed_domain = str(prior.get("domain") or "").strip()
+            resumed_discovery = dict(prior.get("discovery") or {})
+            if not resumed_domain:
+                raise RuntimeError(f"invalid maps_ready checkpoint for {master_id}")
+            counts["resumed_maps_ready"] += 1
         if prior_state == "ready_terminal_write":
             _persist_paid_terminal(token, master_headers, row, prior)
             checkpoints[master_id].update(state="complete", at=utc_now())
@@ -731,26 +833,95 @@ def main() -> int:
             counts["skipped_company_already_covered"] += 1
             continue
 
-        domain, discovery = free_discover_domain(row)
-        processed_this_run += 1
-        if not domain:
-            if str(discovery.get("basis") or "") == "free_discovery_unavailable":
-                persist_discovery_unavailable(token, master_headers, row)
+        if resumed_domain:
+            domain, discovery = resumed_domain, resumed_discovery
+        else:
+            domain, discovery = free_discover_domain(row)
+            processed_this_run += 1
+            if not domain and str(discovery.get("basis") or "") == "free_discovery_unavailable":
+                if not (str(row.get("Company_or_Office") or "").strip() or str(row.get("Arabic_Name") or "").strip()):
+                    invalid = {"basis": "invalid_company_identity", "candidate_count": 0}
+                    persist_no_domain(token, master_headers, row, invalid)
+                    _checkpoint(checkpoints, checkpoint_path, master_id, {
+                        "master_id": master_id,
+                        "company": row.get("Company_or_Office", ""),
+                        "state": "no_route",
+                        "result": "invalid_company_identity",
+                        "discovery": invalid,
+                        "at": utc_now(),
+                    })
+                    counts["free_domain_not_found"] += 1
+                    continue
+                if balance(client) - reserve < MAPS_USD_UPPER_BOUND:
+                    persist_discovery_unavailable(token, master_headers, row, "free discovery unavailable and Outscraper Maps reserve guard blocked fallback")
+                    _checkpoint(checkpoints, checkpoint_path, master_id, {
+                        "master_id": master_id,
+                        "company": row.get("Company_or_Office", ""),
+                        "state": "retryable_discovery",
+                        "result": "maps_reserve_guard",
+                        "discovery": discovery,
+                        "at": utc_now(),
+                    })
+                    counts["balance_guard_stops"] += 1
+                    break
                 _checkpoint(checkpoints, checkpoint_path, master_id, {
                     "master_id": master_id,
                     "company": row.get("Company_or_Office", ""),
-                    "state": "retryable_discovery",
-                    "result": "free_discovery_unavailable",
+                    "state": "inflight",
+                    "phase": "outscraper_maps_businesses",
+                    "free_discovery": discovery,
+                    "at": utc_now(),
+                })
+                maps_domain, maps_discovery = maps_discover_domain(client, row)
+                counts["paid_maps_lookups"] += 1
+                if not maps_domain:
+                    maps_basis = str(maps_discovery.get("basis") or "")
+                    if maps_basis == "outscraper_maps_provider_failure":
+                        persist_discovery_unavailable(token, master_headers, row, f"Outscraper Maps provider failure: {maps_discovery.get('provider_status', 'failed')}")
+                        _checkpoint(checkpoints, checkpoint_path, master_id, {
+                            "master_id": master_id,
+                            "company": row.get("Company_or_Office", ""),
+                            "state": "retryable_discovery",
+                            "result": "outscraper_maps_provider_failure",
+                            "discovery": maps_discovery,
+                            "at": utc_now(),
+                        })
+                        counts["maps_provider_failures"] += 1
+                        counts["free_discovery_unavailable"] += 1
+                    else:
+                        persist_no_domain(token, master_headers, row, maps_discovery)
+                        _checkpoint(checkpoints, checkpoint_path, master_id, {
+                            "master_id": master_id,
+                            "company": row.get("Company_or_Office", ""),
+                            "state": "no_route",
+                            "result": maps_basis or "outscraper_maps_no_confirmed_domain",
+                            "discovery": maps_discovery,
+                            "at": utc_now(),
+                        })
+                        counts["maps_no_confirmed_domain"] += 1
+                    continue
+                domain = maps_domain
+                discovery = {
+                    **maps_discovery,
+                    "free_discovery": discovery,
+                }
+                _checkpoint(checkpoints, checkpoint_path, master_id, {
+                    "master_id": master_id,
+                    "company": row.get("Company_or_Office", ""),
+                    "state": "maps_ready",
+                    "result": "outscraper_maps_verified_domain",
+                    "domain": domain,
                     "discovery": discovery,
                     "at": utc_now(),
                 })
-                counts["free_discovery_unavailable"] += 1
-            else:
+                counts["maps_domain_discovered"] += 1
+            elif not domain:
                 persist_no_domain(token, master_headers, row, discovery)
                 _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "no_route", "result": "free_discovery_no_confirmed_domain", "discovery": discovery, "at": utc_now()})
                 counts["free_domain_not_found"] += 1
-            continue
-        counts["free_domain_discovered"] += 1
+                continue
+            else:
+                counts["free_domain_discovered"] += 1
 
         official_url = str(row.get("Address_or_Website") or "").strip()
         if normalized_domain(official_url) != domain:

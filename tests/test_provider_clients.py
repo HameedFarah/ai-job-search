@@ -104,6 +104,60 @@ def test_tomba_domain_search_preserves_candidate_sources():
     assert item["metadata"]["mailbox_class"] == "person"
 
 
+def test_outscraper_maps_businesses_parses_nested_business_rows():
+    payload = {"status": "Success", "data": [[{
+        "name": "Jeddah Central Development Company",
+        "full_address": "Jeddah, Saudi Arabia",
+        "site": "https://www.jeddahcentral.com/",
+        "phone": "+966 12 000 0000",
+        "category": "Real estate developer",
+        "place_id": "place-1",
+    }]]}
+    captured = []
+    client = OutscraperClient("secret-key", opener=opener_with(payload, captured))
+    result = client.maps_businesses(
+        "Central Jeddah Development, Jeddah, Saudi Arabia",
+        ProviderBudget(allow_existing_credit=True, max_calls=1, max_domains=3),
+        limit=3,
+    )
+    item = result[0]
+    assert item["status"] == "candidate"
+    assert item["metadata"]["name"] == "Jeddah Central Development Company"
+    assert item["metadata"]["site"] == "https://www.jeddahcentral.com/"
+    assert item["metadata"]["full_address"] == "Jeddah, Saudi Arabia"
+    assert item["metadata"]["place_id"] == "place-1"
+    assert "query=Central+Jeddah+Development%2C+Jeddah%2C+Saudi+Arabia" in captured[0].full_url
+    assert "limit=3" in captured[0].full_url
+    assert "async=false" in captured[0].full_url
+    assert captured[0].get_header("X-api-key") == "secret-key"
+    assert "secret-key" not in json.dumps(result)
+
+
+def test_outscraper_maps_businesses_missing_key_or_budget_makes_no_call():
+    called = []
+    missing = OutscraperClient("", opener=opener_with({}, called)).maps_businesses(
+        "Example Saudi Arabia",
+        ProviderBudget(allow_existing_credit=True, max_calls=1, max_domains=3),
+    )
+    assert missing[0]["status"] == "missing_credential"
+    exhausted = OutscraperClient("key", opener=opener_with({}, called)).maps_businesses(
+        "Example Saudi Arabia",
+        ProviderBudget(allow_existing_credit=False, max_calls=1, max_domains=3),
+    )
+    assert exhausted[0]["status"] == "budget_exhausted"
+    assert called == []
+
+
+def test_outscraper_maps_businesses_empty_success_is_explicit_not_found():
+    client = OutscraperClient("key", opener=opener_with({"status": "Success", "data": [[]]}))
+    result = client.maps_businesses(
+        "No Such Company Saudi Arabia",
+        ProviderBudget(allow_existing_credit=True, max_calls=1, max_domains=3),
+    )
+    assert result[0]["status"] == "not_found"
+    assert result[0]["cost_status"] == "free_tier_or_existing_metered_credit"
+
+
 def test_outscraper_domain_contacts_preserve_public_source_refs():
     payload = {"status": "Success", "data": [{
         "domain": "example.com",
