@@ -42,6 +42,18 @@ def test_official_homepage_linked_ats_wins_without_guessing_paths():
     assert client.calls == [root]
 
 
+def test_homepage_oracle_supplier_portal_is_not_promoted_as_ats():
+    root = "https://example.com/"
+    supplier = "https://login.example.fa.ocs.oraclecloud.com/oam/server/obrareq.cgi?encquery=opaquejobsignal"
+    client = FakeClient({
+        root: FakeResponse(root, f'<html><body><a href="{supplier}">بوابة الموردين</a><a href="mailto:info@example.com">Contact</a></body></html>'),
+    })
+    route = discover_employment_route(root, client=client)
+    assert route is not None
+    assert route.kind == "email"
+    assert route.value == "info@example.com"
+
+
 def test_soft_404_careers_path_is_not_promoted():
     root = "https://example.com/"
     client = FakeClient({

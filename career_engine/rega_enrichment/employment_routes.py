@@ -33,6 +33,14 @@ RECRUITMENT_LOCALS = {
     "talent", "hiring", "people", "peopleandculture", "humanresources",
 }
 GENERAL_LOCALS = {"info", "contact", "contactus", "hello", "office", "admin", "inquiry", "enquiry"}
+NON_EMPLOYMENT_HOME_LINK_TERMS = (
+    "supplier", "suppliers", "vendor", "vendors", "procurement", "purchasing",
+    "بوابة الموردين", "الموردين", "موردين", "المشتريات",
+)
+HOME_ATS_EMPLOYMENT_URL_TERMS = (
+    "career", "careers", "job", "jobs", "vacanc", "recruit", "talent",
+    "employment", "candidate", "apply",
+)
 COMMON_PATHS = (
     "/careers", "/career", "/jobs", "/vacancies", "/join-us", "/joinus",
     "/work-with-us", "/recruitment", "/ar/careers", "/ar/jobs",
@@ -102,6 +110,24 @@ def _is_ats_url(url: str) -> bool:
     host = _host(url)
     low = url.lower()
     return bool(host and any(token in host or token in low for token in ATS_HOST_TOKENS))
+
+
+def _homepage_ats_link_is_employment(url: str, label: str) -> bool:
+    """Require explicit employment context before trusting ATS-looking homepage links.
+
+    Generic Oracle/SuccessFactors hosts also serve supplier and procurement portals.
+    A verified homepage link is therefore not enough by itself: the visible label or
+    the stable hostname/path must carry an employment signal. Opaque query strings are
+    deliberately ignored because random encoded values can contain misleading tokens.
+    """
+    label_low = str(label or "").strip().lower()
+    if any(term in label_low for term in NON_EMPLOYMENT_HOME_LINK_TERMS):
+        return False
+    if _employment_score(label_low, label_low, "") >= 1:
+        return True
+    parsed = urlsplit(url)
+    host_path = f"{parsed.hostname or ''}{parsed.path or ''}".lower()
+    return any(term in host_path for term in HOME_ATS_EMPLOYMENT_URL_TERMS)
 
 
 def _employment_score(title: str, text: str, url: str) -> int:
@@ -208,7 +234,7 @@ def discover_employment_route(
 
         # External ATS is trusted only when the verified official site links to it.
         for url, label in normalized_links:
-            if _is_ats_url(url) and _employment_score(label, label, url) >= 1:
+            if _is_ats_url(url) and _homepage_ats_link_is_employment(url, label):
                 return EmploymentRoute(
                     kind="ats",
                     value=url,
