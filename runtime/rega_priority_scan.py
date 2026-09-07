@@ -877,7 +877,7 @@ def main() -> int:
                 append_queue_row(token, queue_row_values(queue_id=queue_id, row=row, domain=domain, candidate=candidate, validation=validation, config=config))
                 known_emails.add(email)
                 newly_queued_emails.add(email)
-            ensure_queue_metadata(token, SPREADSHEET_ID)
+            ensure_queue_metadata(token, SPREADSHEET_ID, {queue_id})
             current_queue = read_queue(token, SPREADSHEET_ID)
             persist_receiving_email(token, master_headers, row, domain, email, str(candidate.get("kind") or mailbox_rank(email)[1]), _source_url(candidate, domain))
             checkpoints[master_id].update(state="staged", result="receiving_route_ready", queue_id=queue_id, at=utc_now())
@@ -1126,7 +1126,7 @@ def main() -> int:
         atomic_jsonl(checkpoint_path, checkpoints)
 
         append_queue_row(token, queue_row_values(queue_id=queue_id, row=row, domain=domain, candidate=candidate, validation=validation, config=config))
-        ensure_queue_metadata(token, SPREADSHEET_ID)
+        ensure_queue_metadata(token, SPREADSHEET_ID, {queue_id})
         current_queue = read_queue(token, SPREADSHEET_ID)
         known_emails.add(validation["email"])
         newly_queued_emails.add(validation["email"])

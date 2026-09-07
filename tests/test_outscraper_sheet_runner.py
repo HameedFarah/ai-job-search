@@ -152,6 +152,56 @@ class SheetRunnerTests(unittest.TestCase):
         self.assertEqual(created["metadataValue"], "q1")
         self.assertEqual(created["location"]["dimensionRange"]["startIndex"], 1)
 
+    def test_targeted_metadata_creation_does_not_backfill_unrelated_rows(self):
+        rows = [
+            {"Queue_ID": "q1", "Email": "a@example.com"},
+            {"Queue_ID": "q2", "Email": "b@example.com"},
+            {"Queue_ID": "q3", "Email": "c@example.com"},
+        ]
+        metadata = [{
+            "metadataId": 202,
+            "metadataValue": "q2",
+            "location": {"dimensionRange": {"sheetId": 123, "dimension": "ROWS", "startIndex": 2, "endIndex": 3}},
+        }]
+        with patch("runtime.outscraper_sheet_runner.read_queue", side_effect=[rows, rows]), \
+             patch("runtime.outscraper_sheet_runner._sheet_id", return_value=123), \
+             patch("runtime.outscraper_sheet_runner._queue_metadata", side_effect=[[], metadata]), \
+             patch("runtime.outscraper_sheet_runner.sheets_request", return_value={}) as request:
+            result = ensure_queue_metadata("token", queue_ids={"q2"})
+        self.assertEqual(result, {"q2": 202})
+        payload = request.call_args.args[3]
+        self.assertEqual(len(payload["requests"]), 1)
+        created = payload["requests"][0]["createDeveloperMetadata"]["developerMetadata"]
+        self.assertEqual(created["metadataValue"], "q2")
+
+    def test_metadata_creation_is_chunked_to_bounded_batches(self):
+        rows = [
+            {"Queue_ID": f"q{index:02d}", "Email": f"{index}@example.com"}
+            for index in range(26)
+        ]
+        metadata = []
+        for metadata_id, (row_number, row) in enumerate(enumerate(rows, start=2), start=1000):
+            metadata.append({
+                "metadataId": metadata_id,
+                "metadataValue": row["Queue_ID"],
+                "location": {"dimensionRange": {
+                    "sheetId": 123,
+                    "dimension": "ROWS",
+                    "startIndex": row_number - 1,
+                    "endIndex": row_number,
+                }},
+            })
+        target_ids = {row["Queue_ID"] for row in rows}
+        with patch("runtime.outscraper_sheet_runner.read_queue", side_effect=[rows, rows]), \
+             patch("runtime.outscraper_sheet_runner._sheet_id", return_value=123), \
+             patch("runtime.outscraper_sheet_runner._queue_metadata", side_effect=[[], metadata]), \
+             patch("runtime.outscraper_sheet_runner.sheets_request", return_value={}) as request:
+            result = ensure_queue_metadata("token", queue_ids=target_ids)
+        self.assertEqual(set(result), target_ids)
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(len(request.call_args_list[0].args[3]["requests"]), 25)
+        self.assertEqual(len(request.call_args_list[1].args[3]["requests"]), 1)
+
     def test_fail_closed_states(self):
         self.assertEqual(send_state("INVALID", "x"), "REJECTED_OUTSCRAPER_INVALID")
         self.assertEqual(send_state("BLACKLISTED", "x"), "REJECTED_OUTSCRAPER_BLACKLISTED")
