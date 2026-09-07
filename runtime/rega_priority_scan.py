@@ -227,8 +227,13 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
     company = company_record(row)
     candidates: list[CandidateResult] = []
     seen: set[str] = set()
-    for query in generate_queries(company):
-        for position, item in enumerate(searxng_qwant_search(query.query_text, limit=5), start=1):
+    # Keep the free stage useful but bounded. Official-website and exact-name
+    # queries carry the strongest signal; Maps remains the paid fallback only
+    # after these free attempts fail identity verification.
+    query_priority = {"q4": 0, "q1": 1, "q2": 2, "q3": 3, "q5": 4}
+    queries = sorted(generate_queries(company), key=lambda item: query_priority.get(item.template_id, 9))[:3]
+    for query in queries:
+        for position, item in enumerate(searxng_qwant_search(query.query_text, limit=3), start=1):
             url = str(item.get("url") or "").strip()
             if not url.startswith(("http://", "https://")) or url in seen:
                 continue
@@ -244,7 +249,9 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
                 position=position,
                 retrieved_at=utc_now(),
             ))
-        if len(candidates) >= 10:
+            if len(candidates) >= 6:
+                break
+        if len(candidates) >= 6:
             break
 
     # Exact/quoted search backends can transiently return an empty set while a
@@ -252,7 +259,7 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
     # before deciding whether discovery produced evidence at all.
     if not candidates and company.english_name.strip():
         fallback_query = company.english_name.strip()
-        for position, item in enumerate(searxng_qwant_search(fallback_query, limit=5), start=1):
+        for position, item in enumerate(searxng_qwant_search(fallback_query, limit=3), start=1):
             url = str(item.get("url") or "").strip()
             if not url.startswith(("http://", "https://")) or url in seen:
                 continue
@@ -277,7 +284,7 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
         }
 
     best = None
-    for candidate in candidates[:10]:
+    for candidate in candidates[:6]:
         verified = verify_candidate(candidate, company)
         if verified.verification_status == "confirmed" and verified.verification_score >= 10:
             if best is None or verified.verification_score > best.verification_score:
@@ -838,7 +845,13 @@ def main() -> int:
         else:
             domain, discovery = free_discover_domain(row)
             processed_this_run += 1
-            if not domain and str(discovery.get("basis") or "") == "free_discovery_unavailable":
+            if not domain:
+                free_basis = str(discovery.get("basis") or "")
+                if free_basis == "free_discovery_unavailable":
+                    counts["free_discovery_unavailable"] += 1
+                else:
+                    counts["free_domain_not_found"] += 1
+
                 if not (str(row.get("Company_or_Office") or "").strip() or str(row.get("Arabic_Name") or "").strip()):
                     invalid = {"basis": "invalid_company_identity", "candidate_count": 0}
                     persist_no_domain(token, master_headers, row, invalid)
@@ -850,10 +863,10 @@ def main() -> int:
                         "discovery": invalid,
                         "at": utc_now(),
                     })
-                    counts["free_domain_not_found"] += 1
                     continue
+
                 if balance(client) - reserve < MAPS_USD_UPPER_BOUND:
-                    persist_discovery_unavailable(token, master_headers, row, "free discovery unavailable and Outscraper Maps reserve guard blocked fallback")
+                    persist_discovery_unavailable(token, master_headers, row, "free discovery did not verify a domain and Outscraper Maps reserve guard blocked fallback")
                     _checkpoint(checkpoints, checkpoint_path, master_id, {
                         "master_id": master_id,
                         "company": row.get("Company_or_Office", ""),
@@ -864,6 +877,7 @@ def main() -> int:
                     })
                     counts["balance_guard_stops"] += 1
                     break
+
                 _checkpoint(checkpoints, checkpoint_path, master_id, {
                     "master_id": master_id,
                     "company": row.get("Company_or_Office", ""),
@@ -877,29 +891,30 @@ def main() -> int:
                 if not maps_domain:
                     maps_basis = str(maps_discovery.get("basis") or "")
                     if maps_basis == "outscraper_maps_provider_failure":
-                        persist_discovery_unavailable(token, master_headers, row, f"Outscraper Maps provider failure: {maps_discovery.get('provider_status', 'failed')}")
+                        persist_discovery_unavailable(token, master_headers, row, f"Outscraper Maps provider failure after free discovery: {maps_discovery.get('provider_status', 'failed')}")
                         _checkpoint(checkpoints, checkpoint_path, master_id, {
                             "master_id": master_id,
                             "company": row.get("Company_or_Office", ""),
                             "state": "retryable_discovery",
                             "result": "outscraper_maps_provider_failure",
-                            "discovery": maps_discovery,
+                            "discovery": {**maps_discovery, "free_discovery": discovery},
                             "at": utc_now(),
                         })
                         counts["maps_provider_failures"] += 1
-                        counts["free_discovery_unavailable"] += 1
                     else:
-                        persist_no_domain(token, master_headers, row, maps_discovery)
+                        combined_discovery = {**maps_discovery, "free_discovery": discovery}
+                        persist_no_domain(token, master_headers, row, combined_discovery)
                         _checkpoint(checkpoints, checkpoint_path, master_id, {
                             "master_id": master_id,
                             "company": row.get("Company_or_Office", ""),
                             "state": "no_route",
                             "result": maps_basis or "outscraper_maps_no_confirmed_domain",
-                            "discovery": maps_discovery,
+                            "discovery": combined_discovery,
                             "at": utc_now(),
                         })
                         counts["maps_no_confirmed_domain"] += 1
                     continue
+
                 domain = maps_domain
                 discovery = {
                     **maps_discovery,
@@ -915,11 +930,6 @@ def main() -> int:
                     "at": utc_now(),
                 })
                 counts["maps_domain_discovered"] += 1
-            elif not domain:
-                persist_no_domain(token, master_headers, row, discovery)
-                _checkpoint(checkpoints, checkpoint_path, master_id, {"master_id": master_id, "company": row.get("Company_or_Office", ""), "state": "no_route", "result": "free_discovery_no_confirmed_domain", "discovery": discovery, "at": utc_now()})
-                counts["free_domain_not_found"] += 1
-                continue
             else:
                 counts["free_domain_discovered"] += 1
 

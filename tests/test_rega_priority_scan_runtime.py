@@ -268,6 +268,45 @@ def test_discovery_unavailable_restores_nonterminal_sheet_state(monkeypatch):
     assert "not classified as no-domain" in captured["Notes"]
 
 
+def test_free_discovery_is_bounded_to_high_signal_candidates(monkeypatch):
+    row = {
+        "Master_ID": "CE-BOUND",
+        "Source_Record_ID": "515",
+        "Company_or_Office": "Bounded Example Development",
+        "Arabic_Name": "شركة المثال المحدودة",
+        "Region": "Riyadh",
+        "Address_or_Website": "",
+        "Source_Verification": "Not researched",
+        "Source_Status": "Not researched",
+    }
+    calls = []
+
+    def fake_search(query, limit=3):
+        calls.append((query, limit))
+        marker = len(calls)
+        return [
+            {"url": f"https://candidate{marker}{idx}.example/", "title": "Candidate", "description": ""}
+            for idx in range(1, 4)
+        ]
+
+    def fake_verify(candidate, company):
+        candidate.verification_status = "rejected"
+        candidate.verification_score = 0
+        candidate.verification_method = "insufficient_identity"
+        return candidate
+
+    monkeypatch.setattr(scanner, "searxng_qwant_search", fake_search)
+    monkeypatch.setattr(scanner, "verify_candidate", fake_verify)
+    domain, detail = scanner.free_discover_domain(row)
+
+    assert domain == ""
+    assert detail["basis"] == "free_discovery_no_confirmed_domain"
+    assert detail["candidate_count"] == 6
+    assert len(calls) == 2
+    assert all(limit == 3 for _, limit in calls)
+    assert "official website" in calls[0][0]
+
+
 def test_maps_fallback_requires_independent_identity_verification(monkeypatch):
     row = {
         "Master_ID": "CE-JED",
