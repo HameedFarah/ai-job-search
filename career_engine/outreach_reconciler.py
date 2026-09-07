@@ -75,11 +75,11 @@ SENDER_GWS_CONFIG_DIR = Path(os.environ.get(
 QUEUE_SHEET_NAME = "Auto Send Queue"
 QUEUE_SHEET_ID = 118870206
 
-# Canonical columns in sheet order (A-K)
+# Canonical columns in sheet order (A-L)
 QUEUE_HEADERS = [
     "Queue_ID", "Email", "Company_or_Office", "Source", "Priority",
     "Status", "Added_At", "Sent_At", "Gmail_Message_ID", "Last_Error",
-    "Evidence_or_Notes",
+    "Evidence_or_Notes", "Balady_Tier",
 ]
 QUEUE_COL = {name: chr(ord("A") + idx) for idx, name in enumerate(QUEUE_HEADERS)}
 
@@ -124,6 +124,17 @@ EXCLUDED_COMPANIES_LOW = {c.lower() for c in EXCLUDED_COMPANIES}
 # resolved through the canonical master company index.
 EXCLUDED_DOMAINS = {"ttwsa.com"}
 
+# Explicitly quarantined REGA false-positive / wrong-company domains. These
+# remain non-sendable unless canonical company-specific evidence is reviewed
+# and the quarantine is deliberately changed in source first.
+QUARANTINED_DOMAINS = {
+    "ittihadclub.sa", "tuwaiq.stc.com.sa", "icc-cpi.int", "protenders.com",
+    "app.visio.online", "realestateone.com", "masaken.jo", "masaken-ae.com",
+    "oracle.com", "bareeq.com.bh", "diyar.bh", "wasb.org", "dream.ca",
+    "firstavenue.ca", "zara.com", "weather.gov", "reconstruction.go.jp",
+    "hermes.com", "majidalfuttaim.com",
+}
+
 # Shared/public mailbox providers must never be deduped globally by domain.
 PUBLIC_EMAIL_DOMAINS = {
     "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
@@ -136,9 +147,81 @@ PUBLIC_EMAIL_DOMAINS = {
 # routing only; legal/privacy/finance/abuse/support routes remain blocked.
 BLOCKED_MAILBOX_LOCALS = {
     "privacy", "legal", "finance", "investor", "investors", "abuse", "support",
-    "billing", "accounts", "compliance", "security",
+    "billing", "accounts", "compliance", "security", "customercare", "customerservice", "cs",
 }
 EXECUTIVE_MAILBOX_LOCALS = {"ceo", "executive", "president", "chairman"}
+
+# ---------------------------------------------------------------------------
+# Synthetic / test email guard — fail-closed production safety
+# ---------------------------------------------------------------------------
+# These patterns must NEVER reach a production send path. They cover known
+# leaked test rows (test@example.com / balady-test-123), common fixture
+# domains, and obviously fake mailbox local-parts.
+#
+# Tests must use isolated / fake queue APIs and must never append sendable
+# production rows.
+SYNTHETIC_DOMAINS = frozenset({
+    "example.com",
+    "example.org",
+    "example.net",
+    "test.com",
+    "test.org",
+    "test.net",
+    "invalid.com",
+    "invalid.org",
+    "invalid.net",
+    "localhost",
+    "dummy.test",
+    "fakemail.com",
+    "notreal.com",
+})
+
+# Obvious test / mock local-parts that should NEVER appear in real outreach.
+# These are the local-part being EXACTLY a synthetic keyword.
+SYNTHETIC_LOCALS_EXACT = frozenset({
+    "test",
+    "fake",
+    "mock",
+    "placeholder",
+    "sample",
+    "dummy",
+})
+
+
+def _is_synthetic_email(email: str) -> bool:
+    """Return True when the email looks like a test / mock / fixture identity.
+
+    Blocks:
+    - Known synthetic / fixture domains (example.com, test.com, …)
+    - Exact local-parts that are obviously synthetic (test, fake, mock, …)
+    - Local-parts starting with a synthetic keyword followed by a dash
+      (test-123, fake-user, mock-abc) — catches generated test addresses.
+
+    Does NOT block legitimate company-role local-parts such as info@,
+    contact@, admin@, hr@, careers@, jobs@, recruitment@ — these are
+    explicitly approved in the outreach contract for general-company inboxes.
+    """
+    email = str(email or "").strip().lower()
+    if not email:
+        return False
+    # 1. Synthetic domain
+    domain = _email_domain(email)
+    if domain and domain in SYNTHETIC_DOMAINS:
+        return True
+    # 2. Exact synthetic local-part
+    local = _mailbox_local(email)
+    if local in SYNTHETIC_LOCALS_EXACT:
+        return True
+    # 3. Synthetic prefix + dash (e.g. test-123, fake-user, mock-abc)
+    for prefix in SYNTHETIC_LOCALS_EXACT:
+        if local.startswith(prefix + "-"):
+            return True
+    return False
+
+
+def _is_synthetic_queue_id(queue_id: str) -> bool:
+    """Return True when the Queue_ID looks like a synthetic test identifier."""
+    return bool(re.match(r"^balady-test", str(queue_id or ""), re.IGNORECASE))
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$")
 
 # Verified cross-domain replacements for companies already contacted in this
@@ -204,7 +287,7 @@ def _stable_id_for(email: str, company: str = "") -> str:
 
 def _read_queue_sheet(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> list[dict[str, str]]:
     """Read every row from Auto Send Queue without mutation."""
-    encoded = quote(f"{QUEUE_SHEET_NAME}!A:K", safe="!:")
+    encoded = quote(f"{QUEUE_SHEET_NAME}!A:L", safe="!:")
     body = sheets_request(token, "GET",
                           f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{encoded}")
     values = body.get("values")
@@ -373,6 +456,7 @@ def normalise_row(row: dict[str, str]) -> dict[str, Any]:
     gmail_mid = str(row.get("Gmail_Message_ID") or "").strip()
     last_error = str(row.get("Last_Error") or "").strip()
     evidence = str(row.get("Evidence_or_Notes") or "").strip()
+    balady_tier = str(row.get("Balady_Tier") or "").strip().upper()
 
     # Blank defaults. Invalid nonblank values and unsafe recipient identities
     # fail closed to HOLD rather than being silently interpreted as sendable.
@@ -399,6 +483,19 @@ def normalise_row(row: dict[str, str]) -> dict[str, Any]:
         status = "HOLD"
     normalise_error = "; ".join(errors)
 
+    # Fail-closed synthetic / test guard: reject obviously fake or test
+    # identities before they can enter the send path.
+    is_synthetic = False
+    if _is_synthetic_email(email):
+        is_synthetic = True
+    elif _is_synthetic_queue_id(queue_id):
+        is_synthetic = True
+    if is_synthetic:
+        status = "HOLD"
+        if normalise_error:
+            normalise_error += "; "
+        normalise_error += "synthetic-test-identity"
+
     if not queue_id and email:
         queue_id = _stable_id_for(email, company)
     if not added_at and email:
@@ -418,6 +515,7 @@ def normalise_row(row: dict[str, str]) -> dict[str, Any]:
         "gmail_message_id": gmail_mid,
         "last_error": last_error,
         "evidence": evidence,
+        "balady_tier": balady_tier,
         "domain": domain,
         "normalise_error": normalise_error,
         "row_number": int(str(row.get("__row_number") or "0") or 0),
@@ -707,6 +805,82 @@ def _dedupe_checkpoint_after_epoch() -> int:
     return max(0, int(checkpoint.timestamp()) - DEDUPE_CHECKPOINT_OVERLAP_SECONDS)
 
 
+
+def sent_tracker_dedupe_for_queue(
+    spreadsheet_token: str,
+    spreadsheet_id: str = SPREADSHEET_ID,
+) -> dict[str, str]:
+    """Use canonical Sent Email Tracker as recipient dedupe authority.
+
+    The tracker is reconciled from both Gmail accounts by the preparation
+    workflow. Every career-related historical recipient remains an exact
+    address block. Permanent-bounce handling remains in the existing master
+    reconciliation logic so a dead mailbox does not poison replacement
+    company/domain routes.
+    """
+    encoded = quote("Sent Email Tracker!A:L", safe="!:")
+    body = sheets_request(
+        spreadsheet_token,
+        "GET",
+        f"https://sheets.googleapis.com/v4/spreadsheets/"
+        f"{spreadsheet_id}/values/{encoded}",
+    )
+
+    values = body.get("values")
+
+    if not isinstance(values, list) or len(values) < 2:
+        raise RuntimeError("Sent Email Tracker is empty or malformed")
+
+    headers = [str(x) for x in values[0]]
+
+    required = {
+        "Recipient_Email",
+        "Gmail_Message_ID",
+        "Career_Related",
+        "Delivery_State",
+        "Bounce_State",
+    }
+
+    if not required.issubset(set(headers)):
+        raise RuntimeError(
+            "Sent Email Tracker schema does not match canonical contract"
+        )
+
+    result: dict[str, str] = {}
+
+    for raw in values[1:]:
+        if not isinstance(raw, list):
+            continue
+
+        padded = [str(x) for x in raw] + [""] * (
+            len(headers) - len(raw)
+        )
+        row = dict(zip(headers, padded))
+
+        if str(row.get("Career_Related") or "").strip().upper() != "YES":
+            continue
+
+        email = str(
+            row.get("Recipient_Email") or ""
+        ).strip().lower()
+
+        message_id = str(
+            row.get("Gmail_Message_ID") or ""
+        ).strip()
+
+        # A successfully submitted Gmail message remains historical send
+        # evidence even if a later DSN marks that mailbox bounced.
+        if email and "@" in email and message_id:
+            result[email] = message_id
+
+    if not result:
+        raise RuntimeError(
+            "Sent Email Tracker contains no career-related sent recipients"
+        )
+
+    return result
+
+
 def gmail_dedupe_for_queue(*, after_epoch: int | None = None) -> dict[str, str]:
     """Return {recipient_email: message_id} from BOTH Gmail config contexts.
 
@@ -876,14 +1050,20 @@ class QueueReconciler:
         except RuntimeError:
             checkpoint_eligible = set()
 
+        tracker_sent: dict[str, str] = {}
+        if getattr(self, "sheet_token", None):
+            tracker_sent = sent_tracker_dedupe_for_queue(self.sheet_token)
+
         if active_emails and active_emails.issubset(checkpoint_eligible):
-            self.gmail_dedupe_mode = "accepted-checkpoint-plus-incremental"
-            self.sent_by_email = gmail_dedupe_for_queue(after_epoch=_dedupe_checkpoint_after_epoch())
+            self.gmail_dedupe_mode = "sent-tracker-plus-incremental-gmail"
+            live_sent = gmail_dedupe_for_queue(after_epoch=_dedupe_checkpoint_after_epoch())
         else:
-            # New or previously-unaccepted rows must still receive a complete
-            # historical census before they can become sendable.
-            self.gmail_dedupe_mode = "full-history"
-            self.sent_by_email = gmail_dedupe_for_queue()
+            # New or previously-unaccepted rows receive a complete Gmail
+            # history census before they can become sendable.
+            self.gmail_dedupe_mode = "sent-tracker-plus-full-gmail-history"
+            live_sent = gmail_dedupe_for_queue()
+        self.sent_by_email = dict(tracker_sent)
+        self.sent_by_email.update(live_sent)
         self.gmail_dedupe_loaded = True
 
         # Build blocked sets from Gmail-sent emails and canonical master aliases.
@@ -956,6 +1136,10 @@ class QueueReconciler:
                 continue
 
             # Verified cross-domain aliases for companies already contacted.
+            if domain in QUARANTINED_DOMAINS:
+                skipped.append({**row, "skip_reason": "quarantined_domain"})
+                continue
+
             if email in KNOWN_ALREADY_CONTACTED_ALIASES or domain in KNOWN_ALREADY_CONTACTED_DOMAINS:
                 skipped.append({**row, "skip_reason": "known_contacted_company_alias"})
                 continue
@@ -1047,12 +1231,38 @@ class QueueReconciler:
         return result
 
     def sort_by_priority(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """IMPORTANT rows first, then oldest Added_At within same priority."""
+        """Apply campaign sequence first, then stable order inside each lane.
+
+        Required sequence is REGA, then Balady T1..T5. Generic IMPORTANT/NORMAL
+        remains a tie-break only inside the same campaign lane so a Balady row
+        can never jump ahead of a pending REGA row.
+        """
         priority_order = {"IMPORTANT": 0, "NORMAL": 1}
-        def sort_key(r):
-            prio = priority_order.get(r.get("priority", "NORMAL"), 1)
-            added = r.get("added_at", "9999")
-            return (prio, added, r.get("email", ""))
+        balady_order = {
+            "T1_HR": 1,
+            "T2_GROUP": 2,
+            "T3_CORP_CONSULTANCY": 3,
+            "T4_CORPORATE_DOMAIN": 4,
+            "T5_FREEMAIL": 5,
+        }
+
+        def lane(r: dict[str, Any]) -> int:
+            source = str(r.get("source") or "").upper()
+            if "REGA" in source:
+                return 0
+            if "BALADY" in source:
+                return balady_order.get(str(r.get("balady_tier") or "").upper(), 98)
+            return 99
+
+        def sort_key(r: dict[str, Any]):
+            return (
+                lane(r),
+                priority_order.get(r.get("priority", "NORMAL"), 1),
+                r.get("added_at", "9999"),
+                int(r.get("row_number") or 0),
+                r.get("email", ""),
+            )
+
         return sorted(items, key=sort_key)
 
     def reconcile(self) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
