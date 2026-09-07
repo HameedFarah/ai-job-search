@@ -31,6 +31,7 @@ QUEUE_METADATA_KEY = "career_queue_id"
 MAX_WRITE_ROWS = 25
 REQUIRED = ("Email", "Outscraper_Status", "Outscraper_Verification", "Outscraper_Replacement_Email", "Outscraper_Evidence", "Outscraper_Checked_At")
 SHEET_COLUMNS = ("O", "S", "T", "U", "V", "W")
+_REFRESHED_GOOGLE_TOKEN = ""
 EXPECTED_HEADERS = (
     "Queue_ID", "Email", "Company_or_Office", "Source_Dataset", "Source_Record_ID",
     "Source_Verification", "Source_Date_or_Freshness", "Send_Eligibility", "Gmail_Draft_ID",
@@ -64,7 +65,9 @@ def rclone_access_token(remote: str = "gdrive", runner: Callable[..., bytes] = s
 
 
 def sheets_request(token: str, method: str, url: str, payload: dict | None = None) -> dict:
-    if not token or "access_token" in token.lower():
+    global _REFRESHED_GOOGLE_TOKEN
+    active_token = _REFRESHED_GOOGLE_TOKEN or token
+    if not active_token or "access_token" in active_token.lower():
         raise RuntimeError("invalid Google auth")
     data = json.dumps(payload).encode() if payload is not None else None
     last_exc: BaseException | None = None
@@ -73,7 +76,7 @@ def sheets_request(token: str, method: str, url: str, payload: dict | None = Non
             url,
             data=data,
             method=method,
-            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            headers={"Authorization": "Bearer " + active_token, "Content-Type": "application/json"},
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -83,6 +86,16 @@ def sheets_request(token: str, method: str, url: str, payload: dict | None = Non
                 return body
         except urllib.error.HTTPError as exc:
             last_exc = exc
+            if exc.code == 401 and attempt < 2:
+                try:
+                    refreshed = rclone_access_token(os.environ.get("RCLONE_GDRIVE_REMOTE", "gdrive"))
+                except RuntimeError as refresh_exc:
+                    raise RuntimeError("Google Sheets auth refresh failed closed") from refresh_exc
+                if not refreshed or "access_token" in refreshed.lower():
+                    raise RuntimeError("Google Sheets auth refresh returned invalid auth")
+                active_token = refreshed
+                _REFRESHED_GOOGLE_TOKEN = refreshed
+                continue
             if exc.code not in {429, 500, 502, 503, 504} or attempt == 2:
                 raise RuntimeError("Google Sheets request failed closed") from exc
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:

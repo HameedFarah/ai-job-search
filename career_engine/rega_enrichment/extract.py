@@ -359,6 +359,29 @@ def extract_fields(company: CompanyRecord, official_url: str) -> tuple[dict[str,
                 ))
                 break
 
+    # Owner policy 2026-09-05: once the company domain itself is confirmed,
+    # lack of a published mailbox must not remove the REGA company from
+    # outreach. Prefer a discovered recruitment/general mailbox when present;
+    # otherwise use the conventional info@ route on the confirmed official
+    # domain. This is explicitly a domain-derived fallback, not a claim that
+    # the mailbox was published on the website.
+    if not values["general_email"] and not values["recruitment_email"] and host_display:
+        fallback_email = f"info@{host_display}"
+        if EMAIL_RE.fullmatch(fallback_email):
+            values["general_email"] = fallback_email
+            evidence.append(EvidenceRecord(
+                company_id=company.company_id,
+                license_no=company.license_no,
+                field="general_email",
+                value=fallback_email,
+                source_url=official_url,
+                source_type="official_page",
+                evidence_text=f"Owner-approved fallback from confirmed official domain {host_display}; mailbox not independently published",
+                verified_at=verified_at,
+                confidence="candidate",
+                verification_method="hostname_token_match",
+            ))
+
     # Normalize phone regex — capture full Saudi numbers, prefer 9200 and +966
     # Use tighter pattern to avoid truncation: capture 9-10 digits after 9200 or 5x
     PHONE_RE_STRICT = re.compile(r"(\+966[\s\-]?5\d[\s\-]?\d{3}[\s\-]?\d{4}|\+966[\s\-]?9200[\s\-]?\d{5}|9200[\s\-]?\d{5}|5\d[\s\-]?\d{3}[\s\-]?\d{4})")

@@ -73,7 +73,7 @@ PORTFOLIO_SHA = "64f2a3b7caa1a827f8d03bf10cfa098b3c78dab73c0aa783d84e1784a4a0507
 # ---------------------------------------------------------------------------
 
 def test_blank_priority_defaults_to_normal():
-    row = {"Email": "test@example.com", "Priority": "", "Status": "", "Added_At": ""}
+    row = {"Email": "contact@arbahtaiba.com", "Priority": "", "Status": "", "Added_At": ""}
     n = normalise_row(row)
     assert n["priority"] == "NORMAL"
     assert n["status"] == "PENDING"
@@ -357,7 +357,7 @@ def test_rmk_blocked_in_arabic_and_english_aliases():
 
 
 def test_master_derived_asa_identity_is_blocked_when_queue_company_blank():
-    email = "careers@asa-example.com"
+    email = "careers@asa-baad.gov.sa"
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = QueueLedger(Path("/dev/null"))
     r.master = _master_index([{
@@ -496,7 +496,7 @@ def test_checkpoint_epoch_is_2026_and_keeps_five_minute_overlap():
 def test_checkpoint_covered_queue_uses_incremental_gmail_scan(monkeypatch):
     import career_engine.outreach_reconciler as module
 
-    email = "careers@example.com"
+    email = "care@baad.gov.sa"
     r = _dedupe_test_reconciler(email)
     calls = []
     monkeypatch.setattr(module, "verify_both_accounts_available", lambda: (True, "ok"))
@@ -508,24 +508,24 @@ def test_checkpoint_covered_queue_uses_incremental_gmail_scan(monkeypatch):
     )
     assert r.fetch_gmail_dedupe() == {}
     assert r.gmail_dedupe_loaded is True
-    assert r.gmail_dedupe_mode == "accepted-checkpoint-plus-incremental"
+    assert r.gmail_dedupe_mode == "sent-tracker-plus-incremental-gmail"
     assert calls == [module._dedupe_checkpoint_after_epoch()]
 
 
 def test_uncovered_queue_falls_back_to_full_history(monkeypatch):
     import career_engine.outreach_reconciler as module
 
-    r = _dedupe_test_reconciler("new@example.com")
+    r = _dedupe_test_reconciler("new@arabstarch.com")
     calls = []
     monkeypatch.setattr(module, "verify_both_accounts_available", lambda: (True, "ok"))
-    monkeypatch.setattr(module, "_accepted_dedupe_checkpoint_eligible_emails", lambda: {"other@example.com"})
+    monkeypatch.setattr(module, "_accepted_dedupe_checkpoint_eligible_emails", lambda: {"other@baad.gov.sa"})
     monkeypatch.setattr(
         module,
         "gmail_dedupe_for_queue",
         lambda *, after_epoch=None: calls.append(after_epoch) or {},
     )
     assert r.fetch_gmail_dedupe() == {}
-    assert r.gmail_dedupe_mode == "full-history"
+    assert r.gmail_dedupe_mode == "sent-tracker-plus-full-gmail-history"
     assert calls == [None]
 
 
@@ -565,12 +565,12 @@ def test_restartsafe_ledger_prevents_dupe_sent():
         r.blocked_companies = set()
         # A fresh row with the same queue_id should be skipped
         result = r.apply_ledge_dedupe([
-            {"email": "sent@example.com", "queue_id": qid, "domain": "example.com", "company": "Test Co"},
-            {"email": "new@example.com", "queue_id": "new-qid", "domain": "example.com", "company": "Test Co 2"},
+            {"email": "sent@baad.gov.sa", "queue_id": qid, "domain": "baad.gov.sa", "company": "Test Co"},
+            {"email": "new@baad.gov.sa", "queue_id": "new-qid", "domain": "baad.gov.sa", "company": "Test Co 2"},
         ])
-        # Only new@example.com should survive (sent row skipped)
+        # Only new@baad.gov.sa should survive (sent row skipped)
         assert len(result) == 1
-        assert result[0]["email"] == "new@example.com"
+        assert result[0]["email"] == "new@baad.gov.sa"
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -593,7 +593,7 @@ def test_sending_state_recovers_without_duplicate():
         # This is intentional: a restart should allow reprocessing of SENDING rows
         # that may not have completed
         result = r.apply_ledge_dedupe([
-            {"email": "sending@example.com", "queue_id": qid, "domain": "example.com", "company": "Test"},
+            {"email": "sending@baad.gov.sa", "queue_id": qid, "domain": "baad.gov.sa", "company": "Test"},
         ])
         # SENDING is not terminal, so it remains — the sender will re-verify
         assert len(result) == 1
@@ -628,8 +628,9 @@ def test_spreadsheet_identity():
 
 
 def test_queue_columns_count():
-    assert len(QUEUE_HEADERS) == 11
-    assert len(QUEUE_COL) == 11
+    assert len(QUEUE_HEADERS) == 12
+    assert QUEUE_HEADERS[-1] == "Balady_Tier"
+    assert len(QUEUE_COL) == 12
 
 
 def test_max_daily_is_300():
@@ -701,35 +702,35 @@ def test_email_domain_extraction():
 # ---------------------------------------------------------------------------
 
 def test_malformed_emails_fail_closed():
-    for value in ("not-an-email", "user@@example.com", "user@example.", "user@domain"):
+    for value in ("not-an-email", "user@@baad.gov.sa", "user@baad.gov.sa.", "user@domain"):
         row = normalise_row({"Email": value})
         assert row["status"] == "HOLD"
         assert "malformed email" in row["normalise_error"]
 
 
 def test_inappropriate_mailboxes_fail_closed():
-    for value in ("support@example.com", "legal@example.com", "privacy@example.com", "finance@example.com", "abuse@example.com"):
+    for value in ("support@baad.gov.sa", "legal@baad.gov.sa", "privacy@baad.gov.sa", "finance@baad.gov.sa", "abuse@baad.gov.sa"):
         row = normalise_row({"Email": value})
         assert row["status"] == "HOLD"
         assert "inappropriate mailbox" in row["normalise_error"]
 
 
 def test_executive_mailbox_requires_explicit_owner_approval():
-    blocked = normalise_row({"Email": "ceo@example.com"})
-    allowed = normalise_row({"Email": "ceo@example.com", "Evidence_or_Notes": "OWNER_APPROVED executive route"})
+    blocked = normalise_row({"Email": "ceo@baad.gov.sa"})
+    allowed = normalise_row({"Email": "ceo@baad.gov.sa", "Evidence_or_Notes": "OWNER_APPROVED executive route"})
     assert blocked["status"] == "HOLD"
     assert allowed["status"] == "PENDING"
 
 
 def test_role_mailbox_variants_follow_same_exclusions():
-    assert normalise_row({"Email": "support-team@example.com"})["status"] == "HOLD"
-    assert normalise_row({"Email": "legal.office@example.com"})["status"] == "HOLD"
-    assert normalise_row({"Email": "ceo.office@example.com"})["status"] == "HOLD"
+    assert normalise_row({"Email": "support-team@baad.gov.sa"})["status"] == "HOLD"
+    assert normalise_row({"Email": "legal.office@baad.gov.sa"})["status"] == "HOLD"
+    assert normalise_row({"Email": "ceo.office@baad.gov.sa"})["status"] == "HOLD"
     assert normalise_row({
-        "Email": "ceo.office@example.com",
+        "Email": "ceo.office@baad.gov.sa",
         "Evidence_or_Notes": "OWNER_APPROVED executive route",
     })["status"] == "PENDING"
-    assert normalise_row({"Email": "supporting@example.com"})["status"] == "PENDING"
+    assert normalise_row({"Email": "supporting@baad.gov.sa"})["status"] == "PENDING"
 
 
 def test_unresolved_company_identity_fails_closed():
@@ -778,8 +779,8 @@ def test_corporate_domain_remains_globally_deduped(tmp_path):
     ledger = QueueLedger(tmp_path / "ledger.json")
     sent_qid = _stable_id_for("alice@example.com", "Company A")
     ledger.mark_pending(sent_qid, {
-        "email": "alice@example.com", "company": "Company A", "priority": "NORMAL",
-        "added_at": "2026-09-02T00:00:00Z", "domain": "example.com",
+        "email": "alice@baad.gov.sa", "company": "Company A", "priority": "NORMAL",
+        "added_at": "2026-09-02T00:00:00Z", "domain": "baad.gov.sa",
     })
     ledger.mark_sent(sent_qid, "mid1", "2026-09-02T09:00:00+00:00")
     r = QueueReconciler.__new__(QueueReconciler)
@@ -788,7 +789,7 @@ def test_corporate_domain_remains_globally_deduped(tmp_path):
     r.permanently_bounced_mailboxes = set()
     candidate = {
         "email": "bob@example.com", "queue_id": _stable_id_for("bob@example.com", "Company B"),
-        "domain": "example.com", "company": "Company B",
+        "domain": "baad.gov.sa", "company": "Company B",
     }
     assert r.apply_ledge_dedupe([candidate]) == []
 
@@ -865,6 +866,34 @@ def test_fetch_gmail_dedupe_does_not_treat_terminal_bounce_as_success(monkeypatc
     assert "mesc" not in r.blocked_companies
     filtered, skipped = r.apply_exclusions()
     assert [row["email"] for row in filtered] == [replacement]
+    assert skipped == []
+
+
+def test_wrong_careers_bounce_allows_info_fallback_same_domain():
+    """A wrong/nonexistent careers@ mailbox is an exact-address failure only.
+
+    The company/domain must remain eligible for an owner-approved info@ route
+    on the same confirmed official domain.
+    """
+    bounced = "careers@exampleholding.sa"
+    fallback = "info@exampleholding.sa"
+    r = _dedupe_test_reconciler(fallback)
+    r.master = _master_index([{
+        "Email": bounced,
+        "Company_or_Office": "Example Holding",
+        "Terminal_Outcome": "PERMANENT BOUNCE",
+    }])
+    r.permanently_bounced_mailboxes = {bounced}
+    r.blocked_emails = {bounced}
+    r.blocked_domains = {"exampleholding.sa"}
+    r.blocked_companies = set()
+    r.normalised = [normalise_row({
+        "Email": fallback,
+        "Company_or_Office": "Example Holding",
+        "Evidence_or_Notes": "owner_approved_info_fallback_from_confirmed_official_domain",
+    })]
+    filtered, skipped = r.apply_exclusions()
+    assert [row["email"] for row in filtered] == [fallback]
     assert skipped == []
 
 
@@ -1037,3 +1066,143 @@ def test_partial_bounce_domain_still_blocked():
     # info is blocked because not ALL blocked emails at mesc.solutions are bounced
     assert filtered == []
     assert skipped[0]["skip_reason"] == "domain_sent_gmail"
+
+
+# ---------------------------------------------------------------------------
+# Synthetic / test email guard — regression tests for fail-closed production safety
+# ---------------------------------------------------------------------------
+
+def test_synthetic_example_domain_is_rejected():
+    """test@example.com — the exact production leak case — must be HOLD."""
+    row = normalise_row({"Email": "test@example.com", "Company_or_Office": "Test Co"})
+    assert row["status"] == "HOLD"
+    assert "synthetic-test-identity" in row["normalise_error"]
+
+
+def test_synthetic_example_org_domain_is_rejected():
+    """example.org is also a synthetic domain."""
+    row = normalise_row({"Email": "someone@example.org"})
+    assert row["status"] == "HOLD"
+    assert "synthetic" in row["normalise_error"]
+
+
+def test_synthetic_test_domain_is_rejected():
+    """test.com, test.net, etc. are synthetic domains."""
+    for domain in ("test.com", "test.net", "invalid.com", "localhost"):
+        row = normalise_row({"Email": f"user@{domain}"})
+        assert row["status"] == "HOLD", f"user@{domain} should be synthetic"
+
+
+def test_synthetic_local_part_is_rejected():
+    """Exact local-parts test, fake, mock, placeholder, sample, dummy are synthetic."""
+    for local in ("test", "fake", "mock", "placeholder", "sample", "dummy"):
+        row = normalise_row({"Email": f"{local}@baad.gov.sa"})
+        assert row["status"] == "HOLD", f"{local}@baad.gov.sa should be synthetic"
+
+
+def test_synthetic_local_prefix_with_dash_is_rejected():
+    """test-123, fake-user, mock-abc catch generated test addresses."""
+    for local in ("test-123", "fake-user", "mock-abc", "placeholder-x"):
+        row = normalise_row({"Email": f"{local}@baad.gov.sa"})
+        assert row["status"] == "HOLD", f"{local}@baad.gov.sa should be synthetic"
+
+
+def test_legitimate_info_on_real_domain_is_allowed():
+    """info@arbahtaiba.com is a legitimate company outreach route."""
+    row = normalise_row({"Email": "info@arbahtaiba.com", "Company_or_Office": "Arbah Taibah"})
+    assert row["status"] == "PENDING"
+    assert "synthetic" not in row["normalise_error"]
+
+
+def test_legitimate_careers_on_real_domain_is_allowed():
+    """careers@baad.gov.sa is a legitimate company route."""
+    row = normalise_row({"Email": "careers@baad.gov.sa", "Company_or_Office": "Test Org"})
+    assert row["status"] == "PENDING"
+
+
+def test_legitimate_hr_on_real_domain_is_allowed():
+    """hr@baad.gov.sa is a legitimate company route."""
+    row = normalise_row({"Email": "hr@baad.gov.sa", "Company_or_Office": "Test Org"})
+    assert row["status"] == "PENDING"
+
+
+def test_synthetic_queue_id_is_rejected():
+    """Queue_ID starting with balady-test is synthetic."""
+    row = normalise_row({
+        "Email": "test-recipient@baad.gov.sa",
+        "Queue_ID": "balady-test-123",
+        "Company_or_Office": "Test Co",
+    })
+    assert row["status"] == "HOLD"
+    assert "synthetic-test-identity" in row["normalise_error"]
+
+
+def test_normal_queue_id_with_normal_email_is_allowed():
+    """Regular queue IDs with real emails pass through."""
+    row = normalise_row({
+        "Email": "info@baad.gov.sa",
+        "Queue_ID": "OASQ-ABC123",
+        "Company_or_Office": "Test Co",
+    })
+    assert row["status"] == "PENDING"
+
+
+def test_synthetic_guard_does_not_block_hr_or_careers():
+    """hr@, careers@, jobs@, recruitment@ must not be blocked."""
+    for local in ("hr", "careers", "jobs", "recruitment", "admin", "contact", "director", "manager"):
+        row = normalise_row({"Email": f"{local}@baad.gov.sa", "Company_or_Office": "Test"})
+        assert row["status"] == "PENDING", f"{local}@baad.gov.sa should NOT be synthetic"
+
+
+def test_synthetic_guard_does_not_block_ceo_with_owner_approval():
+    """ceo@ on a real domain with OWNER_APPROVED is allowed (existing behavior preserved)."""
+    row = normalise_row({
+        "Email": "ceo@baad.gov.sa",
+        "Evidence_or_Notes": "OWNER_APPROVED executive route",
+        "Company_or_Office": "Test Co",
+    })
+    assert row["status"] == "PENDING"
+
+
+def test_normalise_row_preserves_other_errors_with_synthetic():
+    """When a row has both malformed email AND synthetic domain, both errors are recorded."""
+    row = normalise_row({"Email": "test@example.com"})
+    assert row["status"] == "HOLD"
+    assert "synthetic-test-identity" in row["normalise_error"]
+
+
+def test_campaign_sequence_rega_then_balady_tiers_is_deterministic(tmp_path):
+    reconciler = QueueReconciler.__new__(QueueReconciler)
+    items = [
+        {"source": "BALADY live", "balady_tier": "T5_FREEMAIL", "priority": "IMPORTANT", "added_at": "2026-09-01T00:00:00Z", "row_number": 6, "email": "t5@gmail.com"},
+        {"source": "BALADY live", "balady_tier": "T3_CORP_CONSULTANCY", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 4, "email": "t3@example.sa"},
+        {"source": "REGA verified", "balady_tier": "", "priority": "NORMAL", "added_at": "2026-09-02T00:00:00Z", "row_number": 9, "email": "rega@example.sa"},
+        {"source": "BALADY live", "balady_tier": "T1_HR", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 2, "email": "hr@example.sa"},
+        {"source": "BALADY live", "balady_tier": "T2_GROUP", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 3, "email": "group@example.sa"},
+        {"source": "BALADY live", "balady_tier": "T4_CORPORATE_DOMAIN", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 5, "email": "corp@example.sa"},
+    ]
+    ordered = reconciler.sort_by_priority(items)
+    assert [row["email"] for row in ordered] == [
+        "rega@example.sa", "hr@example.sa", "group@example.sa",
+        "t3@example.sa", "corp@example.sa", "t5@gmail.com",
+    ]
+
+
+def test_quarantined_rega_domain_is_not_sendable(tmp_path):
+    reconciler = QueueReconciler.__new__(QueueReconciler)
+    reconciler.normalised = [normalise_row({
+        "Queue_ID": "Q-QUARANTINE",
+        "Email": "info@ittihadclub.sa",
+        "Company_or_Office": "Wrong Company Match",
+        "Source": "REGA verified",
+        "Priority": "IMPORTANT",
+        "Status": "PENDING",
+    })]
+    reconciler.master = _master_index([])
+    reconciler.blocked_emails = set()
+    reconciler.blocked_domains = set()
+    reconciler.blocked_companies = set()
+    reconciler.permanently_bounced_mailboxes = set()
+    filtered, skipped = reconciler.apply_exclusions()
+    assert filtered == []
+    assert skipped[0]["skip_reason"] == "quarantined_domain"

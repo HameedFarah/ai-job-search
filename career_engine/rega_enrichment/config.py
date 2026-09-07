@@ -25,7 +25,7 @@ IDENTITY_FIELDS = ["License No", "Arabic Name", "English Name", "English Locatio
 GENERIC_TOKENS = {
     "real", "estate", "urban", "development", "developer", "developers",
     "saudi", "arabia", "for", "and", "the", "co", "limited", "joint",
-    "stock", "holding", "holdings", "properties", "property", "international",
+    "stock", "properties", "property", "international",
     "general", "trade", "contracting", "trading", "industrial", "services",
     "service", "house", "houses", "united", "al", "bin", "bint", "ibn",
     "company", "group", "investment", "investments", "ltd", "llc", "inc",
