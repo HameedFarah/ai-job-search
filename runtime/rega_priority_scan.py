@@ -208,9 +208,45 @@ def row_rank(row: dict[str, str]) -> tuple[int, str, str]:
 
 
 def has_usable_nonemail_route(row: dict[str, str]) -> bool:
-    eligibility = str(row.get("Send_Eligibility") or "").strip().upper()
-    next_action = str(row.get("Next_Action") or "").lower()
-    return eligibility == "NO_EMAIL_DRAFT_ATS_OR_FORM_ONLY" or "ats/form route" in next_action or "apply via verified" in next_action
+    """Return True only for an evidenced application/job route, not a generic website.
+
+    Historical tracker rows used the generic phrase ``ATS/form route only`` and the
+    corresponding eligibility even when the stored status explicitly said the career
+    route still needed research. Treat those contradictory rows as unresolved so the
+    scanner can continue free route discovery and, only if needed, paid enrichment.
+    """
+    status = str(row.get("Source_Status") or "").strip().lower()
+    verification = str(row.get("Source_Verification") or "").strip().lower()
+    next_action = str(row.get("Next_Action") or "").strip().lower()
+    website = str(row.get("Address_or_Website") or "").strip().lower()
+    notes = str(row.get("Notes") or "").strip().lower()
+
+    if "apply via verified ats/form route:" in next_action or "verified careers/ats application route" in status:
+        return True
+
+    unresolved_markers = (
+        "needs career-route research",
+        "downstream ats unresolved",
+        "verified - immediate target",
+    )
+    if any(marker in status or marker in verification for marker in unresolved_markers):
+        return False
+
+    if any(marker in status for marker in (
+        "verified - official route",
+        "partial - hr email unresolved",
+        "partial - company jobs route verified",
+        "verified - official; saudi filtering needed",
+    )):
+        return True
+
+    route_signal = any(token in website for token in (
+        "career", "jobs", "recruit", "join-us", "join_us", "employment", "%d9%88%d8%b8%d8%a7%d8%a6%d9%81",
+    )) or any(token in notes for token in (
+        "application form", "direct application", "cv upload", "accepts cv", "accepts a direct cv",
+        "careers page", "career site", "jobs page", "join us section", "share your cv",
+    ))
+    return ("verified - official" in status or "verified - official" in verification) and route_signal
 
 
 def company_record(row: dict[str, str]) -> CompanyRecord:

@@ -13,6 +13,40 @@ from runtime.rega_priority_scan import (
 )
 
 
+def test_nonemail_route_rejects_contradictory_generic_tracker_flag():
+    row = {
+        "Send_Eligibility": "NO_EMAIL_DRAFT_ATS_OR_FORM_ONLY",
+        "Next_Action": "Tracked; ATS/form route only. Do not invent email.",
+        "Source_Status": "Needs career-route research",
+        "Source_Verification": "Needs career-route research",
+        "Address_or_Website": "https://example.com/",
+        "Notes": "Official company site verified; no careers route surfaced.",
+    }
+    assert not scanner.has_usable_nonemail_route(row)
+
+
+def test_nonemail_route_accepts_evidenced_official_careers_page():
+    row = {
+        "Source_Status": "Verified - official",
+        "Source_Verification": "Verified - official",
+        "Address_or_Website": "https://example.com/careers/",
+        "Next_Action": "Tracked; ATS/form route only. Do not invent email.",
+        "Notes": "Official careers page provides direct application form.",
+    }
+    assert scanner.has_usable_nonemail_route(row)
+
+
+def test_nonemail_route_keeps_unresolved_downstream_ats_researchable():
+    row = {
+        "Send_Eligibility": "NO_EMAIL_DRAFT_ATS_OR_FORM_ONLY",
+        "Source_Status": "Partial - downstream ATS unresolved",
+        "Source_Verification": "Partial - downstream ATS unresolved",
+        "Address_or_Website": "https://example.com/careers",
+        "Next_Action": "Tracked; ATS/form route only. Do not invent email.",
+    }
+    assert not scanner.has_usable_nonemail_route(row)
+
+
 def test_dedupe_state_covers_all_live_authorities():
     master = [
         {"Email": "master@example.com", "Email_Normalized": "MASTER@example.com"},
