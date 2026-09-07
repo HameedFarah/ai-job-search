@@ -30,6 +30,22 @@ class SheetRunnerTests(unittest.TestCase):
         result = classify([{"status": "RECEIVING", "metadata": {"email": "A@EXAMPLE.COM"}}, {"status": "BLACKLISTED", "metadata": {"email": "b@example.com"}}])
         self.assertEqual(result, {"a@example.com": "RECEIVING", "b@example.com": "BLACKLISTED"})
 
+    def test_sheets_request_refreshes_rclone_token_once_on_401(self):
+        unauthorized = urllib.error.HTTPError("https://example.test", 401, "Unauthorized", None, None)
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"ok":true}'
+        with patch("runtime.outscraper_sheet_runner._REFRESHED_GOOGLE_TOKEN", ""), \
+             patch("runtime.outscraper_sheet_runner.rclone_access_token", return_value="fresh-token") as refresh, \
+             patch("runtime.outscraper_sheet_runner.urllib.request.urlopen", side_effect=[unauthorized, response]) as urlopen:
+            result = sheets_request("stale-token", "POST", "https://example.test", {"x": 1})
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(urlopen.call_count, 2)
+        refresh.assert_called_once()
+        first_request = urlopen.call_args_list[0].args[0]
+        second_request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(first_request.get_header("Authorization"), "Bearer stale-token")
+        self.assertEqual(second_request.get_header("Authorization"), "Bearer fresh-token")
+
     def test_sheets_request_retries_transient_network_error(self):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b'{"ok":true}'
