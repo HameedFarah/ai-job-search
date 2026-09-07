@@ -177,6 +177,41 @@ def test_company_name_normalization_is_stable_for_dedupe():
     assert normalized_company("  Example   Development  ") == "example development"
 
 
+def test_balance_probe_retries_transient_read_only_failures():
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        def balance(self):
+            self.calls += 1
+            if self.calls < 3:
+                return {"status": "failed", "metadata": {}}
+            return {"status": "success", "metadata": {"balance": 5.78, "account_status": "valid"}}
+
+    client = FakeClient()
+    assert scanner.balance(client, attempts=3, delay_s=0) == 5.78
+    assert client.calls == 3
+
+
+def test_balance_probe_does_not_retry_auth_failure():
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        def balance(self):
+            self.calls += 1
+            return {"status": "auth_failed", "metadata": {}}
+
+    client = FakeClient()
+    try:
+        scanner.balance(client, attempts=3, delay_s=0)
+    except RuntimeError as exc:
+        assert "auth_failed" in str(exc)
+    else:
+        raise AssertionError("auth failure must fail closed")
+    assert client.calls == 1
+
+
 def test_campaign_freshness_date_uses_riyadh_timezone(monkeypatch):
     real_datetime = datetime
 

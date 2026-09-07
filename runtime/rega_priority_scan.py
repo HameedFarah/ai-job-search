@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 import urllib.parse
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -538,13 +539,27 @@ def persist_receiving_email(token: str, headers: list[str], row: dict[str, str],
     })
 
 
-def balance(client: OutscraperClient) -> float:
-    result = client.balance()
-    meta = dict(result.get("metadata") or {})
-    value = meta.get("balance")
-    if str(result.get("status") or "") != "success" or meta.get("account_status") != "valid" or not isinstance(value, (int, float)):
-        raise RuntimeError("Outscraper balance/account preflight failed")
-    return float(value)
+def balance(client: OutscraperClient, *, attempts: int = 3, delay_s: float = 0.75) -> float:
+    """Read Outscraper balance with bounded retry for transient probe failures only.
+
+    Balance/profile reads are non-billable and safe to retry. Billable Maps,
+    domain-contact, and validator calls are never retried here.
+    """
+    attempts = max(1, int(attempts))
+    last_status = "unknown"
+    for attempt in range(attempts):
+        result = client.balance()
+        meta = dict(result.get("metadata") or {})
+        value = meta.get("balance")
+        status = str(result.get("status") or "")
+        last_status = status or "unknown"
+        if status == "success" and meta.get("account_status") == "valid" and isinstance(value, (int, float)):
+            return float(value)
+        if status in {"auth_failed", "missing_credential"}:
+            break
+        if attempt + 1 < attempts and delay_s > 0:
+            time.sleep(delay_s * (attempt + 1))
+    raise RuntimeError(f"Outscraper balance/account preflight failed after {attempts} attempt(s); status={last_status}")
 
 
 def contact_candidates(client: OutscraperClient, domain: str) -> list[dict]:
