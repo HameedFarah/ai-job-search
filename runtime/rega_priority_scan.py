@@ -23,9 +23,10 @@ sys.path.insert(0, str(REPO_ROOT))
 os.environ["FIRECRAWL_ROTATED_CONFIRMED"] = "0"
 os.environ["REGA_ALLOW_DATAFORSEO_EXISTING_CREDIT"] = "0"
 
+from career_engine.rega_enrichment.config import GENERIC_TOKENS
 from career_engine.rega_enrichment.discovery import generate_queries, searxng_qwant_search
 from career_engine.rega_enrichment.employment_routes import EmploymentRoute, discover_employment_route
-from career_engine.rega_enrichment.models import CandidateResult, CompanyRecord
+from career_engine.rega_enrichment.models import CandidateResult, CompanyRecord, distinctive_tokens, hostname_tokens
 from career_engine.rega_enrichment.outscraper_validation import validate_emails
 from career_engine.rega_enrichment.provider_clients import OutscraperClient, ProviderBudget
 from career_engine.rega_enrichment.verify import verify_candidate
@@ -54,6 +55,11 @@ GENERAL_LOCALS = {"info", "contact", "contactus", "hello", "admin", "office", "e
 EXCLUDED_LOCALS = {
     "support", "privacy", "legal", "abuse", "finance", "financial", "billing", "accounts", "accounting",
     "sales", "security", "webmaster", "investor", "investors", "ir",
+}
+ARABIC_GENERIC_IDENTITY_TOKENS = {
+    "شركة", "شركه", "العقارية", "العقاري", "عقارية", "عقاري", "للتطوير", "تطوير",
+    "للاستثمار", "الاستثمار", "استثمار", "للمقاولات", "المقاولات", "مقاولات", "المحدودة",
+    "محدودة", "مجموعة", "السعودية", "السعوديه", "القابضة", "القابضه",
 }
 
 # Company-level queue coverage. HOLD/REJECTED/FAILED rows deliberately do not
@@ -301,6 +307,36 @@ def free_discover_domain(row: dict[str, str]) -> tuple[str, dict]:
     }
 
 
+def _maps_candidate_has_identity_signal(company: CompanyRecord, business_name: str, site: str) -> bool:
+    """Cheap fail-closed filter before fetching a Maps-supplied website.
+
+    This is not verification. It only decides whether the result is plausible
+    enough to spend network time in ``verify_candidate``. Promotion still
+    requires the full independent verifier.
+    """
+    eng_tokens = distinctive_tokens(company.english_name, GENERIC_TOKENS)
+    name_tokens = set(re.findall(r"[a-z0-9]+", str(business_name or "").lower()))
+    if any(token in name_tokens for token in eng_tokens):
+        return True
+
+    arabic_tokens = [
+        token
+        for token in re.findall(r"[\u0600-\u06FF]+", company.arabic_name or "")
+        if len(token) >= 3 and token not in ARABIC_GENERIC_IDENTITY_TOKENS
+    ]
+    if arabic_tokens and any(token in str(business_name or "") for token in arabic_tokens):
+        return True
+
+    host = (urlsplit(site).hostname or "").lower()
+    host_norm = hostname_tokens(host)
+    compound_hits = {
+        token
+        for token in eng_tokens
+        if len(token) >= 4 and token in host_norm
+    }
+    return len(compound_hits) >= 2
+
+
 def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple[str, dict]:
     """Use one bounded Maps business lookup, then independently verify any site."""
     company = company_record(row)
@@ -335,6 +371,7 @@ def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple
         }
 
     candidates: list[CandidateResult] = []
+    websites_prefiltered_out = 0
     for position, item in enumerate(records[:MAPS_RESULT_LIMIT], start=1):
         meta = dict(item.get("metadata") or {})
         site = str(meta.get("site") or "").strip()
@@ -342,6 +379,10 @@ def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple
             continue
         if not site.startswith(("http://", "https://")):
             site = "https://" + site.lstrip("/")
+        business_name = str(meta.get("name") or "")[:500]
+        if not _maps_candidate_has_identity_signal(company, business_name, site):
+            websites_prefiltered_out += 1
+            continue
         description = " | ".join(
             part for part in (
                 str(meta.get("full_address") or "").strip(),
@@ -353,7 +394,7 @@ def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple
             license_no=company.license_no,
             query_id=f"{company.company_id}:outscraper-maps",
             url=site,
-            title=str(meta.get("name") or "")[:500],
+            title=business_name,
             description=description[:2000],
             engine="outscraper-google-maps",
             position=position,
@@ -373,6 +414,7 @@ def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple
             "retryable": False,
             "candidate_count": len(records),
             "websites_evaluated": len(candidates),
+            "websites_prefiltered_out": websites_prefiltered_out,
         }
     domain = normalized_domain(best.url)
     return domain, {
@@ -382,6 +424,7 @@ def maps_discover_domain(client: OutscraperClient, row: dict[str, str]) -> tuple
         "source_url": best.url,
         "candidate_count": len(records),
         "websites_evaluated": len(candidates),
+        "websites_prefiltered_out": websites_prefiltered_out,
         "verification_score": best.verification_score,
         "verification_method": best.verification_method,
     }

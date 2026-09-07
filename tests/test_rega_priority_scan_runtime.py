@@ -364,17 +364,14 @@ def test_maps_fallback_rejects_provider_business_without_verified_identity(monke
             return [{
                 "status": "candidate",
                 "metadata": {
-                    "name": "Unrelated Central Trading",
+                    "name": "Unrelated Trading",
                     "site": "https://unrelated.example/",
                     "full_address": "Jeddah, Saudi Arabia",
                 },
             }]
 
     def fake_verify(candidate, company):
-        candidate.verification_status = "rejected"
-        candidate.verification_score = 2
-        candidate.verification_method = "insufficient_identity"
-        return candidate
+        raise AssertionError("unrelated Maps website must be prefiltered before full verification")
 
     monkeypatch.setattr(scanner, "verify_candidate", fake_verify)
     domain, detail = scanner.maps_discover_domain(FakeClient(), row)
@@ -382,7 +379,8 @@ def test_maps_fallback_rejects_provider_business_without_verified_identity(monke
     assert domain == ""
     assert detail["basis"] == "outscraper_maps_no_confirmed_domain"
     assert detail["retryable"] is False
-    assert detail["websites_evaluated"] == 1
+    assert detail["websites_evaluated"] == 0
+    assert detail["websites_prefiltered_out"] == 1
 
 
 def test_maps_provider_failure_remains_retryable():
