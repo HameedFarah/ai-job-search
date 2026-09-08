@@ -179,10 +179,35 @@ def _queue_metadata(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> list[di
     ]
 
 
-def ensure_queue_metadata(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> dict[str, int]:
-    """Attach/verify row metadata so writes survive row inserts, deletes, and reorders."""
+def ensure_queue_metadata(
+    token: str,
+    spreadsheet_id: str = SPREADSHEET_ID,
+    queue_ids: set[str] | None = None,
+) -> dict[str, int]:
+    """Attach/verify row metadata for target queue IDs.
+
+    Full historical backfill remains available when ``queue_ids`` is omitted,
+    but creation is always chunked. Live sender/enrichment writes should pass
+    only the queue IDs they are about to update so a large legacy queue does
+    not trigger thousands of metadata creates in one request.
+    """
     rows = read_queue(token, spreadsheet_id)
     sheet_id = _sheet_id(token, spreadsheet_id)
+    row_number_by_id = {
+        str(row.get("Queue_ID") or "").strip(): row_number
+        for row_number, row in enumerate(rows, start=2)
+    }
+    target_ids = (
+        {str(queue_id).strip() for queue_id in queue_ids if str(queue_id).strip()}
+        if queue_ids is not None
+        else set(row_number_by_id)
+    )
+    missing_rows = target_ids - set(row_number_by_id)
+    if missing_rows:
+        raise RuntimeError("Send Queue target identity is missing before metadata write")
+    if not target_ids:
+        return {}
+
     metadata = _queue_metadata(token, spreadsheet_id)
     by_value: dict[str, list[dict]] = {}
     for item in metadata:
@@ -190,16 +215,15 @@ def ensure_queue_metadata(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> d
         if value:
             by_value.setdefault(value, []).append(item)
 
-    missing = [row for row in rows if str(row.get("Queue_ID") or "").strip() not in by_value]
-    if missing:
-        current_row_number = {
-            str(row.get("Queue_ID") or "").strip(): row_number
-            for row_number, row in enumerate(rows, start=2)
-        }
+    duplicate_targets = [queue_id for queue_id in target_ids if len(by_value.get(queue_id, [])) > 1]
+    if duplicate_targets:
+        raise RuntimeError("Send Queue developer metadata is duplicated for a target identity")
+
+    missing_ids = [queue_id for queue_id in sorted(target_ids) if queue_id not in by_value]
+    if missing_ids:
         requests = []
-        for row in missing:
-            queue_id = str(row.get("Queue_ID") or "").strip()
-            row_number = current_row_number[queue_id]
+        for queue_id in missing_ids:
+            row_number = row_number_by_id[queue_id]
             requests.append({
                 "createDeveloperMetadata": {
                     "developerMetadata": {
@@ -217,12 +241,13 @@ def ensure_queue_metadata(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> d
                     }
                 }
             })
-        sheets_request(
-            token,
-            "POST",
-            f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}:batchUpdate",
-            {"requests": requests},
-        )
+        for start in range(0, len(requests), MAX_WRITE_ROWS):
+            sheets_request(
+                token,
+                "POST",
+                f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}:batchUpdate",
+                {"requests": requests[start:start + MAX_WRITE_ROWS]},
+            )
         metadata = _queue_metadata(token, spreadsheet_id)
         by_value = {}
         for item in metadata:
@@ -233,8 +258,7 @@ def ensure_queue_metadata(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> d
     current_rows = read_queue(token, spreadsheet_id)
     row_by_number = {row_number: row for row_number, row in enumerate(current_rows, start=2)}
     result: dict[str, int] = {}
-    for row in current_rows:
-        queue_id = str(row.get("Queue_ID") or "").strip()
+    for queue_id in sorted(target_ids):
         matches = by_value.get(queue_id, [])
         if len(matches) != 1:
             raise RuntimeError("Send Queue developer metadata is missing or duplicated")
@@ -308,7 +332,11 @@ def _verified_metadata_ids(
     identities: list[tuple[str, str]],
     spreadsheet_id: str,
 ) -> dict[str, int]:
-    metadata_ids = ensure_queue_metadata(token, spreadsheet_id)
+    metadata_ids = ensure_queue_metadata(
+        token,
+        spreadsheet_id,
+        {queue_id.strip() for queue_id, _email in identities if queue_id.strip()},
+    )
     current_by_id = {
         str(row.get("Queue_ID") or "").strip(): str(row.get("Email") or "").strip().lower()
         for row in read_queue(token, spreadsheet_id)
