@@ -805,6 +805,7 @@ def run_replenishment(
     """
     candidates_path = Path(candidates_path)
     monitor_path = Path(monitor_dir) if not Path(monitor_dir).is_absolute() else Path(monitor_dir)
+    monitor_path.mkdir(parents=True, exist_ok=True)
     if journal_path is None:
         journal_path = monitor_path / "replenisher-journal.json"
     else:

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
 
-from career_engine.incremental_outreach_replenisher import _append_rows_with_readback
+from career_engine.incremental_outreach_replenisher import _append_rows_with_readback, run_replenishment
 
 
 def _row() -> dict[str, str]:
@@ -36,3 +37,22 @@ def test_append_fails_closed_on_readback_mismatch():
          patch("career_engine.incremental_outreach_replenisher.sheets_request", side_effect=responses):
         with pytest.raises(RuntimeError, match="READBACK_MISMATCH"):
             _append_rows_with_readback("token", [_row()], "sheet-id")
+
+
+def test_run_creates_nested_monitor_directory(tmp_path):
+    candidates = tmp_path / "candidates.jsonl"
+    candidates.write_text(json.dumps({
+        "email": "jobs@company.sa",
+        "company_name": "Company",
+        "domain": "company.sa",
+        "identity_gate": "confirmed_official_email",
+        "verification": "RECEIVING",
+        "route_kind": "recruitment",
+        "source": "REGA_TEST",
+    }) + "\n", encoding="utf-8")
+    monitor = tmp_path / "nested" / "evidence"
+    result = run_replenishment(candidates, batch_size=1, apply=False, monitor_dir=str(monitor))
+    assert result["ok"] is True
+    assert monitor.is_dir()
+    assert (monitor / "replenisher-checkpoint.json").is_file()
+    assert (monitor / "replenisher-summary.json").is_file()
