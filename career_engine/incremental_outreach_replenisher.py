@@ -629,12 +629,13 @@ def _queue_row_for_insert(
     replacement_of: str = "",
 ) -> dict[str, str]:
     """Build a minimal queue row dict for batch insert."""
+    priority = "IMPORTANT" if "REGA" in str(source or "").upper() else "NORMAL"
     return {
         "Queue_ID": queue_id or _stable_id_for(email, company),
         "Email": email.strip().lower(),
         "Company_or_Office": company.strip(),
         "Source": source,
-        "Priority": "NORMAL",
+        "Priority": priority,
         "Status": "PENDING",
         "Evidence_or_Notes": evidence,
         "replacement_of": replacement_of,
@@ -681,7 +682,7 @@ def _append_rows_with_readback(
             row_data["Email"].strip().lower(),
             row_data.get("Company_or_Office", ""),
             row_data.get("Source", ""),
-            "NORMAL",
+            str(row_data.get("Priority") or "NORMAL").strip().upper() or "NORMAL",
             "PENDING",
             added_at,
             "",

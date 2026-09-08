@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from career_engine.incremental_outreach_replenisher import _append_rows_with_readback, run_replenishment
+from career_engine.incremental_outreach_replenisher import (
+    _append_rows_with_readback,
+    _queue_row_for_insert,
+    run_replenishment,
+)
 
 
 def _row() -> dict[str, str]:
@@ -14,6 +18,7 @@ def _row() -> dict[str, str]:
         "Email": "jobs@company.sa",
         "Company_or_Office": "Company",
         "Source": "REGA_TEST",
+        "Priority": "IMPORTANT",
         "Evidence_or_Notes": "verified",
     }
 
@@ -29,6 +34,24 @@ def test_append_uses_values_update_put_and_exact_readback():
     assert first.args[1] == "PUT"
     assert "valueInputOption=RAW" in first.args[2]
     assert first.args[3]["values"][0][0:2] == ["OASQ-TEST-1", "jobs@company.sa"]
+    assert first.args[3]["values"][0][4] == "IMPORTANT"
+
+
+def test_rega_queue_rows_are_explicitly_important():
+    rega = _queue_row_for_insert(
+        "jobs@company.sa",
+        "Company",
+        "REGA_MANUAL_IDENTITY_RECOVERY_20260908",
+        "verified",
+    )
+    balady = _queue_row_for_insert(
+        "jobs@other.sa",
+        "Other",
+        "BALADY_AUTO_PREPARED",
+        "verified",
+    )
+    assert rega["Priority"] == "IMPORTANT"
+    assert balady["Priority"] == "NORMAL"
 
 
 def test_append_fails_closed_on_readback_mismatch():
