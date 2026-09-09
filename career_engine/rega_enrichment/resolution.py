@@ -378,6 +378,8 @@ TERMINAL_SOURCE_STATUSES = (
     "resolved - verified company; no usable employment route",
     "resolved - official mailbox not receiving",
     "resolved - official mailbox found; validation unavailable",
+    "resolved - company already successfully contacted",
+    "resolved - company already covered by active/sent outreach",
     "identity unconfirmed after automated rega resolution",
 )
 
