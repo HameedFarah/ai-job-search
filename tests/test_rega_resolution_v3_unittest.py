@@ -76,6 +76,7 @@ class RegaResolutionV3Tests(unittest.TestCase):
             "Verified receiving email route",
             "Verified careers/ATS application route",
             "Resolved - verified company; no usable employment route",
+            "Resolved - verified company; employment route unconfirmed",
             "Resolved - official mailbox not receiving (INVALID)",
             "Resolved - official mailbox found; validation unavailable",
             "Resolved - company already successfully contacted",

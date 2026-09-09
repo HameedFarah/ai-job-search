@@ -376,6 +376,7 @@ TERMINAL_SOURCE_STATUSES = (
     "verified receiving email route",
     "verified careers/ats application route",
     "resolved - verified company; no usable employment route",
+    "resolved - verified company; employment route unconfirmed",
     "resolved - official mailbox not receiving",
     "resolved - official mailbox found; validation unavailable",
     "resolved - company already successfully contacted",

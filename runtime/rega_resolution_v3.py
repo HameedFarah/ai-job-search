@@ -117,6 +117,33 @@ def persist_no_route(
     )
 
 
+def persist_route_unconfirmed(
+    token: str,
+    headers: list[str],
+    row: dict[str, str],
+    domain: str,
+    priority: str,
+    score: int,
+    reason: str,
+    muqawil: MuqawilProfile | None,
+) -> None:
+    next_action = (
+        "Priority-A targeted manual employment-route review; keep non-sendable"
+        if priority == "A"
+        else "Reopen only when new first-party employment evidence appears"
+    )
+    _persist(
+        token, headers, row,
+        {
+            "Address_or_Website": str(row.get("Address_or_Website") or "").strip() or f"https://{domain}/",
+            "Source_Status": "Resolved - verified company; employment route unconfirmed",
+            "Send_Eligibility": "NO_VERIFIED_EMAIL_ROUTE",
+            "Next_Action": next_action,
+        },
+        f"{_context(priority, score, muqawil)}; terminal=EMPLOYMENT_ROUTE_UNCONFIRMED; reason={reason}",
+    )
+
+
 def persist_unvalidated_mailbox(
     token: str,
     headers: list[str],
@@ -379,14 +406,23 @@ def main() -> int:
 
     client = legacy.OutscraperClient(key) if args.allow_existing_credit else None
     reserve = max(0.0, float(args.reserve_usd))
-    start_balance = legacy.balance(client) if client is not None else None
+    paid_boot_error = ""
+    if client is not None:
+        try:
+            start_balance = legacy.balance(client)
+        except Exception as exc:
+            paid_boot_error = type(exc).__name__
+            start_balance = None
+            client = None  # paid-provider health may never block the free pass
+    else:
+        start_balance = None
     counts = {
         "universe": len(universe), "selected": len(selected),
         "priority_A": 0, "priority_B": 0, "priority_C": 0,
         "muqawil_profiles": 0, "company_already_contacted": 0, "company_already_covered": 0,
         "free_domains": 0, "free_portals": 0, "free_email_candidates": 0,
         "paid_maps": 0, "paid_domain_contacts": 0, "paid_validations": 0,
-        "receiving_queued": 0, "resolved_no_route": 0, "identity_unconfirmed": 0,
+        "receiving_queued": 0, "resolved_no_route": 0, "route_unconfirmed": 0, "identity_unconfirmed": 0,
         "mailbox_unvalidated": 0, "mailbox_not_receiving": 0,
         "paid_skipped_reserve": 0, "provider_failures": 0,
     }
@@ -542,8 +578,18 @@ def main() -> int:
                 provider_candidates = legacy.contact_candidates(client, domain)
                 counts["paid_domain_contacts"] += 1
             except Exception as exc:
-                provider_candidates = []
                 counts["provider_failures"] += 1
+                counts["route_unconfirmed"] += 1
+                persist_route_unconfirmed(
+                    token, headers, row, domain, priority, score,
+                    f"bounded contact provider failure={type(exc).__name__}", muqawil,
+                )
+                _checkpoint(
+                    checkpoints, checkpoint_path, master_id, state="resolved",
+                    result="verified_domain_route_provider_failure", domain=domain,
+                    priority=priority, score=score,
+                )
+                continue
             candidate, rejected = legacy.select_best_eligible_candidate(provider_candidates, known_emails, permanent_bounces)
             if candidate is None:
                 counts["resolved_no_route"] += 1
@@ -599,7 +645,15 @@ def main() -> int:
     if permanent_bounces.intersection(newly_queued_emails):
         raise SystemExit("post-run newly queued permanent-bounce invariant failed")
 
-    end_balance = legacy.balance(client) if client is not None else None
+    end_balance_error = ""
+    if client is not None:
+        try:
+            end_balance = legacy.balance(client)
+        except Exception as exc:
+            end_balance_error = type(exc).__name__
+            end_balance = None
+    else:
+        end_balance = None
     summary = {
         "ok": True,
         "scope": "REGA_ONLY",
@@ -610,6 +664,8 @@ def main() -> int:
         "newly_queued_emails": len(newly_queued_emails),
         "balance_before": start_balance,
         "balance_after": end_balance,
+        "paid_boot_error": paid_boot_error,
+        "end_balance_error": end_balance_error,
         "reserve_usd": reserve,
         "send_queue_rows_after": len(readback),
         "sends": 0,
