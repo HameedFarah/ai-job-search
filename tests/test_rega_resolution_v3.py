@@ -110,15 +110,32 @@ def test_muqawil_parser_rejects_wrong_company():
 
 
 def test_resolution_terminal_states_are_idempotent():
-    assert is_terminal_resolution({"Source_Status": "Verified receiving email route"})
-    assert is_terminal_resolution({"Source_Status": "Verified careers/ATS application route"})
-    assert is_terminal_resolution({"Source_Status": "Resolved - verified company; no usable employment route"})
-    assert is_terminal_resolution({"Source_Status": "Identity unconfirmed after automated REGA resolution"})
+    statuses = [
+        "Verified receiving email route",
+        "Verified careers/ATS application route",
+        "Resolved - verified company; no usable employment route",
+        "Resolved - official mailbox not receiving (INVALID)",
+        "Resolved - official mailbox found; validation unavailable",
+        "Resolved - company already successfully contacted",
+        "Resolved - company already covered by active/sent outreach",
+        "Identity unconfirmed after automated REGA resolution",
+    ]
+    assert all(is_terminal_resolution({"Source_Status": status}) for status in statuses)
     assert not is_terminal_resolution({"Source_Status": "No verified official domain"})
 
 
 def test_paid_unavailable_does_not_imply_provider_call():
     assert resolver._paid_available(None, 1.0, 0.003) is False
+
+
+def test_paid_available_respects_reserve(monkeypatch):
+    class Client:
+        pass
+
+    monkeypatch.setattr(resolver.legacy, "balance", lambda _client: 1.002)
+    assert resolver._paid_available(Client(), 1.0, 0.003) is False
+    monkeypatch.setattr(resolver.legacy, "balance", lambda _client: 1.01)
+    assert resolver._paid_available(Client(), 1.0, 0.003) is True
 
 
 def test_selected_rows_skips_terminal_but_keeps_current_unresolved():
@@ -138,6 +155,48 @@ def test_selected_rows_skips_terminal_but_keeps_current_unresolved():
             "Region": "Riyadh",
             "Source_Status": "Resolved - verified company; no usable employment route",
         },
+        {
+            "Master_ID": "CE-3",
+            "Record_Type": "REGA_COMPANY_NO_EMAIL",
+            "Company_or_Office": "Already Contacted Co",
+            "Region": "Riyadh",
+            "Source_Status": "Resolved - company already successfully contacted",
+        },
     ]
-    selected = resolver._selected_rows(master, reopen_unconfirmed=False)
+    selected = resolver._selected(master, reopen_unconfirmed=False)
     assert [row["Master_ID"] for row in selected] == ["CE-1"]
+
+
+def test_identity_unconfirmed_persistence_is_fail_closed(monkeypatch):
+    row = {"Master_ID": "CE-X", "Notes": ""}
+    captured = {}
+    monkeypatch.setattr(resolver.legacy, "today", lambda: "2026-09-09")
+    monkeypatch.setattr(
+        resolver.legacy,
+        "update_master_fields",
+        lambda token, headers, master_row, updates: captured.update(updates),
+    )
+    resolver.persist_identity_unconfirmed(
+        "token", [], row, "A", 60, "no verified domain", None
+    )
+    assert captured["Source_Status"] == "Identity unconfirmed after automated REGA resolution"
+    assert captured["Send_Eligibility"] == "NO_VERIFIED_EMAIL_ROUTE"
+    assert "Priority-A" in captured["Next_Action"]
+    assert "IDENTITY_UNCONFIRMED" in captured["Notes"]
+
+
+def test_company_covered_persistence_prevents_duplicate_route(monkeypatch):
+    row = {"Master_ID": "CE-X", "Notes": ""}
+    captured = {}
+    monkeypatch.setattr(resolver.legacy, "today", lambda: "2026-09-09")
+    monkeypatch.setattr(
+        resolver.legacy,
+        "update_master_fields",
+        lambda token, headers, master_row, updates: captured.update(updates),
+    )
+    resolver.persist_company_covered(
+        "token", [], row, "successfully_contacted", "A", 70
+    )
+    assert captured["Source_Status"] == "Resolved - company already successfully contacted"
+    assert captured["Send_Eligibility"] == "NO_ADDITIONAL_COMPANY_ROUTE_REQUIRED"
+    assert is_terminal_resolution(captured)
