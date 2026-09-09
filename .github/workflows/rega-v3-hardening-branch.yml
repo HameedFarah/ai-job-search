@@ -91,6 +91,7 @@ jobs:
           fi
           git config user.name HameedFarah
           git config user.email 92652480+HameedFarah@users.noreply.github.com
-          git add career_engine/rega_enrichment/resolution.py runtime/rega_resolution_v3.py tests/test_rega_resolution_v3_unittest.py
+          git add career_engine/rega_enrichment/resolution.py tests/test_rega_resolution_v3_unittest.py
+          git add -f runtime/rega_resolution_v3.py
           git commit -m "fix(career): harden REGA resolver provider failures"
           git push origin HEAD:fix/rega-resolution-v3-hardening-20260909
