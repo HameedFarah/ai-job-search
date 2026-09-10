@@ -238,6 +238,60 @@ def test_empty_queue_once_mode_performs_no_send(monkeypatch, tmp_path):
     assert events and events[-1][0] == "idle"
 
 
+def test_long_running_sender_rechecks_live_start_gate_before_send(monkeypatch, tmp_path):
+    events = []
+    calls = {"config": 0, "send": 0}
+    initial = _campaign()
+    future = _campaign()
+    future["start_at"] = datetime(2099, 1, 1, 8, 0, tzinfo=sender.RIYADH)
+    candidate = {
+        "queue_id": "OASQ-REGA-STALEGATE01",
+        "email": "info@example.sa",
+        "company": "Example Co",
+        "priority": "IMPORTANT",
+        "status": "PENDING",
+        "added_at": "2026-09-10T00:00:00Z",
+        "domain": "example.sa",
+        "row_number": 2,
+        "source": "REGA_OWNER",
+        "balady_tier": "",
+    }
+
+    def read_config(_token):
+        calls["config"] += 1
+        return initial if calls["config"] == 1 else future
+
+    monkeypatch.setattr(sender, "rclone_access_token", lambda: "sheet-token")
+    monkeypatch.setattr(sender, "_read_campaign_config", read_config)
+    monkeypatch.setattr(sender, "_materialize_campaign_assets", lambda *args: None)
+    monkeypatch.setattr(sender, "verify_both_accounts_available", lambda: (True, "ok"))
+    monkeypatch.setattr(sender, "gmail_access_token_for_context", lambda _context: "sender-token")
+    monkeypatch.setattr(sender, "_sender_profile", lambda _token: sender.CAREER_OUTWARD_EMAIL)
+    monkeypatch.setattr(sender, "_window_open", lambda *args, **kwargs: True)
+    monkeypatch.setattr(sender, "_seconds_until_window_close", lambda *args, **kwargs: 3600.0)
+    monkeypatch.setattr(sender, "_cadence_wait_seconds", lambda *args, **kwargs: 0.0)
+    monkeypatch.setattr(sender, "_refresh_ready_queue", lambda *args, **kwargs: (object(), [candidate]))
+    monkeypatch.setattr(sender, "_drop_committed_ready_rows", lambda rows, *args: rows)
+    monkeypatch.setattr(sender, "_sender_sent_today_count", lambda _token: 0)
+    monkeypatch.setattr(sender, "_sent_today_from_ledger", lambda _r: 0)
+    monkeypatch.setattr(sender, "_last_send_from_ledger", lambda _r: None)
+    monkeypatch.setattr(sender, "_status", lambda path, phase, **extra: events.append((phase, extra)))
+    monkeypatch.setattr(sender, "_send_raw", lambda *args, **kwargs: calls.__setitem__("send", calls["send"] + 1))
+
+    code = sender.run(
+        ledger_path=tmp_path / "ledger.json",
+        status_path=tmp_path / "status.json",
+        ready_cache_path=tmp_path / "ready.json",
+        once=True,
+    )
+
+    assert code == 0
+    assert calls["config"] == 2
+    assert calls["send"] == 0
+    assert events[-1][0] == "campaign-not-started"
+    assert events[-1][1]["live_refresh"] is True
+
+
 def test_one_send_is_sending_then_verified_sent(monkeypatch, tmp_path):
     sequence = []
     queue_writes = []

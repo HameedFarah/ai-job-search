@@ -644,6 +644,45 @@ def run(
             )
             return 0
 
+        # Re-read the live campaign safety controls immediately before each
+        # irreversible Gmail send. A long-running process must not retain an
+        # obsolete start gate, cadence, cap, or window after Config changes.
+        sheet_token = rclone_access_token()
+        live_campaign = _read_campaign_config(sheet_token)
+        now_utc = datetime.now(timezone.utc)
+        if now_utc < live_campaign["start_at"].astimezone(timezone.utc):
+            _status(
+                status_path,
+                "campaign-not-started",
+                local=_local_now().isoformat(),
+                start_at=live_campaign["start_at"].isoformat(),
+                content_version=live_campaign["content_version"],
+                live_refresh=True,
+            )
+            return 0
+        if not _window_open(
+            now_utc,
+            start_hour=live_campaign["window_start_hour"],
+            end_hour=live_campaign["window_end_hour"],
+        ):
+            _status(status_path, "outside-send-window", local=_local_now().isoformat(), live_refresh=True)
+            return 0
+        campaign["start_at"] = live_campaign["start_at"]
+        campaign["cadence_seconds"] = live_campaign["cadence_seconds"]
+        campaign["daily_cap"] = live_campaign["daily_cap"]
+        campaign["window_start_hour"] = live_campaign["window_start_hour"]
+        campaign["window_end_hour"] = live_campaign["window_end_hour"]
+        if max(sent_today, sender_sent_today) >= campaign["daily_cap"]:
+            _status(
+                status_path,
+                "daily-cap",
+                sender_sent_today=sender_sent_today,
+                ledger_sent_today=sent_today,
+                cap=campaign["daily_cap"],
+                live_refresh=True,
+            )
+            return 0
+
         selected = ready_queue[0]
         queue_id = str(selected["queue_id"])
         email = str(selected["email"]).lower()
