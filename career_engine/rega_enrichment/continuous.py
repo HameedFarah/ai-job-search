@@ -90,6 +90,25 @@ def identity_matches(row, text, host):
     return False
 
 
+def official_home_matches(row, page, host):
+    """A mention on an article/agency portfolio cannot prove domain ownership."""
+    if domain(page["url"]) != host or not identity_matches(row, page["text"], host):
+        return False
+    title = re.search(r"<title[^>]*>(.*?)</title>", page["html"], re.I | re.S)
+    heading = re.search(r"<h1[^>]*>(.*?)</h1>", page["html"], re.I | re.S)
+    branding = norm((title.group(1) if title else "") + " " + (heading.group(1) if heading else ""))
+    if any(w in branding.split() for w in ("news", "stock", "stocks", "سهم", "اخبار", "توقعات")):
+        return False
+    english = [x for x in norm(row.get("Company_or_Office", "")).split() if len(x)>3 and x not in GENERIC_TOKENS and x not in {"listed"}]
+    label = host.split(".")[0].replace("-", "")
+    if any(x in label and x in norm(page["text"]).split() for x in english):
+        return True
+    arabic = list(dict.fromkeys(norm(x).strip() for x in _arabic_tokens(row.get("Arabic_Name", ""))))
+    # For brands transliterated differently, require the actual Arabic name in
+    # the site's own homepage branding, not in a search result or article body.
+    return bool(arabic) and all(x in branding.split() for x in arabic)
+
+
 def parse_exa(payload):
     if payload.get("isError"):
         raise RuntimeError("exa_provider_error")
@@ -210,9 +229,8 @@ class Research:
         pages = []
         evidence = []
         if existing.startswith(("http://", "https://")) and not is_blocked(domain(existing)):
-            page = self.fetch(existing)
-            verified = bool(re.search(r"\bverified\b", row.get("Source_Verification", "").lower()))
-            if page and domain(page["url"]) == domain(existing) and (verified or identity_matches(row, page["text"], domain(page["url"]))):
+            page = self.fetch("https://" + domain(existing) + "/")
+            if page and official_home_matches(row, page, domain(existing)):
                 return domain(page["url"]), [page], [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
         names = [row.get("Arabic_Name", ""), row.get("Company_or_Office", "")]
         seen = set()
@@ -232,16 +250,8 @@ class Research:
                 evidence.append({"url": item["url"], "title": item["title"], "basis": "search_candidate"})
                 if len(seen) > 5:
                     break
-                page = self.fetch(item["url"])
-                if page and domain(page["url"]) == host and identity_matches(row, page["text"], host):
-                    # A site's own title/brand must identify the business; a news article
-                    # merely mentioning the legal name is not its official domain.
-                    title = re.search(r"<title[^>]*>(.*?)</title>", page["html"], re.I | re.S)
-                    branding = (title.group(1) if title else "") + " " + host.replace("-", " ")
-                    tokens = [x for x in norm(row.get("Company_or_Office", "")).split() if len(x)>2 and x not in GENERIC_TOKENS]
-                    ar = [norm(x).strip() for x in _arabic_tokens(row.get("Arabic_Name", ""))]
-                    if not any(x in norm(branding) for x in tokens + ar):
-                        continue
+                page = self.fetch("https://" + host + "/")
+                if page and official_home_matches(row, page, host):
                     page["identity_confirmed"] = True
                     return host, [page], evidence + [{"url": page["url"], "basis": "current_first_party_identity_match"}], "confirmed"
         return "", pages, evidence, "search_unavailable" if errors else "identity_unconfirmed"

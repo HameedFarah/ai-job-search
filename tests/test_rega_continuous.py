@@ -6,6 +6,7 @@ import pytest
 from career_engine.rega_enrichment.continuous import (
     identity_matches, parse_exa, process, select_rows, tracker_updates, contact_rank,
     hiring_evidence,
+    official_home_matches,
 )
 
 
@@ -95,3 +96,12 @@ def test_social_activity_is_not_candidates_own_hiring_profile():
         "title": "Other Person", "text": "HR at Example. Liked a post by Jane Doe."}]}
     candidate = {"email": "jane@example.sa", "name": "Jane Doe", "title": "HR Specialist", "domain": "example.sa"}
     assert hiring_evidence(candidate, {"Company_or_Office": "Example"}, research) == []
+
+
+def test_financial_article_and_agency_portfolio_are_not_official_sites():
+    row = {"Company_or_Office": "Laden Investment Listed Joint", "Arabic_Name": "شركة لدن للاستثمار"}
+    page = {"url": "https://bitarabi.com/", "html": "<title>سعر سهم شركة لدن للاستثمار</title>", "text": "شركة لدن للاستثمار سعر السهم Laden Investment Listed"}
+    assert not official_home_matches(row, page, "bitarabi.com")
+    row = {"Company_or_Office": "Dream Real Estate Investment", "Arabic_Name": "شركة دريم للاستثمار العقاري"}
+    page = {"url": "https://meawal.com/", "html": "<title>Meawal Web Design</title>", "text": "Dream Real Estate Investment is our web design client"}
+    assert not official_home_matches(row, page, "meawal.com")

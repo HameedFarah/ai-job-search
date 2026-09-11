@@ -45,3 +45,7 @@ Recommend checking after 30 minutes, then hourly while the service is active; in
 ## Acceptance
 
 Focused unit/regression tests, source diff review, no secrets in stored artifacts, pilot output verified against tracker, process alive with advancing checkpoint, restart-safe budgets, exact source commit and concise owner monitoring instructions. Live evidence and final source SHA are recorded beside the run; do not commit live tracker/export data.
+
+## Pilot corrections accepted before scaling
+
+The initial bounded run exposed shared Exa free-cap exhaustion, a named-HR false match from another person’s social activity, and third-party article/agency domains incorrectly matched to employer names. The run was stopped; affected records were corrected with append-only notes and exact readback, the one newly filled incorrect website was restored to its original blank value, and all pilot research records were archived before rerunning. No contact entered the send queue. Regression tests now require homepage ownership evidence and the hiring profile’s own name/title; 113 targeted tests pass.
