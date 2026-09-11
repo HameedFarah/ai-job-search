@@ -163,3 +163,9 @@ def test_google_captcha_uses_yandex_and_replaces_old_empty_cache(tmp_path):
     assert result["provider"] == "searxng-yandex"
     assert result["results"][0]["url"] == "https://company.sa/"
     assert r.stats["disabled_engines"] == ["google"]
+
+
+def test_registry_acronym_can_match_own_public_brand():
+    row = {"Company_or_Office": "National Housing Company (NHC)", "Arabic_Name": "الشركة الوطنية للاسكان"}
+    page = {"url": "https://nhc.sa/", "html": "<title>NHC</title>", "text": "NHC Real Estate Saudi Arabia"}
+    assert official_home_matches(row, page, "nhc.sa")

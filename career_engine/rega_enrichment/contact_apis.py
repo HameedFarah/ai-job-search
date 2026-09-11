@@ -643,6 +643,64 @@ class ContactAPIs:
     # verify_snov
     # ------------------------------------------------------------------
 
+    def snov_company_domain(self, name: str) -> str:
+        """Bounded official company-name lookup; returned domain is only a clue.
+
+        https://snov.io/api: one credit per domain found. Reserve one per
+        request conservatively and protect the verification allowance.
+        """
+        ck = _cache_key("snov", "company_domain_v2", name)
+        cached = self.cache.get(ck) or {}
+        if cached.get("status") == "completed":
+            return str(cached.get("domain") or "")
+        if self._is_halted("snov"):
+            return ""
+        token = self._snov_get_token()
+        if not token:
+            return ""
+        task_hash = cached.get("task_hash")
+        if cached and not task_hash:
+            return ""
+        if not cached:
+            if not self._budget_ok("snov", 1 + getattr(self, "snov_verification_reserve", 100.0)):
+                return ""
+            if not self._reserve("snov", 1):
+                return ""
+            self.cache.put(ck, {"status": "pending"})
+            code, body = self._safe_request("POST", "https://api.snov.io/v2/company-domain-by-name/start",
+                headers={"Authorization": f"Bearer {token}"}, data={"names[]": [name]})
+            self._count("snov", credit=1)
+            if code in (401, 402, 403, 429):
+                self._halt("snov")
+                return ""
+            data = body.get("data") if isinstance(body, dict) else None
+            task_hash = data.get("task_hash") if isinstance(data, dict) else None
+            if code not in (200, 202) or not isinstance(task_hash, str) or not _SAFE_TASK_HASH_RE.fullmatch(task_hash):
+                return ""
+            self.cache.put(ck, {"status": "pending", "task_hash": task_hash})
+        if not isinstance(task_hash, str) or not _SAFE_TASK_HASH_RE.fullmatch(task_hash):
+            return ""
+        for _ in range(self._SNOV_MAX_POLLS):
+            time.sleep(self._SNOV_POLL_DELAY)
+            code, body = self._safe_request("GET", "https://api.snov.io/v2/company-domain-by-name/result",
+                headers={"Authorization": f"Bearer {token}"}, params={"task_hash": task_hash})
+            self._count("snov")
+            if code in (401, 402, 403, 429):
+                self._halt("snov")
+                return ""
+            if code != 200 or not isinstance(body, dict) or body.get("status") != "completed":
+                continue
+            entries = body.get("data")
+            entries = entries if isinstance(entries, list) else []
+            matching = [x for x in entries if isinstance(x, dict) and x.get("name") == name]
+            result = matching[0].get("result") if len(matching) == 1 else None
+            host = str(result.get("domain") or "").lower() if isinstance(result, dict) else ""
+            if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}", host):
+                host = ""
+            self.cache.put(ck, {"status": "completed", "domain": host})
+            return host
+        return ""
+
     def verify_snov(self, email: str) -> dict[str, Any]:
         """Official v2 Email Verifier; https://snov.io/api#email-verifier.
 
@@ -921,6 +979,8 @@ class ContactAPIs:
         if not token:
             return []
 
+        if not self._budget_ok("snov", self.SNOV_DISCOVERY_COST + getattr(self, "snov_verification_reserve", 0.0)):
+            return []
         if not self._reserve("snov", self.SNOV_DISCOVERY_COST):
             return []
 

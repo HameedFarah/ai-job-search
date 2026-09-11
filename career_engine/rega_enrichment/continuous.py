@@ -92,7 +92,7 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 3
+DISCOVERY_VERSION = 4
 
 
 def brand_tokens(row):
@@ -124,6 +124,9 @@ def official_home_matches(row, page, host):
     if arabic and all(w in branding.split() for w in arabic) and sector and saudi:
         return True
     label = host.split(".")[0].replace("-", "")
+    # A registry-supplied acronym can be the public brand (e.g. NHC).
+    if len(label) >= 3 and label in english and label in branding.split() and sector and saudi:
+        return True
     english_brand = (all(w in branding.split() for w in english) or
                      (len(english) > 1 and "".join(english) in branding.split()))
     if english and english_brand:
@@ -455,6 +458,17 @@ def process(row, research, apis, dedupe):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
               "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
     host, pages, evidence, identity = research.resolve(row)
+    if not host and os.environ.get("REGA_ENABLE_COMPANY_DOMAIN_LOOKUP") == "1" and result["priority"] in {"A", "B"}:
+        lookup_name = re.sub(r"\([^)]*\)", "", row.get("Company_or_Office", "")).strip()
+        candidate_host = apis.snov_company_domain(lookup_name)
+        if candidate_host and not is_blocked(candidate_host):
+            candidate_page = research.fetch("https://" + candidate_host + "/")
+            if not candidate_page:
+                candidate_page = research.render_public("https://" + candidate_host + "/")
+            evidence.append({"url": "https://" + candidate_host + "/", "basis": "snov_company_name_clue"})
+            if candidate_page and official_home_matches(row, candidate_page, candidate_host):
+                host, pages, identity = candidate_host, [candidate_page], "confirmed"
+                evidence.append({"url": candidate_page["url"], "basis": "current_first_party_identity_match"})
     result.update(domain=host, identity_status=identity, evidence=evidence)
     if not host:
         result["outcome"] = identity
@@ -601,6 +615,7 @@ def run(args):
     from .contact_apis import ContactAPIs
     apis = ContactAPIs(root / "api-cache", {"hunter": args.hunter_cap, "prospeo": args.prospeo_cap, "snov": args.snov_cap})
     apis.hunter_verification_reserve = args.hunter_cap
+    apis.snov_verification_reserve = 100.0
     balances = apis.account_balances()
     for provider, cap in list(apis._budgets_cfg.items()):
         info = balances.get(provider, {})

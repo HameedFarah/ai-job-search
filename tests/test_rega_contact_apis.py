@@ -880,3 +880,24 @@ class TestSnovVerify:
         api._safe_request = Mock(return_value=(429, {}))
         assert not api.verify_snov("info@example.sa")["safe_to_send"]
         assert api._is_halted("snov")
+
+
+class TestSnovCompanyDomain:
+    setup_api = TestSnovVerify.setup_api
+    def test_company_domain_is_bound_to_requested_name_and_cached(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        api = self.setup_api(tmp_path, monkeypatch)
+        api.snov_verification_reserve = 1
+        api._safe_request = Mock(side_effect=[(200, {"data": {"task_hash": "abc123"}}),
+            (200, {"status": "completed", "data": [{"name": "Example", "result": {"domain": "example.sa"}}]})])
+        assert api.snov_company_domain("Example") == "example.sa"
+        assert api.snov_company_domain("Example") == "example.sa"
+        assert api._safe_request.call_count == 2
+
+    def test_company_lookup_preserves_verification_budget(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        api = self.setup_api(tmp_path, monkeypatch)
+        api.snov_verification_reserve = 3
+        api._safe_request = Mock()
+        assert api.snov_company_domain("Example") == ""
+        api._safe_request.assert_not_called()

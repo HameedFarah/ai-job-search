@@ -121,3 +121,31 @@ Task: t_73094078. Delegation route authority commit
 91f6e40033cdb8f7e6350a1b77a872ea080063e9. Route 1 timed out; route 2 InferX completed.
 Parent rejected its undocumented verifier endpoints and corrected against official
 https://snov.io/api. Live v2 acceptance correctly held info@tilalre.com as catch-all.
+
+
+Owner correction: start is Saturday **2026-09-12 08:00 Asia/Riyadh**, not September 13. Runtime authorization, queue schedule evidence and active release timer were corrected and verified. This supersedes the earlier tomorrow interpretation.
+
+
+## Discovery v4, 2026-09-12
+
+At 02:02 Riyadh, verified mailboxes reached 25 (3 HR, 22 general), with
+99 unique candidates and 27 portal URLs across 23 companies. Remaining identity
+failures were 462. Preserve 100 Snov reservation credits for verification, blocking
+new generic domain-contact calls when they would consume that allowance.
+
+Use the official Snov v2 company-domain-by-name endpoint as a bounded additional
+identity clue for priority A/B rows after ordinary discovery fails. Exact requested
+name/result matching, persistent task cache, bounded polling and existing-credit
+budget remain required. Provider domains never establish identity by themselves;
+the same independent employer-site branding checks still apply. Support registry-
+supplied acronyms that exactly match both the domain label and homepage branding,
+with sector and Saudi evidence. Snov reservation ceiling 500 remains bounded by
+live available balance; no purchases. Live probe evidence is
+`snov-company-domain-probe.json` in the shared runtime evidence directory.
+
+The three-name live pilot returned zero domain clues. Bulk company-name API lookup
+therefore remains disabled unless REGA_ENABLE_COMPANY_DOMAIN_LOOKUP=1 is explicitly
+set; do not spend remaining credits on this unproven path. The acronym identity fix
+and protected verification allowance remain enabled. Last pre-restart checkpoint:
+28 verified mailboxes (3 HR, 25 general), 99 candidates, 73 first-party emails,
+27 portal URLs for 23 companies.
