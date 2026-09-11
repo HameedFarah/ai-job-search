@@ -10,6 +10,7 @@ import collections
 import csv
 import fcntl
 import hashlib
+import html as html_tools
 import ipaddress
 import json
 import os
@@ -23,6 +24,7 @@ import time
 from urllib.parse import urljoin, urlsplit
 
 import requests
+from bs4 import BeautifulSoup
 
 
 class CompanyDeadline(BaseException):
@@ -90,23 +92,45 @@ def identity_matches(row, text, host):
     return False
 
 
+DISCOVERY_VERSION = 2
+
+
+def brand_tokens(row):
+    # Legal forms are not brand identity; strip Arabic conjunctions only when
+    # they prefix a known legal/sector word, never from the actual brand.
+    generic = set(norm("شركة الشركة شركات مؤسسة المؤسسة للتطوير التطوير تطوير والاستثمار الاستثمار للاستثمار استثمار العقاري العقارية للعقارات عقارات مساهمة عامة مقفلة محدودة المحدودة ذات مسؤولية شخص واحد فرع سعودية").split())
+    arabic = [w for w in norm(row.get("Arabic_Name", "")).split() if w not in generic]
+    english = [w for w in norm(row.get("Company_or_Office", "")).split()
+               if len(w) > 2 and w not in GENERIC_TOKENS
+               and w not in {"listed", "joint", "closed", "person", "branch", "limited"}]
+    return list(dict.fromkeys(english)), list(dict.fromkeys(arabic))
+
+
 def official_home_matches(row, page, host):
-    """A mention on an article/agency portfolio cannot prove domain ownership."""
-    if domain(page["url"]) != host or not identity_matches(row, page["text"], host):
+    """Require the company's own branding, not a body mention or portfolio."""
+    if domain(page["url"]) != host:
         return False
     title = re.search(r"<title[^>]*>(.*?)</title>", page["html"], re.I | re.S)
-    heading = re.search(r"<h1[^>]*>(.*?)</h1>", page["html"], re.I | re.S)
-    branding = norm((title.group(1) if title else "") + " " + (heading.group(1) if heading else ""))
+    heading = re.search(r"<h[12][^>]*>(.*?)</h[12]>", page["html"], re.I | re.S)
+    branding = norm(re.sub(r"<[^>]+>", " ", (title.group(1) if title else "") + " " + (heading.group(1) if heading else "")))
     if any(w in branding.split() for w in ("news", "stock", "stocks", "سهم", "اخبار", "توقعات")):
         return False
-    english = [x for x in norm(row.get("Company_or_Office", "")).split() if len(x)>3 and x not in GENERIC_TOKENS and x not in {"listed"}]
-    label = host.split(".")[0].replace("-", "")
-    if any(x in label and x in norm(page["text"]).split() for x in english):
+    english, arabic = brand_tokens(row)
+    text = norm(page["text"])
+    sector = any(w in text.split() for w in ("estate", "development", "investment", "العقاري", "العقاريه", "للتطوير", "للاستثمار"))
+    # Exact distinctive Arabic branding handles legitimate transliteration
+    # differences (Waken/Wakan, Zamiliya/Alzamiliah) without fuzzy matching.
+    saudi = host.endswith(".sa") or any(w in text.split() for w in ("saudi", "riyadh", "jeddah", "khobar", "السعوديه", "الرياض", "جده", "الخبر", "الدمام"))
+    if arabic and all(w in branding.split() for w in arabic) and sector and saudi:
         return True
-    arabic = list(dict.fromkeys(norm(x).strip() for x in _arabic_tokens(row.get("Arabic_Name", ""))))
-    # For brands transliterated differently, require the actual Arabic name in
-    # the site's own homepage branding, not in a search result or article body.
-    return bool(arabic) and all(x in branding.split() for x in arabic)
+    label = host.split(".")[0].replace("-", "")
+    english_brand = (all(w in branding.split() for w in english) or
+                     (len(english) > 1 and "".join(english) in branding.split()))
+    if english and english_brand:
+        return sector and saudi and any(w in label for w in english)
+    # Retain the prior conservative multi-token ownership path.
+    return identity_matches(row, page["text"], host) and any(
+        len(w) > 3 and w in label and w in text.split() for w in english)
 
 
 def parse_exa(payload):
@@ -123,6 +147,15 @@ def parse_exa(payload):
         if match:
             out.append({"url": match.group(1), "title": title, "text": block[:12000]})
     return out
+
+
+def parse_page(html, url):
+    soup = BeautifulSoup(html, "html.parser")
+    for node in soup.select("script, style, noscript, template"):
+        node.decompose()
+    parsed = _parse_html(str(soup))
+    return {"url": url, "text": " ".join(parsed.text_parts)[:90000], "html": html,
+            "links": parsed.links, "mailtos": parsed.mailtos, "at": now()}
 
 
 class Research:
@@ -182,11 +215,51 @@ class Research:
         save(self.search_stats_path, self.stats)
         return output
 
+    def render_public(self, url):
+        """Free public Reader fallback for JS shells; bounded and cached."""
+        key = hashlib.sha256(url.encode()).hexdigest()
+        path = self.root / "rendered" / (key + ".json")
+        if path.exists():
+            return json.loads(path.read_text())
+        count = self.stats.get("reader_calls", 0)
+        if count >= 100 or getattr(self, "reader_unavailable", False) or not public_url(url):
+            return None
+        self.stats["reader_calls"] = count + 1
+        save(self.search_stats_path, self.stats)
+        try:
+            response = self.session.get("https://r.jina.ai/" + url, timeout=25)
+            if response.status_code in {401, 402, 429}:
+                self.reader_unavailable = True
+            response.raise_for_status()
+            content = response.text[:500000]
+            source = re.search(r"(?m)^URL Source: (.+)$", content)
+            if not source or domain(source.group(1).strip()) != domain(url) or "Markdown Content:" not in content:
+                return None
+            title = re.search(r"(?m)^Title: (.*)$", content)
+            body = content.split("Markdown Content:", 1)[1]
+            if any(w in body.lower() for w in ("verify you are human", "checking your browser", "captcha")):
+                return None
+            markup = "<title>" + html_tools.escape(title.group(1) if title else "") + "</title>"
+            for line in body.splitlines():
+                heading = re.match(r"^#{1,2} (.+)$", line)
+                markup += ("<h1>" + html_tools.escape(heading.group(1)) + "</h1>") if heading else "<p>" + html_tools.escape(line) + "</p>"
+            page = parse_page(markup, source.group(1).strip())
+            page["links"] = [(u, label) for label, u in re.findall(r"\[([^]\n]+)\]\((https?://[^\s)]+)\)", body)]
+            page["mailtos"] = re.findall(r"mailto:([^\s)]+)", body)
+            page["retrieval"] = "public_reader"
+            save(path, page)
+            return page
+        except Exception:
+            return None
+
     def fetch(self, url):
         key = hashlib.sha256(url.encode()).hexdigest()
         path = self.root / "pages" / (key + ".json")
         if path.exists():
-            return json.loads(path.read_text())
+            cached = json.loads(path.read_text())
+            page = parse_page(cached["html"], cached["url"])
+            page["at"] = cached.get("at", page["at"])
+            return (self.render_public(page["url"]) or page) if len(page["text"].strip()) < 200 else page
         current = url
         try:
             for _ in range(5):
@@ -212,14 +285,11 @@ class Research:
                         break
                 response.close()
                 html = bytes(content).decode(response.encoding or "utf-8", errors="replace")
-                parsed = _parse_html(html)
-                text = " ".join(parsed.text_parts)
-                if _looks_like_soft_404("", text, response.status_code):
+                output = parse_page(html, current)
+                if _looks_like_soft_404("", output["text"], response.status_code):
                     return None
-                output = {"url": current, "text": text[:90000], "html": html,
-                          "links": parsed.links, "mailtos": parsed.mailtos, "at": now()}
                 save(path, output)
-                return output
+                return (self.render_public(current) or output) if len(output["text"].strip()) < 200 else output
         except Exception:
             return None
         return None
@@ -231,7 +301,12 @@ class Research:
         if existing.startswith(("http://", "https://")) and not is_blocked(domain(existing)):
             page = self.fetch("https://" + domain(existing) + "/")
             if page and official_home_matches(row, page, domain(existing)):
-                return domain(page["url"]), [page], [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
+                pages = [page]
+                if existing.rstrip("/") != page["url"].rstrip("/"):
+                    route_page = self.fetch(existing)
+                    if route_page and domain(route_page["url"]) == domain(page["url"]):
+                        pages.append(route_page)
+                return domain(page["url"]), pages, [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
         names = [row.get("Arabic_Name", ""), row.get("Company_or_Office", "")]
         seen = set()
         errors = 0
@@ -248,7 +323,7 @@ class Research:
                     continue
                 seen.add(host)
                 evidence.append({"url": item["url"], "title": item["title"], "basis": "search_candidate"})
-                if len(seen) > 5:
+                if len(seen) > 10:
                     break
                 page = self.fetch("https://" + host + "/")
                 if page and official_home_matches(row, page, host):
@@ -273,13 +348,15 @@ class Research:
                     if _employment_score(label, "", target) or any(t in (target + " " + label).lower() for t in ("contact", "about", "اتصل", "تواصل", "من نحن")):
                         urls.append(target.split("#")[0])
             text = page["text"].lower()
-            if _employment_score("", text, page["url"]) >= 2 and any(x in text for x in ("apply", "submit cv", "vacanc", "وظائف", "السيرة الذاتية")):
-                if urlsplit(page["url"]).path.strip("/") and any(x in page["url"].lower() for x in ("career", "job", "recruit", "توظيف")):
+            if _employment_score("", text, page["url"]) >= 2 and any(x in text for x in ("apply", "submit cv", "vacanc", "وظائف", "الوظائف", "السيرة الذاتية", "upload", "ارفاق", "إرفاق")):
+                if urlsplit(page["url"]).path.strip("/") and any(x in page["url"].lower() for x in ("career", "job", "recruit", "employ", "join-us", "توظيف")):
                     portals[page["url"]] = {"url": page["url"], "source_url": page["url"], "kind": "careers_page"}
         for page in list(pages):
             collect(page)
         urls.extend([f"https://{host}/contact", f"https://{host}/careers"])
-        for url in list(dict.fromkeys(urls))[:5]:
+        # Prefer employment/contact links over about pages within the crawl cap.
+        urls = sorted(dict.fromkeys(urls), key=lambda u: (not any(w in u.lower() for w in ("career", "job", "employ", "contact", "توظيف", "تواصل")), u))
+        for url in urls[:8]:
             if url in visited:
                 continue
             visited.add(url)
@@ -350,7 +427,7 @@ def select_rows(rows, dedupe):
 
 def process(row, research, apis, dedupe):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
-              "priority": priority_band(career_value_score(row)), "at": now(), "contacts": [], "portals": []}
+              "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
     host, pages, evidence, identity = research.resolve(row)
     result.update(domain=host, identity_status=identity, evidence=evidence)
     if not host:
@@ -491,6 +568,7 @@ def run(args):
     from runtime import rega_priority_scan as legacy
     from .contact_apis import ContactAPIs
     apis = ContactAPIs(root / "api-cache", {"hunter": args.hunter_cap, "prospeo": args.prospeo_cap, "snov": args.snov_cap})
+    apis.hunter_verification_reserve = 10.0
     balances = apis.account_balances()
     for provider, cap in list(apis._budgets_cfg.items()):
         info = balances.get(provider, {})
@@ -537,6 +615,20 @@ def run(args):
         summary.update(updated_at=now(), outcomes=dict(collections.Counter(r["outcome"] for r in records.values())),
                        accounted=len(records), research_remaining=sum(r["Master_ID"] not in records for r in selected),
                        provider_stats=apis.stats, search_stats=research.stats)
+        active = [r for r in records.values() if not r.get("excluded")]
+        summary["first_pass_remaining"] = summary["research_remaining"]
+        summary["improvement_retries_remaining"] = sum(
+            r.get("discovery_version", 1) < DISCOVERY_VERSION and r.get("outcome") in
+            {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+            for r in active)
+        summary["research_remaining"] += summary["improvement_retries_remaining"]
+        summary["routes"] = {
+            "unique_candidate_emails": len({c["email"] for r in active for c in r.get("contacts", [])}),
+            "first_party_emails": len({c["email"] for r in active for c in r.get("contacts", []) if c.get("relevance_confirmed") and c.get("provider") == "first_party"}),
+            "verified_emails": len({r["selected"]["email"] for r in active if r.get("selected")}),
+            "unique_portals": len({p["url"] for r in active for p in r.get("portals", [])}),
+            "companies_with_portals": sum(bool(r.get("portals")) for r in active),
+        }
         save(checkpoint, records)
         save(root / "summary.json", summary)
         # CSV is a read-only export of evidence keyed to canonical Master IDs.
@@ -559,7 +651,9 @@ def run(args):
             if mid in records:
                 if args.apply and records[mid].get("tracker_write") not in {"verified", "already_written"} and not records[mid].get("excluded"):
                     records[mid]["tracker_write"] = write_result(legacy, records[mid], True)
-                if records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:
+                retry_improved = (records[mid].get("discovery_version", 1) < DISCOVERY_VERSION
+                                  and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"})
+                if not retry_improved and records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:
                     continue
             if (args.limit and summary["run_processed"] >= args.limit) or time.monotonic()-started >= args.max_runtime:
                 break
@@ -573,6 +667,19 @@ def run(args):
                           "error_type": type(exc).__name__, "at": now()}
             finally:
                 signal.alarm(0)
+            if mid in records and records[mid].get("domain") and not result.get("domain"):
+                # An unavailable page on retry must not erase prior confirmed
+                # routes. Keep the evidence and record the failed attempt.
+                save(root / "history" / (mid + "-retry-" + result["at"].replace(":", "") + ".json"), result)
+                result = dict(records[mid], discovery_version=DISCOVERY_VERSION,
+                              retry_outcome=result["outcome"])
+            if mid in records and result.get("domain") == records[mid].get("domain") and result.get("domain"):
+                portals = {p["url"]: p for p in records[mid].get("portals", [])}
+                portals.update({p["url"]: p for p in result.get("portals", [])})
+                result["portals"] = list(portals.values())
+            if mid in records:
+                result["supersedes_result_at"] = records[mid].get("at")
+                save(root / "history" / (mid + "-" + records[mid].get("at", "unknown").replace(":", "") + ".json"), records[mid])
             records[mid] = result
             summary["run_processed"] += 1
             report()  # Durable research before any external write.

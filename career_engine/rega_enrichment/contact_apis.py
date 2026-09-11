@@ -468,6 +468,9 @@ class ContactAPIs:
         if self.cache.is_pending(ck):
             return []
 
+        reserve = getattr(self, "hunter_verification_reserve", 0.0)
+        if not self._budget_ok("hunter", self.HUNTER_SEARCH_COST + reserve):
+            return []
         if not self._reserve("hunter", self.HUNTER_SEARCH_COST):
             return []
 

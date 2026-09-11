@@ -7,7 +7,7 @@ case "${1:-status}" in
   start|pilot)
     rega_mode="$1"
     shift
-    rega_args=(--limit 0 --hunter-cap 35 --prospeo-cap 60 --snov-cap 200)
+    rega_args=(--limit 0 --hunter-cap 45 --prospeo-cap 60 --snov-cap 200)
     if [[ "$rega_mode" == "pilot" ]]; then
       rega_args=(--pilot --limit 12 --hunter-cap 15 --prospeo-cap 20 --snov-cap 50)
     fi

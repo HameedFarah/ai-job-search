@@ -49,3 +49,31 @@ Focused unit/regression tests, source diff review, no secrets in stored artifact
 ## Pilot corrections accepted before scaling
 
 The initial bounded run exposed shared Exa free-cap exhaustion, a named-HR false match from another person’s social activity, and third-party article/agency domains incorrectly matched to employer names. The run was stopped; affected records were corrected with append-only notes and exact readback, the one newly filled incorrect website was restored to its original blank value, and all pilot research records were archived before rerunning. No contact entered the send queue. Regression tests now require homepage ownership evidence and the hiring profile’s own name/title; 113 targeted tests pass.
+
+
+## Yield correction, 2026-09-11
+
+The owner rejected the low first-pass yield. Paused the service and diagnosed
+false-negative identity matching (legal suffixes, Arabic/English transliteration,
+and single-word brands), script/style text displacing contact details, skipped
+existing career paths, and unreadable JavaScript shells.
+
+Discovery version 2 strips legal suffixes, requires employer branding plus Saudi
+and sector evidence, strips script/style text, reuses existing career paths,
+prioritizes contact/employment links, and uses bounded free public Jina Reader
+retrieval for JavaScript shells (100 cumulative requests; stops on capacity errors).
+The prior news-site, agency-portfolio and similarly named Egyptian company false
+matches remain rejected. No guessed addresses or send eligibility changes.
+
+Retry all previously unresolved/held version-1 records while preserving prior
+history, existing confirmed evidence on failed retries, the shared cache and credit
+reservations. Report website-published addresses, mailbox-verified addresses and
+portals independently so email status does not hide portal results.
+
+Live read-only acceptance recovered website-published info inboxes at Tilal,
+Wakan and Alzamiliah, plus careers pages at Tilal, Wakan and Ladun. These
+addresses are not called mailbox-verified until the verification API succeeds.
+Hunter cap increases from 35 to 45 existing credits, still bounded by live account
+balance with a 10% reserve. The last 10 budget credits are reserved for mailbox
+verification; cached Hunter discovery remains available. Prospeo/Snov caps remain
+60/200. No purchase or automatic top-up is enabled.

@@ -105,3 +105,37 @@ def test_financial_article_and_agency_portfolio_are_not_official_sites():
     row = {"Company_or_Office": "Dream Real Estate Investment", "Arabic_Name": "شركة دريم للاستثمار العقاري"}
     page = {"url": "https://meawal.com/", "html": "<title>Meawal Web Design</title>", "text": "Dream Real Estate Investment is our web design client"}
     assert not official_home_matches(row, page, "meawal.com")
+
+
+@pytest.mark.parametrize("english,arabic,host,title", [
+    ("Tilal Real Estate", "شركة تلال العقارية", "tilalre.com", "Tilal Real Estate | تلال العقارية"),
+    ("Waken Real Estate Dev & Invest", "شركة وكن للتطوير والاستثمار العقاري", "wakan.sa", "الصفحة الرئيسية - وكن"),
+    ("Al Zamiliya Investment Co", "الشركة الزاملية للاستثمار", "alzamiliah.com", "الزاملية للتطوير والاستثمار العقاري"),
+])
+def test_own_branding_survives_legal_suffix_and_transliteration(english, arabic, host, title):
+    page = {"url": "https://" + host + "/", "html": "<title>" + title + "</title>",
+            "text": title + " الرياض للتطوير العقاري"}
+    assert official_home_matches({"Company_or_Office": english, "Arabic_Name": arabic}, page, host)
+
+
+def test_similar_egyptian_brand_is_not_saudi_company():
+    page = {"url": "https://dreamvieweg.com/", "html": "<title>Dream View Development</title>",
+            "text": "Dream View Development دريم للتطوير العقاري Egypt Cairo"}
+    assert not official_home_matches({"Company_or_Office": "Dream Real Estate Dev & Investment",
+                                      "Arabic_Name": "شركة دريم للتطوير والاستثمار العقاري"}, page, "dreamvieweg.com")
+
+
+def test_script_and_style_cannot_displace_real_contact_text():
+    from career_engine.rega_enrichment.continuous import parse_page
+    page = parse_page("<script>" + "noise " * 20000 + "</script><style>.x{}</style><p>hr@example.sa</p>", "https://example.sa/")
+    assert page["text"].strip() == "hr@example.sa"
+
+
+def test_existing_career_path_is_crawled_after_identity_confirmation():
+    from career_engine.rega_enrichment.continuous import Research
+    r = Research.__new__(Research)
+    homepage = {"url": "https://tilalre.com/", "html": "<title>Tilal Real Estate</title>", "text": "Tilal Real Estate Riyadh"}
+    career = {"url": "https://tilalre.com/career/", "text": "Apply"}
+    r.fetch = Mock(side_effect=[homepage, career])
+    host, pages, evidence, state = r.resolve({"Company_or_Office": "Tilal Real Estate", "Address_or_Website": career["url"]})
+    assert state == "confirmed" and career in pages
