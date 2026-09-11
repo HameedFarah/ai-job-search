@@ -1,0 +1,6 @@
+{
+  "contains_secret_values": false,
+  "service": "career-rega-contact-enrichment",
+  "folder": "services",
+  "keys": ["HUNTER_IO_API_KEY", "PROSPEO_API_KEY", "SNOV_IO_API_USER_ID", "SNOV_IO_API_SECRET"]
+}

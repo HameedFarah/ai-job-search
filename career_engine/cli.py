@@ -71,6 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
+    research = sub.add_parser("rega-enrich", help="Resumable no-send REGA API research")
+    from .rega_enrichment.continuous import build_args
+    build_args(research)
+
     doctor = sub.add_parser("doctor")
     add_common(doctor)
 
@@ -397,6 +401,9 @@ def _cmd_package(job_id: str) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "rega-enrich":
+            from .rega_enrichment.continuous import run
+            return run(args)
         if args.command == "doctor":
             result = doctor()
             emit(result, human=args.human)
