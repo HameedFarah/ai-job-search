@@ -92,7 +92,7 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 2
+DISCOVERY_VERSION = 3
 
 
 def brand_tokens(row):
@@ -159,9 +159,10 @@ def parse_page(html, url):
 
 
 class Research:
-    def __init__(self, root, search_limit=1200):
+    def __init__(self, root, search_limit=1200, reader_limit=500):
         self.root = Path(root)
         self.search_limit = search_limit
+        self.reader_limit = reader_limit
         self.search_stats_path = self.root / "search-usage.json"
         self.stats = json.loads(self.search_stats_path.read_text()) if self.search_stats_path.exists() else {"calls": 0, "errors": 0, "empty": 0}
         self.consecutive_errors = 0
@@ -236,7 +237,7 @@ class Research:
         if path.exists():
             return json.loads(path.read_text())
         count = self.stats.get("reader_calls", 0)
-        if count >= 100 or getattr(self, "reader_unavailable", False) or not public_url(url):
+        if count >= self.reader_limit or getattr(self, "reader_unavailable", False) or not public_url(url):
             return None
         self.stats["reader_calls"] = count + 1
         save(self.search_stats_path, self.stats)
@@ -314,6 +315,8 @@ class Research:
         evidence = []
         if existing.startswith(("http://", "https://")) and not is_blocked(domain(existing)):
             page = self.fetch("https://" + domain(existing) + "/")
+            if not page:
+                page = self.render_public("https://" + domain(existing) + "/")
             if page and official_home_matches(row, page, domain(existing)):
                 pages = [page]
                 if existing.rstrip("/") != page["url"].rstrip("/"):
@@ -322,6 +325,13 @@ class Research:
                         pages.append(route_page)
                 return domain(page["url"]), pages, [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
         names = [row.get("Arabic_Name", ""), row.get("Company_or_Office", "")]
+        english, arabic = brand_tokens(row)
+        # Registry legal names often differ from the public brand. Add short,
+        # distinctive-name searches instead of repeating only the same query.
+        if arabic:
+            names.append(" ".join(arabic) + " عقارات تواصل معنا")
+        if english:
+            names.append(" ".join(english) + " real estate contact")
         seen = set()
         errors = 0
         for name in names:
@@ -340,6 +350,8 @@ class Research:
                 if len(seen) > 10:
                     break
                 page = self.fetch("https://" + host + "/")
+                if not page and any(w in norm(item.get("title", "")).split() for w in english + arabic):
+                    page = self.render_public("https://" + host + "/")
                 if page and official_home_matches(row, page, host):
                     page["identity_confirmed"] = True
                     return host, [page], evidence + [{"url": page["url"], "basis": "current_first_party_identity_match"}], "confirmed"
@@ -481,7 +493,13 @@ def process(row, research, apis, dedupe):
     for c in result["contacts"]:
         if c.get("held_reason"):
             continue
-        validation = apis.verify(c["email"])
+        validation = apis.verify_snov(c["email"])
+        # Retain explicit negative results; use Hunter for unavailable/pending
+        # verification only, with its own persisted remaining-credit ceiling.
+        if validation.get("status") == "UNKNOWN" and not validation.get("verification"):
+            alternative = apis.verify(c["email"])
+            if alternative.get("status") != "UNKNOWN":
+                validation = alternative
         c["validation"] = validation
         if validation.get("safe_to_send") and validation.get("status") == "RECEIVING":
             result["selected"] = c
@@ -582,7 +600,7 @@ def run(args):
     from runtime import rega_priority_scan as legacy
     from .contact_apis import ContactAPIs
     apis = ContactAPIs(root / "api-cache", {"hunter": args.hunter_cap, "prospeo": args.prospeo_cap, "snov": args.snov_cap})
-    apis.hunter_verification_reserve = 10.0
+    apis.hunter_verification_reserve = args.hunter_cap
     balances = apis.account_balances()
     for provider, cap in list(apis._budgets_cfg.items()):
         info = balances.get(provider, {})
@@ -603,7 +621,12 @@ def run(args):
     if not all(ids) or len(ids) != len(set(ids)):
         raise RuntimeError("duplicate_or_missing_master_ids")
     queue = legacy.read_queue(token, legacy.SPREADSHEET_ID)
-    dedupe = legacy.read_dedupe_state(token, master, queue)
+    _, auto_rows = legacy.read_table(token, legacy.AUTO_QUEUE_SHEET, "A:L")
+    _, sent_rows = legacy.read_table(token, legacy.SENT_TRACKER_SHEET, "A:P")
+    # Our staged HOLD entries are evidence awaiting verification, not a prior
+    # outreach attempt. Keep all other existing records in the dedupe census.
+    external_auto = [r for r in auto_rows if not (r.get("Source") == "REGA_API_RECOVERY_20260912" and r.get("Status") == "HOLD")]
+    dedupe = legacy.build_dedupe_state(master, queue, external_auto, sent_rows)
     selected, excluded = select_rows(rows, dedupe)
     if args.pilot:
         known = [r for r in selected if r.get("Address_or_Website")][:6]
@@ -619,7 +642,7 @@ def run(args):
         records.setdefault(mid, {"master_id": mid, "outcome": reason, "at": now(), "excluded": True})
     summary = {"status": "running", "started_at": now(), "universe": len(rows), "selected": len(selected),
                "excluded": len(excluded), "balances_before": balances, "sends": 0, "queue_writes": 0,
-               "purchases": 0, "apply": args.apply, "run_processed": 0, "task_id": "t_96c554af"}
+               "purchases": 0, "apply": args.apply, "run_processed": 0, "task_id": "t_73094078"}
     stopped = threading.Event()
     def heartbeat():
         while not stopped.wait(15):
@@ -688,6 +711,9 @@ def run(args):
                 result = dict(records[mid], discovery_version=DISCOVERY_VERSION,
                               retry_outcome=result["outcome"])
             if mid in records and result.get("domain") == records[mid].get("domain") and result.get("domain"):
+                contacts = {c["email"]: c for c in records[mid].get("contacts", [])}
+                contacts.update({c["email"]: c for c in result.get("contacts", [])})
+                result["contacts"] = list(contacts.values())
                 portals = {p["url"]: p for p in records[mid].get("portals", [])}
                 portals.update({p["url"]: p for p in result.get("portals", [])})
                 result["portals"] = list(portals.values())

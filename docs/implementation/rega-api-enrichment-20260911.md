@@ -86,3 +86,38 @@ with two-second minimum search spacing and per-run engine disablement on errors.
 Wakan Arabic lookup returned the official domain; capacity failures now pause
 research instead of declaring companies unresolvable. This is an additional cause
 of the first-pass low yield; old unresolved rows are retried.
+
+
+## Owner-authorized enrichment and dated sender release, 2026-09-12
+
+Owner explicitly authorized enriching the remainder, adding recovered addresses
+to the sender queue, and sending tomorrow at 08:00 with the correct resume,
+profile/portfolio and cover email. VPS date was September 12: release date is
+**2026-09-13 08:00 Asia/Riyadh**, explicitly stated in the conversation.
+
+Discovery version 3 adds short distinctive-name searches, public Reader retries
+for failed candidate pages, and up to 500 cumulative Reader requests. Existing
+Snov credits now fund official v2 mailbox verification; Hunter is reserved for
+verification fallback, not new domain searches. Explicit catch-all/negative
+results remain held. Caps: Hunter 60, Prospeo 60, Snov 400 cumulative reservations;
+each remains bounded by live account balance with a 10% reserve. No purchases.
+
+`scripts/rega_sender_admission.py` stages every unique recovered address in the
+existing Auto Send Queue, preserving existing rows and adding only HOLD records.
+Only exact-email RECEIVING results with relevance evidence qualify for dated
+release, after canonical Gmail/company/domain/bounce dedupe. Full readback follows
+writes. The authorization and campaign hashes are runtime evidence, not a new
+operational queue. New candidates are staged periodically while enrichment runs.
+
+`scripts/rega_recovered_sender.py` reuses the production central sender and scopes
+its queue reads to this authorized recovery source. It preserves the canonical
+ledger, singleton lock, Gmail/MIME/readback checks, 96-second cadence, 300 daily
+cap and 08:00-19:00 window. It does not release unrelated pending Balady rows.
+Exactly two checked PDFs are used: one Arabic CV and the 2026 portfolio, plus the
+existing Arabic cover email. Campaign content or attachment hash changes stop the
+release for review. No immediate send occurs during setup or acceptance.
+
+Task: t_73094078. Delegation route authority commit
+91f6e40033cdb8f7e6350a1b77a872ea080063e9. Route 1 timed out; route 2 InferX completed.
+Parent rejected its undocumented verifier endpoints and corrected against official
+https://snov.io/api. Live v2 acceptance correctly held info@tilalre.com as catch-all.

@@ -819,3 +819,64 @@ def test_source_url_never_stores_key(tmp_path):
     api = _make_api(tmp_path, _FakeSession([(200, {"data": {"emails": [{"value": "info@example.com", "sources": [{"uri": "https://example.com?api_key="+FAKE_HUNTER_KEY}]}]}})]))
     api.hunter_contacts("example.com")
     assert all(FAKE_HUNTER_KEY not in p.read_text() for p in tmp_path.glob("*.json"))
+
+
+# ===================================================================
+# Snov verify
+# ===================================================================
+
+class TestSnovVerify:
+    def setup_api(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        monkeypatch.setenv("SNOV_IO_API_USER_ID", "test")
+        monkeypatch.setenv("SNOV_IO_API_SECRET", "test-secret")
+        api = ContactAPIs(tmp_path, {"snov": 3})
+        api._snov_get_token = Mock(return_value="test-token")
+        monkeypatch.setattr("career_engine.rega_enrichment.contact_apis.time.sleep", lambda _: None)
+        return api
+
+    def completed(self, **updates):
+        result = {"smtp_status": "valid", "is_valid_format": True, "is_disposable": False, "is_gibberish": False}
+        result.update(updates)
+        return {"status": "completed", "data": [{"email": "hr@example.sa", "result": result}]}
+
+    def test_official_v2_schema_and_cached_result(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        api = self.setup_api(tmp_path, monkeypatch)
+        api._safe_request = Mock(side_effect=[(200, {"data": {"task_hash": "abc123"}}), (200, self.completed())])
+        result = api.verify_snov("hr@example.sa")
+        assert result["safe_to_send"] and result["status"] == "RECEIVING"
+        assert api._safe_request.call_args_list[0].args[1].endswith("/v2/email-verification/start")
+        assert api._safe_request.call_args_list[0].kwargs["data"] == {"emails[]": ["hr@example.sa"]}
+        assert api.verify_snov("hr@example.sa") == result
+        assert api._safe_request.call_count == 2
+
+    @pytest.mark.parametrize("updates", [{"smtp_status": "unknown", "unknown_status_reason": "catchall"},
+        {"smtp_status": "not_valid"}, {"is_disposable": True}, {"is_gibberish": True},
+        {"is_valid_format": False}, {"unknown_status_reason": "hidden_by_owner"}, {"is_disposable": None}])
+    def test_unsafe_results_held(self, tmp_path, monkeypatch, updates):
+        from unittest.mock import Mock
+        api = self.setup_api(tmp_path, monkeypatch)
+        api._safe_request = Mock(side_effect=[(200, {"data": {"task_hash": "abc123"}}), (200, self.completed(**updates))])
+        assert api.verify_snov("hr@example.sa")["safe_to_send"] is False
+
+    def test_pending_resumes_without_second_start_or_reservation(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        api = self.setup_api(tmp_path, monkeypatch)
+        api._safe_request = Mock(side_effect=[(202, {"data": {"task_hash": "abc123"}})] + [(200, {"status": "in_progress"})] * 4)
+        assert not api.verify_snov("hr@example.sa")["safe_to_send"]
+        used = api._budget_tracker.reserved("snov")
+        api._safe_request = Mock(return_value=(200, self.completed()))
+        assert api.verify_snov("hr@example.sa")["safe_to_send"]
+        assert api._safe_request.call_args.args[0] == "GET"
+        assert api._budget_tracker.reserved("snov") == used
+
+    def test_wrong_email_and_quota_fail_closed(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        api = self.setup_api(tmp_path, monkeypatch)
+        data = self.completed(); data["data"][0]["email"] = "other@example.sa"
+        api._safe_request = Mock(side_effect=[(200, {"data": {"task_hash": "abc123"}}), (200, data)])
+        assert not api.verify_snov("hr@example.sa")["safe_to_send"]
+        api._safe_request = Mock(return_value=(429, {}))
+        assert not api.verify_snov("info@example.sa")["safe_to_send"]
+        assert api._is_halted("snov")

@@ -220,6 +220,7 @@ class ContactAPIs:
     PROSPEO_ENRICH_COST = 1.0
     PROSPEO_MAX_ENRICH = 2
     SNOV_DISCOVERY_COST = 10.0
+    SNOV_VERIFY_COST = 1.0
 
     _REQUEST_TIMEOUT = 20
     _REQUEST_INTERVAL = 1.1
@@ -639,8 +640,78 @@ class ContactAPIs:
         }
 
     # ------------------------------------------------------------------
-    # prospeo_contacts
+    # verify_snov
     # ------------------------------------------------------------------
+
+    def verify_snov(self, email: str) -> dict[str, Any]:
+        """Official v2 Email Verifier; https://snov.io/api#email-verifier.
+
+        Persist the task before polling, and never repeat an ambiguous start.
+        Only exact-email, complete, explicit valid results can be sendable.
+        """
+        unknown = {"email": email, "provider": "snov", "status": "UNKNOWN", "safe_to_send": False}
+        ck = _cache_key("snov", "verify_v2", email)
+        cached = self.cache.get(ck) or {}
+        if cached and cached.get("status") != "pending":
+            return cached
+        if self._is_halted("snov"):
+            return dict(unknown, error="provider_halted")
+        if not self._snov_user_id or not self._snov_secret:
+            return dict(unknown, error="missing_credential")
+        token = self._snov_get_token()
+        if not token:
+            return dict(unknown, error="auth_failed")
+        task_hash = cached.get("task_hash")
+        if cached and not task_hash:
+            return dict(unknown, error="ambiguous_start_manual_review")
+        if not cached:
+            if not self._reserve("snov", self.SNOV_VERIFY_COST):
+                return dict(unknown, error="budget_exhausted")
+            self.cache.put(ck, dict(unknown, status="pending"))
+            code, body = self._safe_request(
+                "POST", "https://api.snov.io/v2/email-verification/start",
+                headers={"Authorization": f"Bearer {token}"}, data={"emails[]": [email]})
+            self._count("snov", credit=self.SNOV_VERIFY_COST)
+            if code in (401, 402, 403, 429):
+                self._halt("snov")
+                self._count("snov", error=True)
+                return dict(unknown, error="provider_unavailable")
+            data = body.get("data") if isinstance(body, dict) else None
+            task_hash = data.get("task_hash") if isinstance(data, dict) else None
+            if code not in (200, 202) or not isinstance(task_hash, str) or not _SAFE_TASK_HASH_RE.fullmatch(task_hash):
+                return dict(unknown, error="ambiguous_start_manual_review")
+            self.cache.put(ck, dict(unknown, status="pending", task_hash=task_hash))
+        if not isinstance(task_hash, str) or not _SAFE_TASK_HASH_RE.fullmatch(task_hash):
+            return dict(unknown, error="invalid_task_hash")
+        url = "https://api.snov.io/v2/email-verification/result"
+        for _ in range(self._SNOV_MAX_POLLS):
+            time.sleep(self._SNOV_POLL_DELAY)
+            code, body = self._safe_request("GET", url, headers={"Authorization": f"Bearer {token}"}, params={"task_hash": task_hash})
+            self._count("snov")
+            if code in (401, 402, 403, 429):
+                self._halt("snov")
+                return dict(unknown, error="provider_unavailable")
+            if code != 200 or not isinstance(body, dict):
+                continue
+            if body.get("status") != "completed":
+                continue
+            entries = body.get("data")
+            entries = entries if isinstance(entries, list) else []
+            matching = [x for x in entries if isinstance(x, dict) and x.get("email", "").lower() == email.lower()]
+            if len(matching) != 1 or not isinstance(matching[0].get("result"), dict):
+                return dict(unknown, error="result_email_mismatch")
+            data = matching[0]["result"]
+            raw = data.get("smtp_status", "")
+            mapped = _map_snov_status(raw)
+            safe = (raw == "valid" and data.get("is_valid_format") is True
+                    and data.get("is_disposable") is False and data.get("is_gibberish") is False
+                    and not data.get("unknown_status_reason"))
+            result = dict(unknown, status=mapped, verification=raw,
+                          status_details=str(data.get("unknown_status_reason") or raw),
+                          safe_to_send=safe, checked_at=_utc_now(), source_url=url)
+            self.cache.put(ck, result)
+            return result
+        return dict(unknown, error="verification_pending")
 
     def prospeo_contacts(self, domain: str) -> list[dict[str, Any]]:
         """Prospeo search + enrich — search 1 credit, max 2 enriches at 1 each."""
@@ -981,5 +1052,14 @@ def _map_hunter_status(raw: str) -> str:
     if raw == "valid":
         return "RECEIVING"
     if raw in ("invalid", "disabled", "deleted"):
+        return "NOT_RECEIVING"
+    return "UNKNOWN"
+
+
+def _map_snov_status(raw: str) -> str:
+    """Map Snov verifier status to RECEIVING / UNKNOWN / NOT_RECEIVING."""
+    if raw == "valid":
+        return "RECEIVING"
+    if raw in ("not_valid", "invalid", "disabled", "deleted"):
         return "NOT_RECEIVING"
     return "UNKNOWN"

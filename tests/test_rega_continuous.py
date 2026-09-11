@@ -55,6 +55,7 @@ def fake_research():
 
 def test_portal_and_general_email_do_not_stop_hr_discovery():
     apis = Mock()
+    apis.verify_snov.return_value = {"status": "UNKNOWN"}
     apis.hunter_contacts.return_value = [{"email": "hr@example.sa", "provider": "hunter", "title": "", "source_urls": []}]
     apis.verify.return_value = {"safe_to_send": True, "status": "RECEIVING"}
     result = process({"Master_ID": "CE-1", "Company_or_Office": "Example"}, fake_research(), apis,
@@ -66,6 +67,7 @@ def test_portal_and_general_email_do_not_stop_hr_discovery():
 
 def test_bounced_hr_cannot_displace_valid_general_email():
     apis = Mock()
+    apis.verify_snov.return_value = {"status": "UNKNOWN"}
     apis.hunter_contacts.return_value = [{"email": "hr@example.sa", "provider": "hunter", "title": "", "source_urls": []}]
     apis.verify.return_value = {"safe_to_send": True, "status": "RECEIVING"}
     result = process({"Master_ID": "CE-1", "Company_or_Office": "Example"}, fake_research(), apis,
