@@ -169,3 +169,23 @@ def test_registry_acronym_can_match_own_public_brand():
     row = {"Company_or_Office": "National Housing Company (NHC)", "Arabic_Name": "الشركة الوطنية للاسكان"}
     page = {"url": "https://nhc.sa/", "html": "<title>NHC</title>", "text": "NHC Real Estate Saudi Arabia"}
     assert official_home_matches(row, page, "nhc.sa")
+
+
+def test_resolve_preserves_search_url_and_checks_later_queries(tmp_path):
+    from career_engine.rega_enrichment.continuous import Research, parse_page
+    r = Research(tmp_path)
+    r.search = Mock(side_effect=[{"status": "ok", "results": [
+        {"url": f"https://irrelevant{i}.sa/", "title": "Other"} for i in range(8)]},
+        {"status": "ok", "results": [{"url": "http://armal.sa/en", "title": "Armal"}]}])
+    good = parse_page("<title>Armal</title><p>Saudi real estate development</p>", "http://armal.sa/en")
+    r.fetch = Mock(side_effect=lambda url: good if url == "http://armal.sa/en" else None)
+    r.render_public = Mock(return_value=None)
+    host, pages, evidence, status = r.resolve({"Arabic_Name": "ارمال", "Company_or_Office": "Armal Real Estate"})
+    assert status == "confirmed" and host == "armal.sa"
+    r.fetch.assert_any_call("http://armal.sa/en")
+
+
+def test_ksa_branding_is_saudi_evidence():
+    from career_engine.rega_enrichment.continuous import parse_page
+    page = parse_page("<title>Ajdan | Premier Real Estate Developer KSA</title>", "https://ajdan.com/")
+    assert official_home_matches({"Company_or_Office": "Ajdan Real Estate Development"}, page, "ajdan.com")

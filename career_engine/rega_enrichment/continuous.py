@@ -92,7 +92,7 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 4
+DISCOVERY_VERSION = 5
 
 
 def brand_tokens(row):
@@ -120,7 +120,7 @@ def official_home_matches(row, page, host):
     sector = any(w in text.split() for w in ("estate", "development", "investment", "العقاري", "العقاريه", "للتطوير", "للاستثمار"))
     # Exact distinctive Arabic branding handles legitimate transliteration
     # differences (Waken/Wakan, Zamiliya/Alzamiliah) without fuzzy matching.
-    saudi = host.endswith(".sa") or any(w in text.split() for w in ("saudi", "riyadh", "jeddah", "khobar", "السعوديه", "الرياض", "جده", "الخبر", "الدمام"))
+    saudi = host.endswith(".sa") or any(w in text.split() for w in ("saudi", "ksa", "riyadh", "jeddah", "khobar", "السعوديه", "الرياض", "جده", "الخبر", "الدمام"))
     if arabic and all(w in branding.split() for w in arabic) and sector and saudi:
         return True
     label = host.split(".")[0].replace("-", "")
@@ -344,15 +344,19 @@ class Research:
             if result["status"] != "ok":
                 errors += 1
                 continue
+            checked = 0
             for item in result["results"]:
                 host = domain(item["url"])
                 if not host or host in seen or is_blocked(host):
                     continue
+                if checked >= 6:
+                    break
                 seen.add(host)
                 evidence.append({"url": item["url"], "title": item["title"], "basis": "search_candidate"})
-                if len(seen) > 10:
-                    break
-                page = self.fetch("https://" + host + "/")
+                checked += 1
+                page = self.fetch(item["url"])
+                if not page:
+                    page = self.fetch("https://" + host + "/")
                 if not page and any(w in norm(item.get("title", "")).split() for w in english + arabic):
                     page = self.render_public("https://" + host + "/")
                 if page and official_home_matches(row, page, host):

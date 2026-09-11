@@ -149,3 +149,11 @@ set; do not spend remaining credits on this unproven path. The acronym identity 
 and protected verification allowance remain enabled. Last pre-restart checkpoint:
 28 verified mailboxes (3 HR, 25 general), 99 candidates, 73 first-party emails,
 27 portal URLs for 23 companies.
+
+## Discovery v5
+Preserve exact search URLs (including HTTP, www and language paths) before
+homepage fallback. Use six candidate hosts per query instead of a shared ten-host
+ceiling that starved later name variants. Recognize KSA as explicit Saudi evidence.
+Live cached/public-page checks now confirm NHC and Ajdan; Awtad remains blocked
+by its firewall. Reopen unresolved prior-version records without weakening employer
+identity, exact-address verification or sender deduplication requirements.
