@@ -139,3 +139,25 @@ def test_existing_career_path_is_crawled_after_identity_confirmation():
     r.fetch = Mock(side_effect=[homepage, career])
     host, pages, evidence, state = r.resolve({"Company_or_Office": "Tilal Real Estate", "Address_or_Website": career["url"]})
     assert state == "confirmed" and career in pages
+
+
+def test_exa_transport_429_is_not_empty_search_success():
+    with pytest.raises(RuntimeError):
+        parse_exa({"error": "HTTP 429", "issue": {"statusCode": 429}})
+
+
+def test_google_captcha_uses_yandex_and_replaces_old_empty_cache(tmp_path):
+    import hashlib, json
+    from career_engine.rega_enrichment.continuous import Research
+    query = "company website"
+    cache = tmp_path / "search" / (hashlib.sha256(query.encode()).hexdigest() + ".json")
+    cache.parent.mkdir()
+    cache.write_text(json.dumps({"status": "ok", "provider": "exa", "results": []}))
+    r = Research(tmp_path)
+    blocked = Mock(); blocked.json.return_value = {"unresponsive_engines": [["google", "CAPTCHA"]], "results": []}
+    working = Mock(); working.json.return_value = {"results": [{"url": "https://company.sa/", "title": "Company"}], "unresponsive_engines": []}
+    r.session = Mock(); r.session.get.side_effect = [blocked, working]
+    result = r.search(query)
+    assert result["provider"] == "searxng-yandex"
+    assert result["results"][0]["url"] == "https://company.sa/"
+    assert r.stats["disabled_engines"] == ["google"]

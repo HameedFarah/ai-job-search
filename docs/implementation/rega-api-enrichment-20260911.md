@@ -77,3 +77,12 @@ Hunter cap increases from 35 to 45 existing credits, still bounded by live accou
 balance with a 10% reserve. The last 10 budget credits are reserved for mailbox
 verification; cached Hunter discovery remains available. Prospeo/Snov caps remain
 60/200. No purchase or automatic top-up is enabled.
+
+
+A later live diagnostic found Google CAPTCHA and Exa transport-level HTTP 429
+errors were parsed as empty successful searches. Corrected Exa error-envelope
+handling, invalidated empty-cache reuse, and added a tested SearXNG Yandex fallback
+with two-second minimum search spacing and per-run engine disablement on errors.
+Wakan Arabic lookup returned the official domain; capacity failures now pause
+research instead of declaring companies unresolvable. This is an additional cause
+of the first-pass low yield; old unresolved rows are retried.

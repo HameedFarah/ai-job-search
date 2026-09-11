@@ -134,7 +134,7 @@ def official_home_matches(row, page, host):
 
 
 def parse_exa(payload):
-    if payload.get("isError"):
+    if payload.get("isError") or payload.get("error") or payload.get("issue"):
         raise RuntimeError("exa_provider_error")
     chunks = [x.get("text", "") for x in payload.get("content", []) if x.get("type") == "text"]
     text = "\n".join(chunks)
@@ -171,29 +171,43 @@ class Research:
         key = hashlib.sha256(query.encode()).hexdigest()
         path = self.root / "search" / (key + ".json")
         if path.exists():
-            return json.loads(path.read_text())
+            cached = json.loads(path.read_text())
+            # Old Exa transport errors were incorrectly cached as empty success.
+            if cached.get("results"):
+                return cached
         if self.stats["calls"] >= self.search_limit or self.consecutive_errors >= 5:
             return {"status": "search_capacity_held", "results": []}
         self.stats["calls"] += 1
         save(self.search_stats_path, self.stats)
-        try:
-            # The installed Google engine is healthy even when Qwant is CAPTCHA
-            # blocked. Treat per-engine errors explicitly, never as no results.
-            local = self.session.get("http://127.0.0.1:8888/search",
-                                     params={"q": query, "format": "json", "engines": "google"}, timeout=18)
-            local.raise_for_status()
-            data = local.json()
-            items = data.get("results", [])
-            if not data.get("unresponsive_engines") and items:
-                output = {"status": "ok", "provider": "searxng-google", "at": now(),
-                          "results": [{"url": x["url"], "title": x.get("title", ""),
-                                       "text": x.get("title", "") + "\n" + x.get("content", "")}
-                                      for x in items[:5] if x.get("url", "").startswith(("https://", "http://"))]}
-                self.consecutive_errors = 0
-                save(path, output)
-                return output
-        except Exception:
-            pass
+        for engine in ("google", "yandex"):
+            if engine in getattr(self, "disabled_engines", set()):
+                continue
+            try:
+                # Slow free discovery and stop hammering a CAPTCHA/limited engine.
+                elapsed = time.monotonic() - getattr(self, "last_search_at", 0)
+                if elapsed < 2:
+                    time.sleep(2 - elapsed)
+                self.last_search_at = time.monotonic()
+                local = self.session.get("http://127.0.0.1:8888/search",
+                                         params={"q": query, "format": "json", "engines": engine}, timeout=18)
+                local.raise_for_status()
+                data = local.json()
+                items = data.get("results", [])
+                if data.get("unresponsive_engines"):
+                    self.disabled_engines = getattr(self, "disabled_engines", set()) | {engine}
+                    self.stats["disabled_engines"] = sorted(self.disabled_engines)
+                    save(self.search_stats_path, self.stats)
+                    continue
+                if items:
+                    output = {"status": "ok", "provider": "searxng-" + engine, "at": now(),
+                              "results": [{"url": x["url"], "title": x.get("title", ""),
+                                           "text": x.get("title", "") + "\n" + x.get("content", "")}
+                                          for x in items[:5] if x.get("url", "").startswith(("https://", "http://"))]}
+                    self.consecutive_errors = 0
+                    save(path, output)
+                    return output
+            except Exception:
+                pass
         try:
             proc = subprocess.run(
                 ["rtk", "proxy", "mcporter", "call", "exa.web_search_exa", "--args",
@@ -205,7 +219,7 @@ class Research:
             results = parse_exa(json.loads(proc.stdout))
             self.consecutive_errors = 0
             if not results:
-                self.stats["empty"] += 1
+                raise RuntimeError("search_empty_unverified")
             output = {"status": "ok", "provider": "exa", "results": results, "at": now()}
             save(path, output)
         except Exception as exc:
