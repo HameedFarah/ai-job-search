@@ -222,6 +222,24 @@ def test_old_discovery_version_domain_is_not_preserved_after_contract_upgrade():
     assert not can_preserve_current_domain({"domain": "tiktok.com", "discovery_version": DISCOVERY_VERSION})
 
 
+def test_search_snippet_official_url_clue_can_recover_root_domain(tmp_path):
+    from career_engine.rega_enrichment.continuous import Research, parse_page
+    row = {"Company_or_Office": "Example Development", "Arabic_Name": "", "Region": "Riyadh"}
+    r = Research(tmp_path)
+    r.search = Mock(return_value={"status": "ok", "results": [{
+        "url": "https://www.linkedin.com/company/example-development",
+        "title": "Example Development | LinkedIn",
+        "text": "Website: https://example.sa/ Example Development Saudi Arabia",
+    }]})
+    root = parse_page("<title>Example Development</title><h1>Example Development</h1><p>Saudi real estate development Riyadh</p>", "https://example.sa/")
+    r.fetch = Mock(side_effect=lambda url: root if "example.sa" in url else None)
+    r.render_public = Mock(return_value=None)
+    host, pages, evidence, status = r.resolve(row)
+    assert status == "confirmed"
+    assert host == "example.sa"
+    assert any(x["basis"] == "search_candidate_or_snippet_clue" for x in evidence)
+
+
 def test_known_third_party_identity_domains_are_never_accepted(tmp_path):
     from career_engine.rega_enrichment.continuous import Research, THIRD_PARTY_IDENTITY_DOMAINS
     r = Research(tmp_path)

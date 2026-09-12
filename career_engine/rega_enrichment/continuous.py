@@ -92,7 +92,7 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 8
+DISCOVERY_VERSION = 9
 
 # Domains proven to be third-party directories/platforms or different legal
 # entities during the Sep-12 live recovery audit. They can contain a target
@@ -356,44 +356,67 @@ class Research:
                     if route_page and domain(route_page["url"]) == domain(page["url"]):
                         pages.append(route_page)
                 return domain(page["url"]), pages, [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
-        names = [row.get("Arabic_Name", ""), row.get("Company_or_Office", "")]
         english, arabic = brand_tokens(row)
+        english_name = str(row.get("Company_or_Office", "")).strip()
+        arabic_name = str(row.get("Arabic_Name", "")).strip()
+        region = str(row.get("Region", "")).strip()
+        queries = []
+        if english_name:
+            queries.extend([
+                f'"{english_name}" Saudi Arabia official website',
+                f'"{english_name}" contact careers Saudi Arabia',
+                f'{english_name} {region} real estate website',
+            ])
+        if arabic_name:
+            queries.extend([
+                f'"{arabic_name}" الموقع الرسمي',
+                f'"{arabic_name}" تواصل معنا وظائف',
+                f'{arabic_name} {region} السعودية عقارات',
+            ])
         # Registry legal names often differ from the public brand. Add short,
-        # distinctive-name searches instead of repeating only the same query.
+        # distinctive brand searches rather than only repeating the legal name.
         if arabic:
-            names.append(" ".join(arabic) + " عقارات تواصل معنا")
+            queries.append(" ".join(arabic) + " عقارات تواصل معنا")
         if english:
-            names.append(" ".join(english) + " real estate contact")
+            queries.append(" ".join(english) + " real estate contact Saudi Arabia")
+        queries = list(dict.fromkeys(q for q in queries if q.strip()))
         seen = set()
         errors = 0
-        for name in names:
-            if not name.strip():
-                continue
-            result = self.search(name.strip() + " " + row.get("Region", "") + " Saudi Arabia official website")
+        for query in queries:
+            result = self.search(query)
             if result["status"] != "ok":
                 errors += 1
                 continue
             checked = 0
             for item in result["results"]:
-                host = domain(item["url"])
-                if not host or host in seen or is_blocked(host) or host in THIRD_PARTY_IDENTITY_DOMAINS:
-                    continue
-                if checked >= 6:
-                    break
-                seen.add(host)
-                evidence.append({"url": item["url"], "title": item["title"], "basis": "search_candidate"})
-                checked += 1
-                page = self.fetch(item["url"])
-                if not page:
-                    page = self.fetch("https://" + host + "/")
-                if not page and any(w in norm(item.get("title", "")).split() for w in english + arabic):
-                    page = self.render_public("https://" + host + "/")
-                if page and official_home_matches(row, page, host):
+                candidate_urls = [item["url"]]
+                snippet = str(item.get("text") or "")
+                for raw in re.findall(r'https?://[^\s"<>]+|www\.[a-z0-9.-]+\.[a-z]{2,}', snippet, re.I):
+                    clue = raw.rstrip(".,);]}>")
+                    if clue.startswith("www."):
+                        clue = "https://" + clue
+                    candidate_urls.append(clue)
+                for candidate_url in candidate_urls:
+                    host = domain(candidate_url)
+                    if not host or host in seen or is_blocked(host) or host in THIRD_PARTY_IDENTITY_DOMAINS:
+                        continue
+                    if checked >= 6:
+                        break
+                    seen.add(host)
+                    evidence.append({"url": candidate_url, "title": item["title"], "basis": "search_candidate_or_snippet_clue"})
+                    checked += 1
+                    page = self.fetch(candidate_url)
+                    if not page:
+                        page = self.fetch("https://" + host + "/")
+                    if not page and any(w in norm(item.get("title", "")).split() for w in english + arabic):
+                        page = self.render_public("https://" + host + "/")
+                    if not (page and official_home_matches(row, page, host)):
+                        continue
                     # A directory/profile page can reproduce the target company
                     # name while belonging to a different business. Require the
                     # host root to independently identify the same employer
                     # before treating the domain as first-party.
-                    parsed = urlsplit(item["url"])
+                    parsed = urlsplit(candidate_url)
                     root_url = f"{parsed.scheme or 'https'}://{host}/"
                     root_page = page if urlsplit(page["url"]).path in {"", "/"} else self.fetch(root_url)
                     if not root_page:
