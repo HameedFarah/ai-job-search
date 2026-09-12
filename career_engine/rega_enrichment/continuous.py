@@ -93,6 +93,7 @@ def identity_matches(row, text, host):
 
 
 DISCOVERY_VERSION = 9
+DATAFORSEO_DISCOVERY_VERSION = 2
 
 # Domains proven to be third-party directories/platforms or different legal
 # entities during the Sep-12 live recovery audit. They can contain a target
@@ -609,7 +610,12 @@ def resolve_dataforseo(row, research):
 
     company = re.sub(r"\([^)]*\)", "", str(row.get("Company_or_Office") or "")).strip()
     arabic = str(row.get("Arabic_Name") or "").strip()
-    query = f'"{company}" Saudi Arabia official website' if company else f'"{arabic}" الموقع الرسمي السعودية'
+    if company and arabic:
+        query = f'("{company}" OR "{arabic}") Saudi Arabia real estate official website'
+    elif company:
+        query = f'{company} Saudi Arabia real estate official website'
+    else:
+        query = f'"{arabic}" الموقع الرسمي السعودية عقارات'
     results = dataforseo_existing_credit_search(query, limit=5)
     evidence = []
     seen = set()
@@ -644,6 +650,7 @@ def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_d
     if use_dataforseo:
         host, pages, evidence, identity = research.resolve_existing(row)
         result["dataforseo_attempted"] = True
+        result["dataforseo_version"] = DATAFORSEO_DISCOVERY_VERSION
         if not host:
             host, pages, provider_evidence, identity = resolve_dataforseo(row, research)
             evidence.extend(provider_evidence)
@@ -976,7 +983,7 @@ def run(args):
                 )
                 or (
                     args.use_dataforseo_fallback
-                    and not r.get("dataforseo_attempted")
+                    and int(r.get("dataforseo_version") or 0) < DATAFORSEO_DISCOVERY_VERSION
                     and r.get("outcome") in {"identity_unconfirmed", "search_unavailable", "provider_research_incomplete", "domain_confirmed_no_route"}
                 )
             )
@@ -1024,7 +1031,7 @@ def run(args):
                     )
                     or (
                         args.use_dataforseo_fallback
-                        and not records[mid].get("dataforseo_attempted")
+                        and int(records[mid].get("dataforseo_version") or 0) < DATAFORSEO_DISCOVERY_VERSION
                         and records[mid].get("outcome") in {"identity_unconfirmed", "search_unavailable", "provider_research_incomplete", "domain_confirmed_no_route"}
                     )
                 )
