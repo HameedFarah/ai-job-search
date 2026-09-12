@@ -92,7 +92,27 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 5
+DISCOVERY_VERSION = 6
+
+# Domains proven to be third-party directories/platforms or different legal
+# entities during the Sep-12 live recovery audit. They can contain a target
+# company's profile/name, but can never establish employer ownership.
+THIRD_PARTY_IDENTITY_DOMAINS = {
+    "propertyfinder.sa",
+    "argaam.com",
+    "wzufa.com",
+    "muktamel.com",
+    "sanadak.sa",
+    "sida.com.sa",
+    "alrajhi-capital.sa",
+    "watheer-est.com",
+    "tiktok.com",
+    "x.com",
+    "linkedin.com",
+    "facebook.com",
+    "instagram.com",
+    "youtube.com",
+}
 
 
 def brand_tokens(row):
@@ -347,7 +367,7 @@ class Research:
             checked = 0
             for item in result["results"]:
                 host = domain(item["url"])
-                if not host or host in seen or is_blocked(host):
+                if not host or host in seen or is_blocked(host) or host in THIRD_PARTY_IDENTITY_DOMAINS:
                     continue
                 if checked >= 6:
                     break
@@ -360,8 +380,23 @@ class Research:
                 if not page and any(w in norm(item.get("title", "")).split() for w in english + arabic):
                     page = self.render_public("https://" + host + "/")
                 if page and official_home_matches(row, page, host):
-                    page["identity_confirmed"] = True
-                    return host, [page], evidence + [{"url": page["url"], "basis": "current_first_party_identity_match"}], "confirmed"
+                    # A directory/profile page can reproduce the target company
+                    # name while belonging to a different business. Require the
+                    # host root to independently identify the same employer
+                    # before treating the domain as first-party.
+                    parsed = urlsplit(item["url"])
+                    root_url = f"{parsed.scheme or 'https'}://{host}/"
+                    root_page = page if urlsplit(page["url"]).path in {"", "/"} else self.fetch(root_url)
+                    if not root_page:
+                        fallback = ("http" if root_url.startswith("https://") else "https") + "://" + host + "/"
+                        root_page = self.fetch(fallback)
+                    if not root_page or not official_home_matches(row, root_page, host):
+                        continue
+                    root_page["identity_confirmed"] = True
+                    matched_pages = [root_page]
+                    if page["url"] != root_page["url"]:
+                        matched_pages.append(page)
+                    return host, matched_pages, evidence + [{"url": root_page["url"], "basis": "current_first_party_root_identity_match"}], "confirmed"
         return "", pages, evidence, "search_unavailable" if errors else "identity_unconfirmed"
 
     def routes(self, host, pages):
@@ -465,7 +500,7 @@ def process(row, research, apis, dedupe):
     if not host and os.environ.get("REGA_ENABLE_COMPANY_DOMAIN_LOOKUP") == "1" and result["priority"] in {"A", "B"}:
         lookup_name = re.sub(r"\([^)]*\)", "", row.get("Company_or_Office", "")).strip()
         candidate_host = apis.snov_company_domain(lookup_name)
-        if candidate_host and not is_blocked(candidate_host):
+        if candidate_host and not is_blocked(candidate_host) and candidate_host not in THIRD_PARTY_IDENTITY_DOMAINS:
             candidate_page = research.fetch("https://" + candidate_host + "/")
             if not candidate_page:
                 candidate_page = research.render_public("https://" + candidate_host + "/")
@@ -593,6 +628,11 @@ def build_args(parser):
     parser.add_argument("--hunter-cap", type=float, default=15)
     parser.add_argument("--prospeo-cap", type=float, default=20)
     parser.add_argument("--snov-cap", type=float, default=50)
+    parser.add_argument(
+        "--use-all-available-provider-credit",
+        action="store_true",
+        help="Use the full currently available provider balance; never purchases/top-ups credits",
+    )
     parser.add_argument("--max-runtime", type=int, default=21600)
     parser.add_argument("--company-timeout", type=int, default=150)
     parser.add_argument("--status", action="store_true")
@@ -618,8 +658,12 @@ def run(args):
     from runtime import rega_priority_scan as legacy
     from .contact_apis import ContactAPIs
     apis = ContactAPIs(root / "api-cache", {"hunter": args.hunter_cap, "prospeo": args.prospeo_cap, "snov": args.snov_cap})
-    apis.hunter_verification_reserve = args.hunter_cap
-    apis.snov_verification_reserve = 100.0
+    if args.use_all_available_provider_credit:
+        apis.hunter_verification_reserve = 0.0
+        apis.snov_verification_reserve = 0.0
+    else:
+        apis.hunter_verification_reserve = args.hunter_cap
+        apis.snov_verification_reserve = 100.0
     balances = apis.account_balances()
     for provider, cap in list(apis._budgets_cfg.items()):
         info = balances.get(provider, {})
@@ -628,8 +672,13 @@ def run(args):
             if info.get("status") != "success":
                 raise ValueError()
             used = apis._budget_tracker.reserved(provider)
-            # Reserve ten percent of available capacity and obey the operator cap.
-            apis._budgets_cfg[provider] = min(cap, used + max(0, remaining * .9))
+            if args.use_all_available_provider_credit:
+                # Owner-approved full-balance mode: consume all existing credits
+                # if useful, while remaining incapable of purchasing/top-ups.
+                apis._budgets_cfg[provider] = used + max(0, remaining)
+            else:
+                # Conservative default retains ten percent and obeys the cap.
+                apis._budgets_cfg[provider] = min(cap, used + max(0, remaining * .9))
         except (KeyError, TypeError, ValueError):
             apis._budgets_cfg[provider] = 0
     research = Research(root, args.search_limit)
@@ -674,8 +723,13 @@ def run(args):
         active = [r for r in records.values() if not r.get("excluded")]
         summary["first_pass_remaining"] = summary["research_remaining"]
         summary["improvement_retries_remaining"] = sum(
-            r.get("discovery_version", 1) < DISCOVERY_VERSION and r.get("outcome") in
-            {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+            (
+                r.get("domain") in THIRD_PARTY_IDENTITY_DOMAINS
+                or (
+                    r.get("discovery_version", 1) < DISCOVERY_VERSION
+                    and r.get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                )
+            )
             for r in active)
         summary["research_remaining"] += summary["improvement_retries_remaining"]
         summary["routes"] = {
@@ -707,8 +761,13 @@ def run(args):
             if mid in records:
                 if args.apply and records[mid].get("tracker_write") not in {"verified", "already_written"} and not records[mid].get("excluded"):
                     records[mid]["tracker_write"] = write_result(legacy, records[mid], True)
-                retry_improved = (records[mid].get("discovery_version", 1) < DISCOVERY_VERSION
-                                  and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"})
+                retry_improved = (
+                    records[mid].get("domain") in THIRD_PARTY_IDENTITY_DOMAINS
+                    or (
+                        records[mid].get("discovery_version", 1) < DISCOVERY_VERSION
+                        and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                    )
+                )
                 if not retry_improved and records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:
                     continue
             if (args.limit and summary["run_processed"] >= args.limit) or time.monotonic()-started >= args.max_runtime:
@@ -723,9 +782,11 @@ def run(args):
                           "error_type": type(exc).__name__, "at": now()}
             finally:
                 signal.alarm(0)
-            if mid in records and records[mid].get("domain") and not result.get("domain"):
+            if (mid in records and records[mid].get("domain") and not result.get("domain")
+                    and records[mid].get("domain") not in THIRD_PARTY_IDENTITY_DOMAINS):
                 # An unavailable page on retry must not erase prior confirmed
-                # routes. Keep the evidence and record the failed attempt.
+                # routes. Keep the evidence and record the failed attempt. Never
+                # preserve a domain already proven to be a third-party identity.
                 save(root / "history" / (mid + "-retry-" + result["at"].replace(":", "") + ".json"), result)
                 result = dict(records[mid], discovery_version=DISCOVERY_VERSION,
                               retry_outcome=result["outcome"])

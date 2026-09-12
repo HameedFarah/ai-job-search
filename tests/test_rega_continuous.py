@@ -178,7 +178,7 @@ def test_resolve_preserves_search_url_and_checks_later_queries(tmp_path):
         {"url": f"https://irrelevant{i}.sa/", "title": "Other"} for i in range(8)]},
         {"status": "ok", "results": [{"url": "http://armal.sa/en", "title": "Armal"}]}])
     good = parse_page("<title>Armal</title><p>Saudi real estate development</p>", "http://armal.sa/en")
-    r.fetch = Mock(side_effect=lambda url: good if url == "http://armal.sa/en" else None)
+    r.fetch = Mock(side_effect=lambda url: good if url in {"http://armal.sa/en", "http://armal.sa/"} else None)
     r.render_public = Mock(return_value=None)
     host, pages, evidence, status = r.resolve({"Arabic_Name": "ارمال", "Company_or_Office": "Armal Real Estate"})
     assert status == "confirmed" and host == "armal.sa"
@@ -189,3 +189,40 @@ def test_ksa_branding_is_saudi_evidence():
     from career_engine.rega_enrichment.continuous import parse_page
     page = parse_page("<title>Ajdan | Premier Real Estate Developer KSA</title>", "https://ajdan.com/")
     assert official_home_matches({"Company_or_Office": "Ajdan Real Estate Development"}, page, "ajdan.com")
+
+
+def test_third_party_profile_cannot_establish_employer_domain(tmp_path):
+    from career_engine.rega_enrichment.continuous import Research, parse_page
+    row = {"Company_or_Office": "Kawasib United Real Estate", "Arabic_Name": "مؤسسة كواسب المتحدة العقارية", "Region": "Riyadh"}
+    r = Research(tmp_path)
+    r.search = Mock(return_value={"status": "ok", "results": [{
+        "url": "https://www.propertyfinder.sa/en/broker/kawasib-5188",
+        "title": "مؤسسة كواسب المتحدة العقارية | Property Finder Saudi",
+    }]})
+    profile = parse_page(
+        "<title>مؤسسة كواسب المتحدة العقارية | Property Finder Saudi</title><h1>مؤسسة كواسب المتحدة العقارية</h1><p>Saudi real estate Riyadh</p>",
+        "https://www.propertyfinder.sa/en/broker/kawasib-5188",
+    )
+    root = parse_page(
+        "<title>Property Finder Saudi</title><h1>Property Finder</h1><p>Saudi real estate marketplace</p>",
+        "https://www.propertyfinder.sa/",
+    )
+    r.fetch = Mock(side_effect=lambda url: profile if "/broker/" in url else root if "propertyfinder.sa" in url else None)
+    r.render_public = Mock(return_value=None)
+    host, pages, evidence, status = r.resolve(row)
+    assert host == ""
+    assert status == "identity_unconfirmed"
+
+
+def test_known_third_party_identity_domains_are_never_accepted(tmp_path):
+    from career_engine.rega_enrichment.continuous import Research, THIRD_PARTY_IDENTITY_DOMAINS
+    r = Research(tmp_path)
+    r.search = Mock(return_value={"status": "ok", "results": [
+        {"url": "https://" + host + "/profile/target", "title": "Target Company"}
+        for host in sorted(THIRD_PARTY_IDENTITY_DOMAINS)
+    ]})
+    r.fetch = Mock(side_effect=AssertionError("third-party host must be rejected before fetch"))
+    r.render_public = Mock(return_value=None)
+    host, pages, evidence, status = r.resolve({"Company_or_Office": "Target Company", "Region": "Riyadh"})
+    assert host == ""
+    assert status == "identity_unconfirmed"

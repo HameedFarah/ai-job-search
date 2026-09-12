@@ -7,7 +7,7 @@ case "${1:-status}" in
   start|pilot)
     rega_mode="$1"
     shift
-    rega_args=(--limit 0 --search-limit 4200 --hunter-cap 60 --prospeo-cap 60 --snov-cap 500)
+    rega_args=(--limit 0 --search-limit 10000 --hunter-cap 60 --prospeo-cap 60 --snov-cap 500 --use-all-available-provider-credit)
     if [[ "$rega_mode" == "pilot" ]]; then
       rega_args=(--pilot --limit 12 --hunter-cap 15 --prospeo-cap 20 --snov-cap 50)
     fi
@@ -17,6 +17,7 @@ case "${1:-status}" in
     rtk systemd-run --user --unit="$rega_unit" --collect \
       --working-directory="$rega_repo" \
       --setenv="PATH=$PATH" \
+      --setenv="REGA_ENABLE_COMPANY_DOMAIN_LOOKUP=0" \
       --property=RuntimeMaxSec=6h --property=TimeoutStopSec=20 \
       --property=KillMode=control-group --property=UMask=0077 \
       --property="StandardOutput=append:$rega_state/run.log" \
