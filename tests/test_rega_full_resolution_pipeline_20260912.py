@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -40,3 +41,11 @@ def test_finish_free_then_strict_outscraper_resolution():
     if paid.stderr:
         print('OUTSCRAPER_STDERR\n' + paid.stderr[-12000:])
     assert paid.returncode == 0
+
+    summary = json.loads((STATE / 'summary.json').read_text())
+    assert summary['status'] == 'scope_processed'
+    assert summary['research_remaining'] == 0
+    for bad in ('research_error', 'search_unavailable', 'provider_research_incomplete'):
+        assert summary.get('outcomes', {}).get(bad, 0) == 0
+    assert summary.get('sends', 0) == 0
+    assert summary.get('purchases', 0) == 0
