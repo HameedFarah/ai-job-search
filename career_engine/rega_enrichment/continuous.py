@@ -92,7 +92,7 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 6
+DISCOVERY_VERSION = 7
 
 # Domains proven to be third-party directories/platforms or different legal
 # entities during the Sep-12 live recovery audit. They can contain a target
