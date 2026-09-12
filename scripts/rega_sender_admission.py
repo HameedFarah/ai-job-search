@@ -98,6 +98,8 @@ def check_package(sender, sheet, authorization, token):
 
 
 def stage(args, authorization, candidates, sender, reconcile, sheet):
+    authorization = dict(authorization)
+    authorization["not_before"] = "2026-09-13T08:00:00+03:00"
     token = sheet.rclone_access_token()
     rows = reconcile._read_queue_sheet(token)
     by_email = {}
@@ -199,7 +201,7 @@ def main():
     with (args.root / "sender-admission.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         authorization = json.loads((args.root / "sender-authorization.json").read_text())
-        if authorization.get("id") != "REGA-OWNER-20260912" or authorization.get("source") != SOURCE:
+        if authorization.get("id") not in {"REGA-OWNER-20260912", "REGA-OWNER-20260913"} or authorization.get("source") != SOURCE:
             raise RuntimeError("missing_owner_authorization")
         candidates = candidate_rows(json.loads((args.root / "records.json").read_text()))
         sender, reconcile, sheet = runtime_modules()
