@@ -55,6 +55,8 @@ CONFIG_SHEET_NAME = "Config"
 REQUIRED_CAMPAIGN_VERSION = "AR_V1"
 REQUIRED_CAMPAIGN_SEQUENCE = "REGA_FIRST_THEN_BALADY"
 MIN_ALLOWED_CADENCE_SECONDS = 90
+REGA_RECOVERY_SOURCE = "REGA_API_RECOVERY_20260912"
+REGA_ENRICHMENT_RECORDS = Path("/home/hameedo/projects/ai-job-search/runtime/acceptance/rega-api-enrichment-20260911/records.json")
 
 # These defaults must be independent of the caller's current working directory.
 # A diagnostic/manual invocation from outside the repo must never create a
@@ -371,6 +373,162 @@ def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
         persist_new_row_defaults(sheet_token, raw, normalised)
 
 
+def _stage_latest_verified_rega_records(
+    sheet_token: str,
+    raw_rows: list[dict[str, str]],
+) -> int:
+    """Admit newly verified REGA checkpoint routes into the existing queue.
+
+    This is deliberately narrow: one selected mailbox per confirmed employer,
+    explicit RECEIVING/safe validation, exact domain match, no duplicate email,
+    and no Gmail action. Normal reconciliation remains the send authority.
+    """
+    if not REGA_ENRICHMENT_RECORDS.is_file():
+        return 0
+    try:
+        records = json.loads(REGA_ENRICHMENT_RECORDS.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    if not isinstance(records, dict):
+        return 0
+
+    existing = {
+        str(row.get("Email") or "").strip().lower()
+        for row in raw_rows
+        if str(row.get("Email") or "").strip()
+    }
+    additions: list[list[str]] = []
+    for record in records.values():
+        if not isinstance(record, dict) or record.get("excluded"):
+            continue
+        if record.get("identity_status") != "confirmed":
+            continue
+        selected = record.get("selected")
+        if not isinstance(selected, dict):
+            continue
+        validation = selected.get("validation")
+        if not isinstance(validation, dict):
+            continue
+        email = str(selected.get("email") or "").strip().lower()
+        domain = str(record.get("domain") or "").strip().lower()
+        master_id = str(record.get("master_id") or "").strip()
+        if not email or email in existing or not domain or not master_id:
+            continue
+        if _email_domain(email) != domain:
+            continue
+        if selected.get("relevance_confirmed") is not True or selected.get("held_reason"):
+            continue
+        if validation.get("status") != "RECEIVING" or validation.get("safe_to_send") is not True:
+            continue
+        if str(validation.get("email") or "").strip().lower() != email:
+            continue
+
+        queue_id = "OASQ-REGA-API-" + hashlib.sha256(email.encode()).hexdigest()[:12].upper()
+        evidence = json.dumps({
+            "source": REGA_RECOVERY_SOURCE,
+            "verified": True,
+            "relevant": True,
+            "held_reason": "",
+            "master_id": master_id,
+            "domain": domain,
+            "validation": validation,
+            "source_urls": selected.get("source_urls") or [],
+            "hiring_evidence": selected.get("hiring_evidence") or [],
+        }, ensure_ascii=False, separators=(",", ":"))
+        additions.append([
+            queue_id,
+            email,
+            str(record.get("company") or ""),
+            REGA_RECOVERY_SOURCE,
+            "IMPORTANT",
+            "PENDING",
+            utc_now(),
+            "",
+            "",
+            "",
+            evidence,
+            "",
+        ])
+        existing.add(email)
+
+    if not additions:
+        return 0
+    encoded = quote("Auto Send Queue!A:L", safe="!:")
+    sheets_request(
+        sheet_token,
+        "POST",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{encoded}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+        {"values": additions},
+    )
+    return len(additions)
+
+
+def _recovery_evidence(raw_notes: str) -> dict[str, Any]:
+    """Parse the leading JSON evidence while tolerating append-only audit suffixes."""
+    text = str(raw_notes or "").lstrip()
+    if not text.startswith("{"):
+        return {}
+    try:
+        value, _end = json.JSONDecoder().raw_decode(text)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _release_due_verified_rega_holds(
+    sheet_token: str,
+    raw_rows: list[dict[str, str]],
+    *,
+    now_utc: datetime | None = None,
+) -> int:
+    """Promote only due, fully verified recovered REGA HOLD rows to PENDING.
+
+    This runs inside the existing canonical sender at window start. It does not
+    create another scheduler and cannot send by itself.
+    """
+    current = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    released = 0
+    for raw in raw_rows:
+        if str(raw.get("Source") or "") != REGA_RECOVERY_SOURCE:
+            continue
+        if str(raw.get("Status") or "").strip().upper() != "HOLD":
+            continue
+        marker = str(raw.get("Last_Error") or "").strip()
+        if not marker.startswith("SCHEDULED_"):
+            continue
+        try:
+            scheduled = datetime.fromisoformat(marker.removeprefix("SCHEDULED_"))
+        except ValueError:
+            continue
+        if scheduled.tzinfo is None or current < scheduled.astimezone(timezone.utc):
+            continue
+
+        evidence = _recovery_evidence(str(raw.get("Evidence_or_Notes") or ""))
+        validation = evidence.get("validation") if isinstance(evidence.get("validation"), dict) else {}
+        email = str(raw.get("Email") or "").strip().lower()
+        domain = str(evidence.get("domain") or "").strip().lower()
+        verified = (
+            evidence.get("source") == REGA_RECOVERY_SOURCE
+            and evidence.get("verified") is True
+            and evidence.get("relevant") is True
+            and not evidence.get("held_reason")
+            and validation.get("status") == "RECEIVING"
+            and validation.get("safe_to_send") is True
+            and str(validation.get("email") or "").strip().lower() == email
+            and bool(evidence.get("master_id"))
+            and bool(domain)
+            and _email_domain(email) == domain
+        )
+        if not verified:
+            continue
+        write_queue_fields(sheet_token, int(raw["__row_number"]), {
+            "Status": "PENDING",
+            "Last_Error": "",
+        })
+        released += 1
+    return released
+
+
 def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list[dict[str, Any]]) -> None:
     """Persist deterministic outcomes for rows rejected during live reconciliation."""
     contacted_reasons = {
@@ -476,6 +634,12 @@ def _refresh_ready_queue(
 ) -> tuple[QueueReconciler, list[dict[str, Any]]]:
     """Run the expensive canonical reconciliation once and cache its ordered result."""
     raw_rows = _read_queue_sheet(sheet_token)
+    staged = _stage_latest_verified_rega_records(sheet_token, raw_rows)
+    if staged:
+        raw_rows = _read_queue_sheet(sheet_token)
+    released = _release_due_verified_rega_holds(sheet_token, raw_rows)
+    if released:
+        raw_rows = _read_queue_sheet(sheet_token)
     _persist_defaults(sheet_token, raw_rows)
 
     reconciler = QueueReconciler(sheet_token, ledger_path=ledger_path)

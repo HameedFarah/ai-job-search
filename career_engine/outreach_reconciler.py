@@ -133,6 +133,11 @@ QUARANTINED_DOMAINS = {
     "oracle.com", "bareeq.com.bh", "diyar.bh", "wasb.org", "dream.ca",
     "firstavenue.ca", "zara.com", "weather.gov", "reconstruction.go.jp",
     "hermes.com", "majidalfuttaim.com",
+    # Sep-12 REGA recovery audit: third-party marketplaces/media/directories
+    # or distinct legal entities that were incorrectly inferred from hosted
+    # target-company profiles. Never send a recovered employer route here.
+    "propertyfinder.sa", "argaam.com", "wzufa.com", "muktamel.com",
+    "sanadak.sa", "sida.com.sa", "alrajhi-capital.sa", "watheer-est.com",
 }
 
 # Shared/public mailbox providers must never be deduped globally by domain.
@@ -1248,6 +1253,10 @@ class QueueReconciler:
 
         def lane(r: dict[str, Any]) -> int:
             source = str(r.get("source") or "").upper()
+            # Newly extracted/recovered REGA routes are the owner's first lane;
+            # all other REGA routes still remain ahead of every Balady tier.
+            if "REGA_API_RECOVERY" in source:
+                return -1
             if "REGA" in source:
                 return 0
             if "BALADY" in source:

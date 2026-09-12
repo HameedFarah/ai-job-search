@@ -1177,22 +1177,34 @@ def test_campaign_sequence_rega_then_balady_tiers_is_deterministic(tmp_path):
         {"source": "BALADY live", "balady_tier": "T5_FREEMAIL", "priority": "IMPORTANT", "added_at": "2026-09-01T00:00:00Z", "row_number": 6, "email": "t5@gmail.com"},
         {"source": "BALADY live", "balady_tier": "T3_CORP_CONSULTANCY", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 4, "email": "t3@example.sa"},
         {"source": "REGA verified", "balady_tier": "", "priority": "NORMAL", "added_at": "2026-09-02T00:00:00Z", "row_number": 9, "email": "rega@example.sa"},
+        {"source": "REGA_API_RECOVERY_20260912", "balady_tier": "", "priority": "IMPORTANT", "added_at": "2026-09-12T00:00:00Z", "row_number": 10, "email": "recovered@example.sa"},
         {"source": "BALADY live", "balady_tier": "T1_HR", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 2, "email": "hr@example.sa"},
         {"source": "BALADY live", "balady_tier": "T2_GROUP", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 3, "email": "group@example.sa"},
         {"source": "BALADY live", "balady_tier": "T4_CORPORATE_DOMAIN", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 5, "email": "corp@example.sa"},
     ]
     ordered = reconciler.sort_by_priority(items)
     assert [row["email"] for row in ordered] == [
-        "rega@example.sa", "hr@example.sa", "group@example.sa",
+        "recovered@example.sa", "rega@example.sa", "hr@example.sa", "group@example.sa",
         "t3@example.sa", "corp@example.sa", "t5@gmail.com",
     ]
 
 
-def test_quarantined_rega_domain_is_not_sendable(tmp_path):
+@pytest.mark.parametrize("domain", [
+    "ittihadclub.sa",
+    "propertyfinder.sa",
+    "argaam.com",
+    "wzufa.com",
+    "muktamel.com",
+    "sanadak.sa",
+    "sida.com.sa",
+    "alrajhi-capital.sa",
+    "watheer-est.com",
+])
+def test_quarantined_rega_domain_is_not_sendable(tmp_path, domain):
     reconciler = QueueReconciler.__new__(QueueReconciler)
     reconciler.normalised = [normalise_row({
         "Queue_ID": "Q-QUARANTINE",
-        "Email": "info@ittihadclub.sa",
+        "Email": "info@" + domain,
         "Company_or_Office": "Wrong Company Match",
         "Source": "REGA verified",
         "Priority": "IMPORTANT",
