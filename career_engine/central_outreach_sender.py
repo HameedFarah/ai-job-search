@@ -401,7 +401,7 @@ def _stage_latest_verified_rega_records(
     for record in records.values():
         if not isinstance(record, dict) or record.get("excluded"):
             continue
-        if int(record.get("discovery_version") or 0) < 8:
+        if int(record.get("discovery_version") or 0) < 9:
             continue
         if record.get("identity_status") != "confirmed":
             continue
@@ -536,7 +536,7 @@ def _release_due_verified_rega_holds(
             and bool(master_id)
             and bool(domain)
             and _email_domain(email) == domain
-            and int(current_record.get("discovery_version") or 0) >= 8
+            and int(current_record.get("discovery_version") or 0) >= 9
             and current_record.get("identity_status") == "confirmed"
             and current_email == email
             and current_domain == domain

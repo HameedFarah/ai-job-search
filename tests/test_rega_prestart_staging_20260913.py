@@ -10,7 +10,7 @@ def test_prestart_stages_only_fully_verified_selected_route(monkeypatch, tmp_pat
             "master_id": "CE-1",
             "company": "Example Development",
             "identity_status": "confirmed",
-            "discovery_version": 8,
+            "discovery_version": 9,
             "domain": "example.sa",
             "selected": {
                 "email": "hr@example.sa",
@@ -57,7 +57,7 @@ def test_prestart_stages_only_fully_verified_selected_route(monkeypatch, tmp_pat
 def test_prestart_staging_dedupes_existing_email(monkeypatch, tmp_path):
     records = {
         "CE-1": {
-            "master_id": "CE-1", "company": "Example", "identity_status": "confirmed", "discovery_version": 8, "domain": "example.sa",
+            "master_id": "CE-1", "company": "Example", "identity_status": "confirmed", "discovery_version": 9, "domain": "example.sa",
             "selected": {"email": "hr@example.sa", "relevance_confirmed": True,
                          "validation": {"email": "hr@example.sa", "status": "RECEIVING", "safe_to_send": True}},
         }
