@@ -401,6 +401,8 @@ def _stage_latest_verified_rega_records(
     for record in records.values():
         if not isinstance(record, dict) or record.get("excluded"):
             continue
+        if int(record.get("discovery_version") or 0) < 8:
+            continue
         if record.get("identity_status") != "confirmed":
             continue
         selected = record.get("selected")
@@ -463,6 +465,16 @@ def _stage_latest_verified_rega_records(
     return len(additions)
 
 
+def _current_rega_records() -> dict[str, dict[str, Any]]:
+    try:
+        payload = json.loads(REGA_ENRICHMENT_RECORDS.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(k): v for k, v in payload.items() if isinstance(v, dict)}
+
+
 def _recovery_evidence(raw_notes: str) -> dict[str, Any]:
     """Parse the leading JSON evidence while tolerating append-only audit suffixes."""
     text = str(raw_notes or "").lstrip()
@@ -487,6 +499,7 @@ def _release_due_verified_rega_holds(
     create another scheduler and cannot send by itself.
     """
     current = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    current_records = _current_rega_records()
     released = 0
     for raw in raw_rows:
         if str(raw.get("Source") or "") != REGA_RECOVERY_SOURCE:
@@ -507,6 +520,11 @@ def _release_due_verified_rega_holds(
         validation = evidence.get("validation") if isinstance(evidence.get("validation"), dict) else {}
         email = str(raw.get("Email") or "").strip().lower()
         domain = str(evidence.get("domain") or "").strip().lower()
+        master_id = str(evidence.get("master_id") or "").strip()
+        current_record = current_records.get(master_id) or {}
+        current_selected = current_record.get("selected") if isinstance(current_record.get("selected"), dict) else {}
+        current_email = str(current_selected.get("email") or "").strip().lower()
+        current_domain = str(current_record.get("domain") or "").strip().lower()
         verified = (
             evidence.get("source") == REGA_RECOVERY_SOURCE
             and evidence.get("verified") is True
@@ -515,9 +533,13 @@ def _release_due_verified_rega_holds(
             and validation.get("status") == "RECEIVING"
             and validation.get("safe_to_send") is True
             and str(validation.get("email") or "").strip().lower() == email
-            and bool(evidence.get("master_id"))
+            and bool(master_id)
             and bool(domain)
             and _email_domain(email) == domain
+            and int(current_record.get("discovery_version") or 0) >= 8
+            and current_record.get("identity_status") == "confirmed"
+            and current_email == email
+            and current_domain == domain
         )
         if not verified:
             continue
