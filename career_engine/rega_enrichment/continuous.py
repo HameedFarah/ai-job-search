@@ -133,11 +133,11 @@ def _maps_query(row):
 def _batch_maps_prefetch(root, selected, records, outscraper):
     from .provider_clients import ProviderBudget
     path = Path(root) / "outscraper-maps-v9.json"
-    cache = {"discovery_version": DISCOVERY_VERSION, "records": {}}
+    cache = {"discovery_version": DISCOVERY_VERSION, "maps_batch_version": 2, "records": {}}
     if path.exists():
         try:
             loaded = json.loads(path.read_text())
-            if int(loaded.get("discovery_version") or 0) == DISCOVERY_VERSION:
+            if int(loaded.get("discovery_version") or 0) == DISCOVERY_VERSION and int(loaded.get("maps_batch_version") or 0) == 2:
                 cache = loaded
         except Exception:
             pass

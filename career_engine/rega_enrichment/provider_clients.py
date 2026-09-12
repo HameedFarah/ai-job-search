@@ -193,9 +193,15 @@ class OutscraperClient(ProviderClient):
         if not budget.permit(billable=True,domains=bounded_limit*len(cleaned)):
             failure=_record(self.provider,source,"",status="budget_exhausted",cost_status="not_charged")
             return [[failure] for _ in cleaned]
-        params=[("query",q) for q in cleaned]+[("limit",bounded_limit),("region","SA"),("fields","query,name,site,full_address,phone,category,place_id"),("async","false")]
-        request_url=source+"?"+urlencode(params)
-        s,b=self._request("GET",request_url,{"X-API-KEY":self.key})
+        fields="query,name,site,full_address,phone,category,place_id"
+        if len(cleaned)==1:
+            params=[("query",cleaned[0]),("limit",bounded_limit),("region","SA"),("fields",fields),("async","false")]
+            request_url=source+"?"+urlencode(params)
+            s,b=self._request("GET",request_url,{"X-API-KEY":self.key})
+        else:
+            request_url=source
+            payload={"query":cleaned,"limit":bounded_limit,"region":"SA","fields":fields,"async":False}
+            s,b=self._request("POST",request_url,{"X-API-KEY":self.key,"Content-Type":"application/json"},payload)
         if s!=200 or not isinstance(b,dict):
             failure=self._failure("auth_failed" if s in (401,403) else "quota_required" if s in (402,429) else "failed",source)
             return [[failure] for _ in cleaned]
