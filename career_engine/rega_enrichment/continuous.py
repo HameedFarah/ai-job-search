@@ -92,7 +92,7 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 7
+DISCOVERY_VERSION = 8
 
 # Domains proven to be third-party directories/platforms or different legal
 # entities during the Sep-12 live recovery audit. They can contain a target
@@ -113,6 +113,15 @@ THIRD_PARTY_IDENTITY_DOMAINS = {
     "instagram.com",
     "youtube.com",
 }
+
+
+def can_preserve_current_domain(record):
+    """Only preserve an unavailable retry when identity was proven by this version."""
+    return (
+        bool(record.get("domain"))
+        and record.get("domain") not in THIRD_PARTY_IDENTITY_DOMAINS
+        and int(record.get("discovery_version") or 0) >= DISCOVERY_VERSION
+    )
 
 
 def brand_tokens(row):
@@ -782,11 +791,11 @@ def run(args):
                           "error_type": type(exc).__name__, "at": now()}
             finally:
                 signal.alarm(0)
-            if (mid in records and records[mid].get("domain") and not result.get("domain")
-                    and records[mid].get("domain") not in THIRD_PARTY_IDENTITY_DOMAINS):
-                # An unavailable page on retry must not erase prior confirmed
-                # routes. Keep the evidence and record the failed attempt. Never
-                # preserve a domain already proven to be a third-party identity.
+            if mid in records and not result.get("domain") and can_preserve_current_domain(records[mid]):
+                # Preserve only evidence already established by the *current*
+                # discovery contract. A version upgrade exists specifically to
+                # revalidate older identity decisions, so a failed fresh check
+                # must not silently promote a stale domain into the new version.
                 save(root / "history" / (mid + "-retry-" + result["at"].replace(":", "") + ".json"), result)
                 result = dict(records[mid], discovery_version=DISCOVERY_VERSION,
                               retry_outcome=result["outcome"])

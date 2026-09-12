@@ -7,6 +7,8 @@ from career_engine.rega_enrichment.continuous import (
     identity_matches, parse_exa, process, select_rows, tracker_updates, contact_rank,
     hiring_evidence,
     official_home_matches,
+    can_preserve_current_domain,
+    DISCOVERY_VERSION,
 )
 
 
@@ -212,6 +214,12 @@ def test_third_party_profile_cannot_establish_employer_domain(tmp_path):
     host, pages, evidence, status = r.resolve(row)
     assert host == ""
     assert status == "identity_unconfirmed"
+
+
+def test_old_discovery_version_domain_is_not_preserved_after_contract_upgrade():
+    assert not can_preserve_current_domain({"domain": "wrong.example", "discovery_version": DISCOVERY_VERSION - 1})
+    assert can_preserve_current_domain({"domain": "verified.example", "discovery_version": DISCOVERY_VERSION})
+    assert not can_preserve_current_domain({"domain": "tiktok.com", "discovery_version": DISCOVERY_VERSION})
 
 
 def test_known_third_party_identity_domains_are_never_accepted(tmp_path):
