@@ -8,6 +8,7 @@ from career_engine.rega_enrichment.continuous import (
     hiring_evidence,
     official_home_matches,
     can_preserve_current_domain,
+    resolve_dataforseo,
     DISCOVERY_VERSION,
 )
 
@@ -290,6 +291,65 @@ def test_outscraper_contact_requires_first_party_source_before_selection(monkeyp
     result = process(row, research, apis, {"known_emails": set(), "permanent_bounces": set()}, outscraper=object())
     assert result["selected"]["email"] == "info@example.sa"
     assert result["selected"]["provider"] == "outscraper"
+
+
+def test_dataforseo_clue_requires_current_first_party_root(monkeypatch):
+    from career_engine.rega_enrichment import discovery
+    from career_engine.rega_enrichment.continuous import parse_page
+
+    row = {"Master_ID": "CE-1", "Company_or_Office": "Example Development", "Arabic_Name": "", "Region": "Riyadh"}
+    root = parse_page(
+        "<title>Example Development</title><h1>Example Development</h1><p>Saudi real estate development Riyadh</p>",
+        "https://example.sa/",
+    )
+    research = Mock()
+    research.fetch.side_effect = lambda url: root if "example.sa" in url else None
+    research.render_public.return_value = None
+    monkeypatch.setattr(discovery, "dataforseo_existing_credit_search", lambda query, limit=5: [
+        {"url": "https://directory.example/profile/example", "title": "Example Development", "description": "third party", "engine": "dataforseo-existing-credit"},
+        {"url": "https://example.sa/about", "title": "Example Development", "description": "official", "engine": "dataforseo-existing-credit"},
+    ])
+    host, pages, evidence, status = resolve_dataforseo(row, research)
+    assert status == "confirmed"
+    assert host == "example.sa"
+    assert pages[0]["identity_confirmed"] is True
+    assert any(item["basis"] == "dataforseo_current_first_party_root_identity_match" for item in evidence)
+
+
+def test_process_dataforseo_mode_skips_exhausted_free_search(monkeypatch):
+    from career_engine.rega_enrichment import continuous, discovery
+    from career_engine.rega_enrichment.continuous import parse_page
+
+    row = {"Master_ID": "CE-1", "Company_or_Office": "Example Development", "Arabic_Name": "", "Region": "Riyadh"}
+    root = parse_page(
+        "<title>Example Development</title><h1>Example Development</h1><p>Saudi real estate development Riyadh info@example.sa</p>",
+        "https://example.sa/",
+    )
+    research = Mock()
+    research.resolve_existing.return_value = ("", [], [], "identity_unconfirmed")
+    research.resolve.side_effect = AssertionError("free search must not run in DataForSEO-only mode")
+    research.fetch.return_value = root
+    research.render_public.return_value = None
+    research.routes.return_value = ([{"email": "info@example.sa", "provider": "first_party", "source_urls": ["https://example.sa/"], "title": ""}], [])
+    research.search.return_value = {"results": []}
+    monkeypatch.setattr(discovery, "dataforseo_existing_credit_search", lambda query, limit=5: [
+        {"url": "https://example.sa/", "title": "Example Development", "description": "official", "engine": "dataforseo-existing-credit"},
+    ])
+    apis = Mock()
+    apis.hunter_contacts.return_value = []
+    apis.prospeo_contacts.return_value = []
+    apis.snov_contacts.return_value = []
+    apis.verify_snov.return_value = {"email": "info@example.sa", "status": "RECEIVING", "safe_to_send": True}
+    apis.verify.return_value = {"status": "UNKNOWN"}
+    apis.stats = {}
+    result = continuous.process(
+        row, research, apis,
+        {"known_emails": set(), "permanent_bounces": set()},
+        use_dataforseo=True,
+    )
+    assert result["dataforseo_attempted"] is True
+    assert result["domain"] == "example.sa"
+    assert result["selected"]["email"] == "info@example.sa"
 
 
 def test_known_third_party_identity_domains_are_never_accepted(tmp_path):

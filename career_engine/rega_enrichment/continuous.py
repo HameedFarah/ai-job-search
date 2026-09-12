@@ -414,21 +414,26 @@ class Research:
             return None
         return None
 
-    def resolve(self, row):
+    def resolve_existing(self, row):
         existing = row.get("Address_or_Website", "").strip()
-        pages = []
-        evidence = []
-        if existing.startswith(("http://", "https://")) and not is_blocked(domain(existing)):
-            page = self.fetch("https://" + domain(existing) + "/")
-            if not page:
-                page = self.render_public("https://" + domain(existing) + "/")
-            if page and official_home_matches(row, page, domain(existing)):
-                pages = [page]
-                if existing.rstrip("/") != page["url"].rstrip("/"):
-                    route_page = self.fetch(existing)
-                    if route_page and domain(route_page["url"]) == domain(page["url"]):
-                        pages.append(route_page)
-                return domain(page["url"]), pages, [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
+        if not existing.startswith(("http://", "https://")) or is_blocked(domain(existing)):
+            return "", [], [], "identity_unconfirmed"
+        page = self.fetch("https://" + domain(existing) + "/")
+        if not page:
+            page = self.render_public("https://" + domain(existing) + "/")
+        if not (page and official_home_matches(row, page, domain(existing))):
+            return "", [], [], "identity_unconfirmed"
+        pages = [page]
+        if existing.rstrip("/") != page["url"].rstrip("/"):
+            route_page = self.fetch(existing)
+            if route_page and domain(route_page["url"]) == domain(page["url"]):
+                pages.append(route_page)
+        return domain(page["url"]), pages, [{"url": page["url"], "basis": "tracker_and_current_site"}], "confirmed"
+
+    def resolve(self, row):
+        host, pages, evidence, identity = self.resolve_existing(row)
+        if host:
+            return host, pages, evidence, identity
         english, arabic = brand_tokens(row)
         english_name = str(row.get("Company_or_Office", "")).strip()
         arabic_name = str(row.get("Arabic_Name", "")).strip()
@@ -598,10 +603,53 @@ def select_rows(rows, dedupe):
     return selected, excluded
 
 
-def process(row, research, apis, dedupe, outscraper=None, maps_cache=None):
+def resolve_dataforseo(row, research):
+    """Use one bounded existing-credit SERP clue, then independently verify the employer root."""
+    from .discovery import dataforseo_existing_credit_search
+
+    company = re.sub(r"\([^)]*\)", "", str(row.get("Company_or_Office") or "")).strip()
+    arabic = str(row.get("Arabic_Name") or "").strip()
+    query = f'"{company}" Saudi Arabia official website' if company else f'"{arabic}" الموقع الرسمي السعودية'
+    results = dataforseo_existing_credit_search(query, limit=5)
+    evidence = []
+    seen = set()
+    for item in results:
+        url = str(item.get("url") or "").strip()
+        host = domain(url)
+        if not host or host in seen or is_blocked(host) or host in THIRD_PARTY_IDENTITY_DOMAINS:
+            continue
+        seen.add(host)
+        evidence.append({"url": url, "basis": "dataforseo_existing_credit_clue"})
+        page = research.fetch(url) or research.fetch("https://" + host + "/")
+        if not page:
+            page = research.render_public("https://" + host + "/")
+        if not (page and official_home_matches(row, page, host)):
+            continue
+        root = page if urlsplit(page["url"]).path in {"", "/"} else research.fetch("https://" + host + "/")
+        if not root:
+            root = research.render_public("https://" + host + "/")
+        if not (root and official_home_matches(row, root, host)):
+            continue
+        root["identity_confirmed"] = True
+        pages = [root]
+        if page["url"] != root["url"]:
+            pages.append(page)
+        return host, pages, evidence + [{"url": root["url"], "basis": "dataforseo_current_first_party_root_identity_match"}], "confirmed"
+    return "", [], evidence, "identity_unconfirmed"
+
+
+def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_dataforseo=False):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
               "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
-    host, pages, evidence, identity = research.resolve(row)
+    if use_dataforseo:
+        host, pages, evidence, identity = research.resolve_existing(row)
+        result["dataforseo_attempted"] = True
+        if not host:
+            host, pages, provider_evidence, identity = resolve_dataforseo(row, research)
+            evidence.extend(provider_evidence)
+    else:
+        host, pages, evidence, identity = research.resolve(row)
+        result["dataforseo_attempted"] = False
     if not host and os.environ.get("REGA_ENABLE_COMPANY_DOMAIN_LOOKUP") == "1" and result["priority"] in {"A", "B"}:
         lookup_name = re.sub(r"\([^)]*\)", "", row.get("Company_or_Office", "")).strip()
         candidate_host = apis.snov_company_domain(lookup_name)
@@ -804,6 +852,11 @@ def build_args(parser):
         action="store_true",
         help="Use existing Outscraper credit with zero reserve after strict v9 identity checks; never purchases/top-ups",
     )
+    parser.add_argument(
+        "--use-dataforseo-fallback",
+        action="store_true",
+        help="Use one bounded existing-credit DataForSEO official-site search per unresolved company; never purchases/top-ups",
+    )
     parser.add_argument("--max-runtime", type=int, default=21600)
     parser.add_argument("--company-timeout", type=int, default=150)
     parser.add_argument("--status", action="store_true")
@@ -837,6 +890,10 @@ def run(args):
             raise RuntimeError("OUTSCRAPER_API_KEY_missing_for_requested_fallback")
         outscraper = legacy.OutscraperClient(outscraper_key)
         outscraper_balance_before = legacy.balance(outscraper)
+    if args.use_dataforseo_fallback:
+        if not os.environ.get("DATAFORSEO_API_KEY", "").strip():
+            raise RuntimeError("DATAFORSEO_API_KEY_missing_for_requested_fallback")
+        os.environ["REGA_ALLOW_DATAFORSEO_EXISTING_CREDIT"] = "1"
     if args.use_all_available_provider_credit:
         apis.hunter_verification_reserve = 0.0
         apis.snov_verification_reserve = 0.0
@@ -891,6 +948,7 @@ def run(args):
     summary = {"status": "running", "started_at": now(), "universe": len(rows), "selected": len(selected),
                "excluded": len(excluded), "balances_before": balances,
                "outscraper_fallback": bool(outscraper), "outscraper_balance_before": outscraper_balance_before,
+               "dataforseo_fallback": bool(args.use_dataforseo_fallback),
                "sends": 0, "queue_writes": 0, "purchases": 0, "apply": args.apply,
                "run_processed": 0, "task_id": "t_73094078"}
     stopped = threading.Event()
@@ -915,6 +973,11 @@ def run(args):
                     args.use_outscraper_fallback
                     and not r.get("outscraper_attempted")
                     and r.get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "provider_research_incomplete"}
+                )
+                or (
+                    args.use_dataforseo_fallback
+                    and not r.get("dataforseo_attempted")
+                    and r.get("outcome") in {"identity_unconfirmed", "search_unavailable", "provider_research_incomplete", "domain_confirmed_no_route"}
                 )
             )
             for r in active)
@@ -959,6 +1022,11 @@ def run(args):
                         and not records[mid].get("outscraper_attempted")
                         and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "provider_research_incomplete"}
                     )
+                    or (
+                        args.use_dataforseo_fallback
+                        and not records[mid].get("dataforseo_attempted")
+                        and records[mid].get("outcome") in {"identity_unconfirmed", "search_unavailable", "provider_research_incomplete", "domain_confirmed_no_route"}
+                    )
                 )
                 if not retry_improved and records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:
                     continue
@@ -968,13 +1036,23 @@ def run(args):
             report()
             signal.alarm(args.company_timeout)
             try:
-                result = process(row, research, apis, dedupe, outscraper=outscraper, maps_cache=maps_cache)
+                result = process(
+                    row, research, apis, dedupe,
+                    outscraper=outscraper,
+                    maps_cache=maps_cache,
+                    use_dataforseo=args.use_dataforseo_fallback,
+                )
             except (Exception, CompanyDeadline) as exc:
                 result = {"master_id": mid, "company": row.get("Company_or_Office"), "outcome": "research_error",
                           "error_type": type(exc).__name__, "at": now()}
             finally:
                 signal.alarm(0)
-            if mid in records and not result.get("domain") and can_preserve_current_domain(records[mid]):
+            if (
+                mid in records
+                and not result.get("domain")
+                and not args.use_dataforseo_fallback
+                and can_preserve_current_domain(records[mid])
+            ):
                 # Preserve only evidence already established by the *current*
                 # discovery contract. A version upgrade exists specifically to
                 # revalidate older identity decisions, so a failed fresh check
@@ -998,7 +1076,7 @@ def run(args):
             result["tracker_write"] = write_result(legacy, result, args.apply)
             report()
             print(json.dumps({"master_id": mid, "outcome": result["outcome"], "processed": summary["run_processed"]}), flush=True)
-            if research.consecutive_errors >= 5 and outscraper is None:
+            if research.consecutive_errors >= 5 and outscraper is None and not args.use_dataforseo_fallback:
                 summary["status"] = "paused_search_unavailable"
                 break
             time.sleep(1)
