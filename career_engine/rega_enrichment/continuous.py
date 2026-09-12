@@ -548,6 +548,12 @@ def process(row, research, apis, dedupe, outscraper=None):
         except Exception as exc:
             candidate_host, maps_detail = "", {"basis": "outscraper_maps_error", "error_type": type(exc).__name__}
         result["outscraper_maps"] = maps_detail
+        maps_basis = str(maps_detail.get("basis") or "")
+        if not candidate_host:
+            if maps_detail.get("retryable") or maps_basis in {"outscraper_maps_error", "outscraper_maps_provider_failure"}:
+                identity = "provider_research_incomplete"
+            else:
+                identity = "identity_unconfirmed"
         if candidate_host and not is_blocked(candidate_host) and candidate_host not in THIRD_PARTY_IDENTITY_DOMAINS:
             candidate_page = research.fetch("https://" + candidate_host + "/")
             if not candidate_page:
