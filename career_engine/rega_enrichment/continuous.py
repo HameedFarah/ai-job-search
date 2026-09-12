@@ -525,7 +525,7 @@ def select_rows(rows, dedupe):
     return selected, excluded
 
 
-def process(row, research, apis, dedupe):
+def process(row, research, apis, dedupe, outscraper=None):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
               "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
     host, pages, evidence, identity = research.resolve(row)
@@ -540,6 +540,23 @@ def process(row, research, apis, dedupe):
             if candidate_page and official_home_matches(row, candidate_page, candidate_host):
                 host, pages, identity = candidate_host, [candidate_page], "confirmed"
                 evidence.append({"url": candidate_page["url"], "basis": "current_first_party_identity_match"})
+    result["outscraper_attempted"] = bool(outscraper)
+    if not host and outscraper is not None:
+        from runtime import rega_priority_scan as legacy
+        try:
+            candidate_host, maps_detail = legacy.maps_discover_domain(outscraper, row)
+        except Exception as exc:
+            candidate_host, maps_detail = "", {"basis": "outscraper_maps_error", "error_type": type(exc).__name__}
+        result["outscraper_maps"] = maps_detail
+        if candidate_host and not is_blocked(candidate_host) and candidate_host not in THIRD_PARTY_IDENTITY_DOMAINS:
+            candidate_page = research.fetch("https://" + candidate_host + "/")
+            if not candidate_page:
+                candidate_page = research.render_public("https://" + candidate_host + "/")
+            evidence.append({"url": "https://" + candidate_host + "/", "basis": "outscraper_maps_clue"})
+            if candidate_page and official_home_matches(row, candidate_page, candidate_host):
+                candidate_page["identity_confirmed"] = True
+                host, pages, identity = candidate_host, [candidate_page], "confirmed"
+                evidence.append({"url": candidate_page["url"], "basis": "outscraper_maps_current_first_party_root_identity_match"})
     result.update(domain=host, identity_status=identity, evidence=evidence)
     if not host:
         result["outcome"] = identity
@@ -552,6 +569,30 @@ def process(row, research, apis, dedupe):
         candidates.extend(apis.prospeo_contacts(host))
     if not any(contact_rank(c) <= 2 for c in candidates):
         candidates.extend(apis.snov_contacts(host))
+    if outscraper is not None and not any(contact_rank(c) <= 2 for c in candidates):
+        from runtime import rega_priority_scan as legacy
+        try:
+            outscraper_candidates = legacy.contact_candidates(outscraper, host)
+        except Exception:
+            outscraper_candidates = []
+        for candidate in outscraper_candidates:
+            source_pages = []
+            for source_url in candidate.get("source_urls") or []:
+                if domain(source_url) != host:
+                    continue
+                page = research.fetch(source_url)
+                if page and domain(page["url"]) == host:
+                    source_pages.append(page)
+            pages.extend(p for p in source_pages if p["url"] not in {x["url"] for x in pages})
+            candidates.append({
+                "email": candidate.get("email", ""),
+                "provider": "outscraper",
+                "title": "",
+                "name": "",
+                "source_urls": candidate.get("source_urls") or [],
+                "domain": host,
+                "kind": candidate.get("kind", ""),
+            })
     unique = {}
     for c in sorted(candidates, key=contact_rank):
         email = str(c.get("email", "")).lower().strip()
@@ -583,6 +624,14 @@ def process(row, research, apis, dedupe):
         # verification only, with its own persisted remaining-credit ceiling.
         if validation.get("status") == "UNKNOWN" and not validation.get("verification"):
             alternative = apis.verify(c["email"])
+            if alternative.get("status") != "UNKNOWN":
+                validation = alternative
+        if validation.get("status") == "UNKNOWN" and outscraper is not None:
+            from runtime import rega_priority_scan as legacy
+            try:
+                alternative = legacy.validate_one(outscraper, c["email"])
+            except Exception:
+                alternative = {"status": "UNKNOWN", "safe_to_send": False, "provider": "outscraper"}
             if alternative.get("status") != "UNKNOWN":
                 validation = alternative
         c["validation"] = validation
@@ -665,6 +714,11 @@ def build_args(parser):
         action="store_true",
         help="Use the full currently available provider balance; never purchases/top-ups credits",
     )
+    parser.add_argument(
+        "--use-outscraper-fallback",
+        action="store_true",
+        help="Use existing Outscraper credit with zero reserve after strict v9 identity checks; never purchases/top-ups",
+    )
     parser.add_argument("--max-runtime", type=int, default=21600)
     parser.add_argument("--company-timeout", type=int, default=150)
     parser.add_argument("--status", action="store_true")
@@ -690,6 +744,14 @@ def run(args):
     from runtime import rega_priority_scan as legacy
     from .contact_apis import ContactAPIs
     apis = ContactAPIs(root / "api-cache", {"hunter": args.hunter_cap, "prospeo": args.prospeo_cap, "snov": args.snov_cap})
+    outscraper = None
+    outscraper_balance_before = None
+    if args.use_outscraper_fallback:
+        outscraper_key = os.environ.get("OUTSCRAPER_API_KEY", "").strip()
+        if not outscraper_key:
+            raise RuntimeError("OUTSCRAPER_API_KEY_missing_for_requested_fallback")
+        outscraper = legacy.OutscraperClient(outscraper_key)
+        outscraper_balance_before = legacy.balance(outscraper)
     if args.use_all_available_provider_credit:
         apis.hunter_verification_reserve = 0.0
         apis.snov_verification_reserve = 0.0
@@ -741,8 +803,10 @@ def run(args):
     for mid, reason in excluded.items():
         records.setdefault(mid, {"master_id": mid, "outcome": reason, "at": now(), "excluded": True})
     summary = {"status": "running", "started_at": now(), "universe": len(rows), "selected": len(selected),
-               "excluded": len(excluded), "balances_before": balances, "sends": 0, "queue_writes": 0,
-               "purchases": 0, "apply": args.apply, "run_processed": 0, "task_id": "t_73094078"}
+               "excluded": len(excluded), "balances_before": balances,
+               "outscraper_fallback": bool(outscraper), "outscraper_balance_before": outscraper_balance_before,
+               "sends": 0, "queue_writes": 0, "purchases": 0, "apply": args.apply,
+               "run_processed": 0, "task_id": "t_73094078"}
     stopped = threading.Event()
     def heartbeat():
         while not stopped.wait(15):
@@ -760,6 +824,11 @@ def run(args):
                 or (
                     r.get("discovery_version", 1) < DISCOVERY_VERSION
                     and r.get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                )
+                or (
+                    args.use_outscraper_fallback
+                    and not r.get("outscraper_attempted")
+                    and r.get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "provider_research_incomplete"}
                 )
             )
             for r in active)
@@ -799,6 +868,11 @@ def run(args):
                         records[mid].get("discovery_version", 1) < DISCOVERY_VERSION
                         and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "portal_only"}
                     )
+                    or (
+                        args.use_outscraper_fallback
+                        and not records[mid].get("outscraper_attempted")
+                        and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "provider_research_incomplete"}
+                    )
                 )
                 if not retry_improved and records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:
                     continue
@@ -808,7 +882,7 @@ def run(args):
             report()
             signal.alarm(args.company_timeout)
             try:
-                result = process(row, research, apis, dedupe)
+                result = process(row, research, apis, dedupe, outscraper=outscraper)
             except (Exception, CompanyDeadline) as exc:
                 result = {"master_id": mid, "company": row.get("Company_or_Office"), "outcome": "research_error",
                           "error_type": type(exc).__name__, "at": now()}
@@ -845,6 +919,12 @@ def run(args):
         if summary["status"] == "running":
             summary["status"] = "batch_complete" if any(r["Master_ID"] not in records for r in selected) else "scope_processed"
         summary["balances_after"] = apis.account_balances()
+        if outscraper is not None:
+            try:
+                summary["outscraper_balance_after"] = legacy.balance(outscraper)
+            except Exception as exc:
+                summary["outscraper_balance_after"] = None
+                summary["outscraper_balance_error"] = type(exc).__name__
     except Exception as exc:
         summary.update(status="failed", error_type=type(exc).__name__)
         raise

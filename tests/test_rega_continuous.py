@@ -240,6 +240,58 @@ def test_search_snippet_official_url_clue_can_recover_root_domain(tmp_path):
     assert any(x["basis"] == "search_candidate_or_snippet_clue" for x in evidence)
 
 
+def test_outscraper_maps_clue_still_requires_current_root_identity(monkeypatch):
+    from career_engine.rega_enrichment.continuous import parse_page
+    from runtime import rega_priority_scan as legacy
+    row = {"Master_ID": "CE-1", "Company_or_Office": "Example Development", "Arabic_Name": "", "Region": "Riyadh"}
+    root = parse_page("<title>Example Development</title><h1>Example Development</h1><p>Saudi real estate development Riyadh info@example.sa</p>", "https://example.sa/")
+    research = Mock()
+    research.resolve.return_value = ("", [], [], "identity_unconfirmed")
+    research.fetch.return_value = root
+    research.render_public.return_value = None
+    research.routes.return_value = ([{"email": "info@example.sa", "provider": "first_party", "source_urls": ["https://example.sa/"], "title": ""}], [])
+    research.search.return_value = {"results": []}
+    apis = Mock()
+    apis.hunter_contacts.return_value = []
+    apis.prospeo_contacts.return_value = []
+    apis.snov_contacts.return_value = []
+    apis.verify_snov.return_value = {"status": "UNKNOWN"}
+    apis.verify.return_value = {"status": "UNKNOWN"}
+    apis.stats = {}
+    monkeypatch.setattr(legacy, "maps_discover_domain", lambda client, live_row: ("example.sa", {"basis": "test"}))
+    monkeypatch.setattr(legacy, "validate_one", lambda client, email: {"email": email, "status": "RECEIVING", "safe_to_send": True, "provider": "outscraper"})
+    result = process(row, research, apis, {"known_emails": set(), "permanent_bounces": set()}, outscraper=object())
+    assert result["identity_status"] == "confirmed"
+    assert result["domain"] == "example.sa"
+    assert result["selected"]["email"] == "info@example.sa"
+    assert result["outscraper_attempted"] is True
+
+
+def test_outscraper_contact_requires_first_party_source_before_selection(monkeypatch):
+    from career_engine.rega_enrichment.continuous import parse_page
+    from runtime import rega_priority_scan as legacy
+    row = {"Master_ID": "CE-1", "Company_or_Office": "Example Development"}
+    root = parse_page("<title>Example Development</title><h1>Example Development</h1><p>Saudi real estate development Riyadh</p>", "https://example.sa/")
+    contact = parse_page("<title>Contact</title><p>info@example.sa</p>", "https://example.sa/contact")
+    research = Mock()
+    research.resolve.return_value = ("example.sa", [root], [], "confirmed")
+    research.routes.return_value = ([], [])
+    research.fetch.side_effect = lambda url: contact if url == "https://example.sa/contact" else root
+    research.search.return_value = {"results": []}
+    apis = Mock()
+    apis.hunter_contacts.return_value = []
+    apis.prospeo_contacts.return_value = []
+    apis.snov_contacts.return_value = []
+    apis.verify_snov.return_value = {"status": "UNKNOWN"}
+    apis.verify.return_value = {"status": "UNKNOWN"}
+    apis.stats = {}
+    monkeypatch.setattr(legacy, "contact_candidates", lambda client, host: [{"email": "info@example.sa", "kind": "general", "source_urls": ["https://example.sa/contact"]}])
+    monkeypatch.setattr(legacy, "validate_one", lambda client, email: {"email": email, "status": "RECEIVING", "safe_to_send": True, "provider": "outscraper"})
+    result = process(row, research, apis, {"known_emails": set(), "permanent_bounces": set()}, outscraper=object())
+    assert result["selected"]["email"] == "info@example.sa"
+    assert result["selected"]["provider"] == "outscraper"
+
+
 def test_known_third_party_identity_domains_are_never_accepted(tmp_path):
     from career_engine.rega_enrichment.continuous import Research, THIRD_PARTY_IDENTITY_DOMAINS
     r = Research(tmp_path)
