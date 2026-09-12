@@ -124,6 +124,77 @@ def can_preserve_current_domain(record):
     )
 
 
+def _maps_query(row):
+    name = str(row.get("Company_or_Office") or "").split("(", 1)[0].strip()
+    location = str(row.get("Region") or "").strip()
+    return ", ".join(x for x in (name, location, "Saudi Arabia") if x)
+
+
+def _batch_maps_prefetch(root, selected, records, outscraper):
+    from .provider_clients import ProviderBudget
+    path = Path(root) / "outscraper-maps-v9.json"
+    cache = {"discovery_version": DISCOVERY_VERSION, "records": {}}
+    if path.exists():
+        try:
+            loaded = json.loads(path.read_text())
+            if int(loaded.get("discovery_version") or 0) == DISCOVERY_VERSION:
+                cache = loaded
+        except Exception:
+            pass
+    cached = cache.setdefault("records", {})
+    targets = []
+    for row in selected:
+        mid = str(row.get("Master_ID") or "").strip()
+        prior = records.get(mid) or {}
+        if mid and not prior.get("excluded") and not prior.get("outscraper_attempted") and mid not in cached and not str(row.get("Address_or_Website") or "").strip():
+            targets.append(row)
+    high = [r for r in targets if priority_band(career_value_score(r)) == "A"]
+    lower = [r for r in targets if priority_band(career_value_score(r)) != "A"]
+    for rows, limit in ((high, 3), (lower, 1)):
+        if not rows:
+            continue
+        queries = [_maps_query(r) for r in rows]
+        budget = ProviderBudget(allow_existing_credit=True, max_calls=1, max_domains=len(rows) * limit)
+        groups = outscraper.maps_businesses_batch(queries, budget, limit=limit)
+        if len(groups) != len(rows):
+            raise RuntimeError("outscraper_maps_batch_alignment_failed")
+        for row, query, group in zip(rows, queries, groups):
+            cached[row["Master_ID"]] = {"query": query, "limit": limit, "records": group, "at": now()}
+        save(path, cache)
+    return {mid: item.get("records") or [] for mid, item in cached.items()}
+
+
+def _resolve_prefetched_maps(row, research, provider_records):
+    retryable = False
+    evidence = []
+    checked = 0
+    for item in provider_records or []:
+        status = str(item.get("status") or "")
+        if status in {"failed", "auth_failed", "quota_required", "budget_exhausted", "missing_credential"}:
+            retryable = True
+            continue
+        if status != "candidate":
+            continue
+        meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        site = str(meta.get("site") or "").strip()
+        host = domain(site)
+        if not host or is_blocked(host) or host in THIRD_PARTY_IDENTITY_DOMAINS:
+            continue
+        checked += 1
+        evidence.append({"url": site, "basis": "outscraper_maps_batch_clue"})
+        page = research.fetch("https://" + host + "/")
+        if not page and site:
+            page = research.fetch(site)
+        if not page:
+            page = research.render_public("https://" + host + "/")
+        if page and official_home_matches(row, page, host):
+            page["identity_confirmed"] = True
+            detail = {"basis": "outscraper_maps_batch_current_first_party_root_identity_match", "candidate_count": len(provider_records or []), "websites_evaluated": checked, "retryable": False}
+            return host, [page], evidence, detail
+    detail = {"basis": "outscraper_maps_batch_provider_failure" if retryable else "outscraper_maps_batch_no_confirmed_domain", "candidate_count": len(provider_records or []), "websites_evaluated": checked, "retryable": retryable}
+    return "", [], evidence, detail
+
+
 def brand_tokens(row):
     # Legal forms are not brand identity; strip Arabic conjunctions only when
     # they prefix a known legal/sector word, never from the actual brand.
@@ -525,7 +596,7 @@ def select_rows(rows, dedupe):
     return selected, excluded
 
 
-def process(row, research, apis, dedupe, outscraper=None):
+def process(row, research, apis, dedupe, outscraper=None, maps_cache=None):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
               "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
     host, pages, evidence, identity = research.resolve(row)
@@ -543,21 +614,27 @@ def process(row, research, apis, dedupe, outscraper=None):
     result["outscraper_attempted"] = bool(outscraper)
     if not host and outscraper is not None:
         from runtime import rega_priority_scan as legacy
-        try:
-            candidate_host, maps_detail = legacy.maps_discover_domain(outscraper, row)
-        except Exception as exc:
-            candidate_host, maps_detail = "", {"basis": "outscraper_maps_error", "error_type": type(exc).__name__}
+        mid = str(row.get("Master_ID") or "")
+        if maps_cache is not None and mid in maps_cache:
+            candidate_host, candidate_pages, maps_evidence, maps_detail = _resolve_prefetched_maps(row, research, maps_cache[mid])
+            evidence.extend(maps_evidence)
+        else:
+            try:
+                candidate_host, maps_detail = legacy.maps_discover_domain(outscraper, row)
+            except Exception as exc:
+                candidate_host, maps_detail = "", {"basis": "outscraper_maps_error", "error_type": type(exc).__name__}
+            candidate_pages = []
         result["outscraper_maps"] = maps_detail
         maps_basis = str(maps_detail.get("basis") or "")
         if not candidate_host:
-            if maps_detail.get("retryable") or maps_basis in {"outscraper_maps_error", "outscraper_maps_provider_failure"}:
+            if maps_detail.get("retryable") or maps_basis in {"outscraper_maps_error", "outscraper_maps_provider_failure", "outscraper_maps_batch_provider_failure"}:
                 identity = "provider_research_incomplete"
             else:
                 identity = "identity_unconfirmed"
-        if candidate_host and not is_blocked(candidate_host) and candidate_host not in THIRD_PARTY_IDENTITY_DOMAINS:
-            candidate_page = research.fetch("https://" + candidate_host + "/")
-            if not candidate_page:
-                candidate_page = research.render_public("https://" + candidate_host + "/")
+        elif candidate_pages:
+            host, pages, identity = candidate_host, candidate_pages, "confirmed"
+        elif not is_blocked(candidate_host) and candidate_host not in THIRD_PARTY_IDENTITY_DOMAINS:
+            candidate_page = research.fetch("https://" + candidate_host + "/") or research.render_public("https://" + candidate_host + "/")
             evidence.append({"url": "https://" + candidate_host + "/", "basis": "outscraper_maps_clue"})
             if candidate_page and official_home_matches(row, candidate_page, candidate_host):
                 candidate_page["identity_confirmed"] = True
@@ -808,6 +885,7 @@ def run(args):
     records = json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
     for mid, reason in excluded.items():
         records.setdefault(mid, {"master_id": mid, "outcome": reason, "at": now(), "excluded": True})
+    maps_cache = _batch_maps_prefetch(root, selected, records, outscraper) if outscraper is not None else {}
     summary = {"status": "running", "started_at": now(), "universe": len(rows), "selected": len(selected),
                "excluded": len(excluded), "balances_before": balances,
                "outscraper_fallback": bool(outscraper), "outscraper_balance_before": outscraper_balance_before,
@@ -888,7 +966,7 @@ def run(args):
             report()
             signal.alarm(args.company_timeout)
             try:
-                result = process(row, research, apis, dedupe, outscraper=outscraper)
+                result = process(row, research, apis, dedupe, outscraper=outscraper, maps_cache=maps_cache)
             except (Exception, CompanyDeadline) as exc:
                 result = {"master_id": mid, "company": row.get("Company_or_Office"), "outcome": "research_error",
                           "error_type": type(exc).__name__, "at": now()}
