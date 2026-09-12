@@ -521,7 +521,7 @@ def select_rows(rows, dedupe):
             excluded[mid] = "existing_receiving_route"
         else:
             selected.append(row)
-    selected.sort(key=lambda r: (not bool(r.get("Address_or_Website")), -career_value_score(r), r["Master_ID"]))
+    selected.sort(key=lambda r: (-career_value_score(r), not bool(r.get("Address_or_Website")), r["Master_ID"]))
     return selected, excluded
 
 
