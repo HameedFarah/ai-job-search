@@ -193,7 +193,7 @@ class OutscraperClient(ProviderClient):
         if not budget.permit(billable=True,domains=bounded_limit*len(cleaned)):
             failure=_record(self.provider,source,"",status="budget_exhausted",cost_status="not_charged")
             return [[failure] for _ in cleaned]
-        params=[("query",q) for q in cleaned]+[("limit",bounded_limit),("async","false")]
+        params=[("query",q) for q in cleaned]+[("limit",bounded_limit),("region","SA"),("fields","query,name,site,full_address,phone,category,place_id"),("async","false")]
         request_url=source+"?"+urlencode(params)
         s,b=self._request("GET",request_url,{"X-API-KEY":self.key})
         if s!=200 or not isinstance(b,dict):

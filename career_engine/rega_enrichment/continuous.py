@@ -151,16 +151,18 @@ def _batch_maps_prefetch(root, selected, records, outscraper):
     high = [r for r in targets if priority_band(career_value_score(r)) == "A"]
     lower = [r for r in targets if priority_band(career_value_score(r)) != "A"]
     for rows, limit in ((high, 3), (lower, 1)):
-        if not rows:
-            continue
-        queries = [_maps_query(r) for r in rows]
-        budget = ProviderBudget(allow_existing_credit=True, max_calls=1, max_domains=len(rows) * limit)
-        groups = outscraper.maps_businesses_batch(queries, budget, limit=limit)
-        if len(groups) != len(rows):
-            raise RuntimeError("outscraper_maps_batch_alignment_failed")
-        for row, query, group in zip(rows, queries, groups):
-            cached[row["Master_ID"]] = {"query": query, "limit": limit, "records": group, "at": now()}
-        save(path, cache)
+        for start in range(0, len(rows), 25):
+            batch = rows[start:start + 25]
+            if not batch:
+                continue
+            queries = [_maps_query(r) for r in batch]
+            budget = ProviderBudget(allow_existing_credit=True, max_calls=1, max_domains=len(batch) * limit)
+            groups = outscraper.maps_businesses_batch(queries, budget, limit=limit)
+            if len(groups) != len(batch):
+                raise RuntimeError("outscraper_maps_batch_alignment_failed")
+            for row, query, group in zip(batch, queries, groups):
+                cached[row["Master_ID"]] = {"query": query, "limit": limit, "records": group, "at": now()}
+            save(path, cache)
     return {mid: item.get("records") or [] for mid, item in cached.items()}
 
 
