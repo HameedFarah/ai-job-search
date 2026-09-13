@@ -9,6 +9,7 @@ from career_engine.rega_enrichment.continuous import (
     official_home_matches,
     can_preserve_current_domain,
     resolve_dataforseo,
+    authoritative_domain_evidence,
     DISCOVERY_VERSION,
 )
 
@@ -350,6 +351,43 @@ def test_process_dataforseo_mode_skips_exhausted_free_search(monkeypatch):
     assert result["dataforseo_attempted"] is True
     assert result["domain"] == "example.sa"
     assert result["selected"]["email"] == "info@example.sa"
+
+
+def test_authoritative_domain_marker_requires_exact_tracker_domain_and_safe_source():
+    same_domain = {
+        "Address_or_Website": "https://example.sa/careers",
+        "Notes": 'REGA_AUTH_DOMAIN_20260913 {"domain":"example.sa","source_url":"https://example.sa/about","basis":"first_party"}',
+    }
+    assert authoritative_domain_evidence(same_domain)["domain"] == "example.sa"
+    authority = {
+        "Address_or_Website": "https://subsidiary.sa/",
+        "Notes": 'REGA_AUTH_DOMAIN_20260913 {"domain":"subsidiary.sa","source_url":"https://www.pif.gov.sa/portfolio/subsidiary","basis":"authority"}',
+    }
+    assert authoritative_domain_evidence(authority)["domain"] == "subsidiary.sa"
+    mismatch = dict(same_domain, Address_or_Website="https://other.sa/")
+    assert authoritative_domain_evidence(mismatch) is None
+    blocked = {
+        "Address_or_Website": "https://propertyfinder.sa/",
+        "Notes": 'REGA_AUTH_DOMAIN_20260913 {"domain":"propertyfinder.sa","source_url":"https://propertyfinder.sa/about","basis":"first_party"}',
+    }
+    assert authoritative_domain_evidence(blocked) is None
+
+
+def test_resolve_existing_accepts_authoritative_marker_without_loosening_brand_match(tmp_path):
+    from career_engine.rega_enrichment.continuous import Research
+    row = {
+        "Company_or_Office": "Registry Legal Name That Differs From Brand",
+        "Address_or_Website": "https://brand.sa/careers",
+        "Notes": 'REGA_AUTH_DOMAIN_20260913 {"domain":"brand.sa","source_url":"https://brand.sa/about","basis":"first_party"}',
+    }
+    research = Research(tmp_path)
+    research.fetch = Mock(return_value=None)
+    research.render_public = Mock(return_value=None)
+    host, pages, evidence, status = research.resolve_existing(row)
+    assert host == "brand.sa"
+    assert pages == []
+    assert status == "confirmed"
+    assert evidence[0]["basis"] == "tracker_authoritative_domain_evidence"
 
 
 def test_known_third_party_identity_domains_are_never_accepted(tmp_path):

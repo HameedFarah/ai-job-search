@@ -92,8 +92,16 @@ def identity_matches(row, text, host):
     return False
 
 
-DISCOVERY_VERSION = 9
+DISCOVERY_VERSION = 10
 DATAFORSEO_DISCOVERY_VERSION = 2
+AUTH_DOMAIN_MARKER = "REGA_AUTH_DOMAIN_20260913 "
+AUTHORITATIVE_IDENTITY_SOURCES = {
+    "pif.gov.sa",
+    "saudiexchange.sa",
+    "cma.gov.sa",
+    "solutions.com.sa",
+    "rega.gov.sa",
+}
 
 # Domains proven to be third-party directories/platforms or different legal
 # entities during the Sep-12 live recovery audit. They can contain a target
@@ -121,6 +129,32 @@ THIRD_PARTY_IDENTITY_DOMAINS = {
     "pif.gov.sa",
     "nabdwdaif.com",
 }
+
+
+def authoritative_domain_evidence(row):
+    """Return a tracker domain only when append-only evidence authorizes it."""
+    notes = str(row.get("Notes") or "")
+    for part in reversed(notes.split(" | ")):
+        if not part.startswith(AUTH_DOMAIN_MARKER):
+            continue
+        try:
+            payload = json.loads(part[len(AUTH_DOMAIN_MARKER):])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        marker_domain = domain(payload.get("domain", ""))
+        source_url = str(payload.get("source_url") or "").strip()
+        source_domain = domain(source_url)
+        tracker_domain = domain(row.get("Address_or_Website", ""))
+        if not marker_domain or marker_domain != tracker_domain:
+            continue
+        if marker_domain in THIRD_PARTY_IDENTITY_DOMAINS or is_blocked(marker_domain):
+            continue
+        if source_domain != marker_domain and source_domain not in AUTHORITATIVE_IDENTITY_SOURCES:
+            continue
+        return {**payload, "domain": marker_domain, "source_url": source_url}
+    return None
 
 
 def can_preserve_current_domain(record):
@@ -426,10 +460,23 @@ class Research:
         existing = row.get("Address_or_Website", "").strip()
         if not existing.startswith(("http://", "https://")) or is_blocked(domain(existing)):
             return "", [], [], "identity_unconfirmed"
-        page = self.fetch("https://" + domain(existing) + "/")
+        host = domain(existing)
+        marker = authoritative_domain_evidence(row)
+        if marker:
+            pages = []
+            root_page = self.fetch("https://" + host + "/") or self.render_public("https://" + host + "/")
+            if root_page and domain(root_page["url"]) == host:
+                root_page["identity_confirmed"] = True
+                pages.append(root_page)
+            route_page = self.fetch(existing)
+            if route_page and domain(route_page["url"]) == host and route_page["url"] not in {p["url"] for p in pages}:
+                route_page["identity_confirmed"] = True
+                pages.append(route_page)
+            return host, pages, [{"url": marker["source_url"], "basis": "tracker_authoritative_domain_evidence"}], "confirmed"
+        page = self.fetch("https://" + host + "/")
         if not page:
-            page = self.render_public("https://" + domain(existing) + "/")
-        if not (page and official_home_matches(row, page, domain(existing))):
+            page = self.render_public("https://" + host + "/")
+        if not (page and official_home_matches(row, page, host)):
             return "", [], [], "identity_unconfirmed"
         pages = [page]
         if existing.rstrip("/") != page["url"].rstrip("/"):
