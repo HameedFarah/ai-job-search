@@ -113,6 +113,13 @@ THIRD_PARTY_IDENTITY_DOMAINS = {
     "facebook.com",
     "instagram.com",
     "youtube.com",
+    "wadhefa.com",
+    "sabbar.com",
+    "ajel.sa",
+    # PIF pages can corroborate a subsidiary's legal identity, but PIF's root
+    # is not the subsidiary's employer domain and must never become sendable.
+    "pif.gov.sa",
+    "nabdwdaif.com",
 }
 
 
