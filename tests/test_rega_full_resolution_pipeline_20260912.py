@@ -40,11 +40,6 @@ def print_phase(label: str, result: subprocess.CompletedProcess[str]) -> None:
         print(label + '_STDERR\n' + result.stderr[-12000:])
 
 
-def remaining() -> int:
-    summary = json.loads((STATE / 'summary.json').read_text())
-    return int(summary.get('research_remaining', 0) or 0)
-
-
 def test_finish_free_then_identity_then_strict_outscraper_resolution():
     # Phase 1: exhaust the already-configured contact providers and allow the
     # existing Snov company-name -> domain clue path for high-value A/B rows.
@@ -57,31 +52,32 @@ def test_finish_free_then_identity_then_strict_outscraper_resolution():
     # Phase 2: identity recovery. DataForSEO is already implemented by the
     # resolver as an existing-credit clue only; every candidate still has to
     # pass the same current first-party identity checks before it is accepted.
-    if remaining() > 0:
-        identity = run_phase(
-            DATAFORSEO_MANIFEST,
-            [
-                '--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0',
-                '--use-dataforseo-fallback',
-            ],
-        )
-        print_phase('DATAFORSEO_PHASE', identity)
-        assert identity.returncode == 0
+    # Run this phase unconditionally: research_remaining is deliberately scoped
+    # to the active resolver mode and is not a universal unresolved-company
+    # count, so it must not be used to suppress a later fallback phase.
+    identity = run_phase(
+        DATAFORSEO_MANIFEST,
+        [
+            '--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0',
+            '--use-dataforseo-fallback',
+        ],
+    )
+    print_phase('DATAFORSEO_PHASE', identity)
+    assert identity.returncode == 0
 
     # Phase 3: strict final fallback for still-unresolved identities, held
-    # candidates and confirmed domains without a usable route. This phase may
-    # consume existing Outscraper credit but the enrichment command itself is
-    # still forbidden from sending mail or writing the live send queue.
-    if remaining() > 0:
-        paid = run_phase(
-            OUTSCRAPER_MANIFEST,
-            [
-                '--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0',
-                '--use-outscraper-fallback',
-            ],
-        )
-        print_phase('OUTSCRAPER_PHASE', paid)
-        assert paid.returncode == 0
+    # candidates and confirmed domains without a usable route. Run it
+    # unconditionally for the same reason: the phase itself decides which
+    # checkpointed outcomes are eligible for an Outscraper retry.
+    paid = run_phase(
+        OUTSCRAPER_MANIFEST,
+        [
+            '--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0',
+            '--use-outscraper-fallback',
+        ],
+    )
+    print_phase('OUTSCRAPER_PHASE', paid)
+    assert paid.returncode == 0
 
     summary = json.loads((STATE / 'summary.json').read_text())
     assert summary['status'] == 'scope_processed'
