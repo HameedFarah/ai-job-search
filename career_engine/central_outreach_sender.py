@@ -559,7 +559,7 @@ def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list
     }
     hold_reasons = {
         "jordan_held", "company_excluded", "canonical_hard_block",
-        "unresolved_company_identity",
+        "unresolved_company_identity", "quarantined_domain",
     }
     for row in skips:
         reason = str(row.get("skip_reason") or "")
