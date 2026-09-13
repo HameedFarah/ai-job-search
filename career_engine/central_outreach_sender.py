@@ -39,7 +39,6 @@ from career_engine.outreach_reconciler import (
     _read_queue_sheet,
     gmail_access_token_for_context,
     normalise_row,
-    persist_new_row_defaults,
     verify_both_accounts_available,
     write_queue_fields,
     write_queue_rows_fields,
@@ -370,9 +369,27 @@ def _last_send_from_ledger(reconciler: QueueReconciler) -> datetime | None:
 
 
 def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
+    """Persist missing machine-managed defaults in bounded Sheet batches."""
+    updates: list[tuple[int, dict[str, str]]] = []
     for raw in raw_rows:
         normalised = normalise_row(raw)
-        persist_new_row_defaults(sheet_token, raw, normalised)
+        if not normalised.get("email"):
+            continue
+        fields: dict[str, str] = {}
+        if not str(raw.get("Queue_ID") or "").strip():
+            fields["Queue_ID"] = str(normalised["queue_id"])
+        if not str(raw.get("Priority") or "").strip():
+            fields["Priority"] = str(normalised["priority"])
+        if not str(raw.get("Status") or "").strip():
+            fields["Status"] = str(normalised["status"])
+        if not str(raw.get("Added_At") or "").strip():
+            fields["Added_At"] = str(normalised["added_at"])
+        if normalised.get("normalise_error"):
+            fields["Status"] = "HOLD"
+            fields["Last_Error"] = str(normalised["normalise_error"])
+        if fields:
+            updates.append((int(normalised["row_number"]), fields))
+    write_queue_rows_fields(sheet_token, updates)
 
 
 def _load_rega_stage_journal(path: Path = DEFAULT_REGA_STAGE_JOURNAL) -> dict[str, dict[str, str]]:

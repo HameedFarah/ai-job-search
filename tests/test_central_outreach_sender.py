@@ -147,6 +147,30 @@ def test_reconciliation_exclusion_outcomes_are_persisted(monkeypatch):
     ]
 
 
+def test_persist_defaults_batches_only_rows_that_need_updates(monkeypatch):
+    writes = []
+    rows = [
+        {
+            "__row_number": "2", "Queue_ID": "", "Email": "a@example.sa",
+            "Company_or_Office": "A", "Priority": "", "Status": "", "Added_At": "",
+        },
+        {
+            "__row_number": "3", "Queue_ID": "Q3", "Email": "b@example.sa",
+            "Company_or_Office": "B", "Priority": "NORMAL", "Status": "PENDING",
+            "Added_At": "2026-09-13T00:00:00Z",
+        },
+    ]
+    monkeypatch.setattr(
+        sender,
+        "write_queue_rows_fields",
+        lambda token, updates: writes.extend((row, dict(fields)) for row, fields in updates),
+    )
+    sender._persist_defaults("token", rows)
+    assert len(writes) == 1
+    assert writes[0][0] == 2
+    assert set(writes[0][1]) >= {"Queue_ID", "Priority", "Status", "Added_At"}
+
+
 def test_master_success_uses_sent_pending_dsn(monkeypatch):
     from types import SimpleNamespace
 
