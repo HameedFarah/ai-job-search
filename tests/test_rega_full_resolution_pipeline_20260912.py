@@ -10,10 +10,16 @@ WORKTREE = Path('/home/hameedo/projects/ai-job-search/.worktrees/rega-api-enrich
 STATE = Path('/home/hameedo/projects/ai-job-search/runtime/acceptance/rega-api-enrichment-20260911')
 RUNTIME_EXEC = Path('/home/hameedo/vps-infra-dev/scripts/infisical-vps/runtime_exec.py')
 CONTACT_MANIFEST = WORKTREE / 'projects/job-automation/config/rega-contact-runtime-manifest.json'
+DATAFORSEO_MANIFEST = WORKTREE / 'runtime/providers/dataforseo.json'
 OUTSCRAPER_MANIFEST = WORKTREE / 'runtime/providers/outscraper.json'
 
 
-def run_phase(manifest: Path, extra: list[str]) -> subprocess.CompletedProcess[str]:
+def run_phase(
+    manifest: Path,
+    extra: list[str],
+    *,
+    enable_company_domain_lookup: bool = False,
+) -> subprocess.CompletedProcess[str]:
     cmd = [
         sys.executable, str(RUNTIME_EXEC), '--manifest', str(manifest), '--',
         sys.executable, str(WORKTREE / 'career-engine'), 'rega-enrich',
@@ -23,24 +29,59 @@ def run_phase(manifest: Path, extra: list[str]) -> subprocess.CompletedProcess[s
         *extra,
     ]
     env = os.environ.copy()
-    env['REGA_ENABLE_COMPANY_DOMAIN_LOOKUP'] = '0'
+    env['REGA_ENABLE_COMPANY_DOMAIN_LOOKUP'] = '1' if enable_company_domain_lookup else '0'
     return subprocess.run(cmd, cwd=WORKTREE, env=env, text=True, capture_output=True, timeout=21630)
 
 
-def test_finish_free_then_strict_outscraper_resolution():
-    free = run_phase(CONTACT_MANIFEST, [])
-    if free.stdout:
-        print('FREE_PHASE\n' + free.stdout[-20000:])
-    if free.stderr:
-        print('FREE_STDERR\n' + free.stderr[-12000:])
+def print_phase(label: str, result: subprocess.CompletedProcess[str]) -> None:
+    if result.stdout:
+        print(label + '\n' + result.stdout[-20000:])
+    if result.stderr:
+        print(label + '_STDERR\n' + result.stderr[-12000:])
+
+
+def remaining() -> int:
+    summary = json.loads((STATE / 'summary.json').read_text())
+    return int(summary.get('research_remaining', 0) or 0)
+
+
+def test_finish_free_then_identity_then_strict_outscraper_resolution():
+    # Phase 1: exhaust the already-configured contact providers and allow the
+    # existing Snov company-name -> domain clue path for high-value A/B rows.
+    # The clue remains fail-closed: the first-party homepage must independently
+    # match the REGA company before the domain is accepted.
+    free = run_phase(CONTACT_MANIFEST, [], enable_company_domain_lookup=True)
+    print_phase('FREE_PHASE', free)
     assert free.returncode == 0
 
-    paid = run_phase(OUTSCRAPER_MANIFEST, ['--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0', '--use-outscraper-fallback'])
-    if paid.stdout:
-        print('OUTSCRAPER_PHASE\n' + paid.stdout[-20000:])
-    if paid.stderr:
-        print('OUTSCRAPER_STDERR\n' + paid.stderr[-12000:])
-    assert paid.returncode == 0
+    # Phase 2: identity recovery. DataForSEO is already implemented by the
+    # resolver as an existing-credit clue only; every candidate still has to
+    # pass the same current first-party identity checks before it is accepted.
+    if remaining() > 0:
+        identity = run_phase(
+            DATAFORSEO_MANIFEST,
+            [
+                '--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0',
+                '--use-dataforseo-fallback',
+            ],
+        )
+        print_phase('DATAFORSEO_PHASE', identity)
+        assert identity.returncode == 0
+
+    # Phase 3: strict final fallback for still-unresolved identities, held
+    # candidates and confirmed domains without a usable route. This phase may
+    # consume existing Outscraper credit but the enrichment command itself is
+    # still forbidden from sending mail or writing the live send queue.
+    if remaining() > 0:
+        paid = run_phase(
+            OUTSCRAPER_MANIFEST,
+            [
+                '--hunter-cap', '0', '--prospeo-cap', '0', '--snov-cap', '0',
+                '--use-outscraper-fallback',
+            ],
+        )
+        print_phase('OUTSCRAPER_PHASE', paid)
+        assert paid.returncode == 0
 
     summary = json.loads((STATE / 'summary.json').read_text())
     assert summary['status'] == 'scope_processed'
@@ -48,4 +89,5 @@ def test_finish_free_then_strict_outscraper_resolution():
     for bad in ('research_error', 'search_unavailable', 'provider_research_incomplete'):
         assert summary.get('outcomes', {}).get(bad, 0) == 0
     assert summary.get('sends', 0) == 0
+    assert summary.get('queue_writes', 0) == 0
     assert summary.get('purchases', 0) == 0
