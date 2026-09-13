@@ -922,6 +922,11 @@ def build_args(parser):
     parser.add_argument("--company-timeout", type=int, default=150)
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--pilot", action="store_true", help="Start with six known-domain and six unresolved-identity records")
+    parser.add_argument(
+        "--authoritative-only",
+        action="store_true",
+        help="Process only tracker rows carrying current authoritative-domain evidence; skips unresolved-domain search",
+    )
 
 
 def run(args):
@@ -993,6 +998,8 @@ def run(args):
     external_auto = [r for r in auto_rows if not (r.get("Source") == "REGA_API_RECOVERY_20260912" and r.get("Status") == "HOLD")]
     dedupe = legacy.build_dedupe_state(master, queue, external_auto, sent_rows)
     selected, excluded = select_rows(rows, dedupe)
+    if args.authoritative_only:
+        selected = [row for row in selected if authoritative_domain_evidence(row)]
     if args.pilot:
         known = [r for r in selected if r.get("Address_or_Website")][:6]
         unknown = [r for r in selected if not r.get("Address_or_Website")][:6]
