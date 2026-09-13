@@ -134,7 +134,7 @@ def test_reconciliation_exclusion_outcomes_are_persisted(monkeypatch):
     from types import SimpleNamespace
 
     writes = []
-    monkeypatch.setattr(sender, "write_queue_fields", lambda token, row, updates: writes.append((row, dict(updates))))
+    monkeypatch.setattr(sender, "write_queue_rows_fields", lambda token, rows: writes.extend((row, dict(updates)) for row, updates in rows))
     reconciler = SimpleNamespace(sent_by_email={}, ledger=None)
     sender._mark_gmail_skips("token", reconciler, [
         {"row_number": 2, "status": "PENDING", "email": "a@example.com", "skip_reason": "known_contacted_company_alias"},

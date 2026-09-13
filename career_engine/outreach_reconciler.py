@@ -532,28 +532,34 @@ def normalise_row(row: dict[str, str]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def write_queue_rows_fields(token: str, rows: list[tuple[int, dict[str, str]]]) -> None:
+    """Write named Auto Send Queue fields for existing rows in bounded batches."""
+    data: list[dict[str, Any]] = []
+    for row_number, updates in rows:
+        if row_number < 2:
+            raise RuntimeError("invalid Auto Send Queue row number")
+        for field, value in updates.items():
+            if field not in QUEUE_COL:
+                raise RuntimeError(f"unknown Auto Send Queue field: {field}")
+            col = QUEUE_COL[field]
+            data.append({
+                "range": f"'{QUEUE_SHEET_NAME}'!{col}{row_number}",
+                "majorDimension": "ROWS",
+                "values": [[str(value)]],
+            })
+    for offset in range(0, len(data), 200):
+        chunk = data[offset:offset + 200]
+        sheets_request(
+            token,
+            "POST",
+            f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values:batchUpdate",
+            {"valueInputOption": "RAW", "data": chunk},
+        )
+
+
 def write_queue_fields(token: str, row_number: int, updates: dict[str, str]) -> None:
     """Write only named Auto Send Queue fields for one existing row."""
-    if row_number < 2:
-        raise RuntimeError("invalid Auto Send Queue row number")
-    data = []
-    for field, value in updates.items():
-        if field not in QUEUE_COL:
-            raise RuntimeError(f"unknown Auto Send Queue field: {field}")
-        col = QUEUE_COL[field]
-        data.append({
-            "range": f"'{QUEUE_SHEET_NAME}'!{col}{row_number}",
-            "majorDimension": "ROWS",
-            "values": [[str(value)]],
-        })
-    if not data:
-        return
-    sheets_request(
-        token,
-        "POST",
-        f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values:batchUpdate",
-        {"valueInputOption": "RAW", "data": data},
-    )
+    write_queue_rows_fields(token, [(row_number, updates)])
 
 
 def persist_new_row_defaults(token: str, raw: dict[str, str], normalised: dict[str, Any]) -> dict[str, str]:

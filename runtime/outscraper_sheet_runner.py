@@ -71,7 +71,7 @@ def sheets_request(token: str, method: str, url: str, payload: dict | None = Non
         raise RuntimeError("invalid Google auth")
     data = json.dumps(payload).encode() if payload is not None else None
     last_exc: BaseException | None = None
-    for attempt in range(3):
+    for attempt in range(6):
         request = urllib.request.Request(
             url,
             data=data,
@@ -96,11 +96,15 @@ def sheets_request(token: str, method: str, url: str, payload: dict | None = Non
                 active_token = refreshed
                 _REFRESHED_GOOGLE_TOKEN = refreshed
                 continue
-            if exc.code not in {429, 500, 502, 503, 504} or attempt == 2:
+            if exc.code not in {429, 500, 502, 503, 504} or attempt == 5:
                 raise RuntimeError("Google Sheets request failed closed") from exc
+            if exc.code == 429:
+                # Sheets write quota is per-minute. Short retries only repeat
+                # the same quota failure, so wait for the next quota window.
+                time.sleep(65)
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             last_exc = exc
-            if attempt == 2:
+            if attempt == 5:
                 raise RuntimeError("Google Sheets request failed closed") from exc
         time.sleep(0.5 * (attempt + 1))
     raise RuntimeError("Google Sheets request failed closed") from last_exc

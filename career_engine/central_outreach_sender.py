@@ -42,6 +42,7 @@ from career_engine.outreach_reconciler import (
     persist_new_row_defaults,
     verify_both_accounts_available,
     write_queue_fields,
+    write_queue_rows_fields,
 )
 from runtime.outreach_campaign_controller import build_raw, _verify_message_payload
 from runtime.outscraper_sheet_runner import (
@@ -500,7 +501,7 @@ def _release_due_verified_rega_holds(
     """
     current = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
     current_records = _current_rega_records()
-    released = 0
+    updates: list[tuple[int, dict[str, str]]] = []
     for raw in raw_rows:
         if str(raw.get("Source") or "") != REGA_RECOVERY_SOURCE:
             continue
@@ -543,12 +544,12 @@ def _release_due_verified_rega_holds(
         )
         if not verified:
             continue
-        write_queue_fields(sheet_token, int(raw["__row_number"]), {
+        updates.append((int(raw["__row_number"]), {
             "Status": "PENDING",
             "Last_Error": "",
-        })
-        released += 1
-    return released
+        }))
+    write_queue_rows_fields(sheet_token, updates)
+    return len(updates)
 
 
 def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list[dict[str, Any]]) -> None:
@@ -561,6 +562,7 @@ def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list
         "jordan_held", "company_excluded", "canonical_hard_block",
         "unresolved_company_identity", "quarantined_domain",
     }
+    updates: list[tuple[int, dict[str, str]]] = []
     for row in skips:
         reason = str(row.get("skip_reason") or "")
         email = str(row.get("email") or "").lower()
@@ -588,10 +590,11 @@ def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list
             status = "HOLD"
         else:
             continue
-        write_queue_fields(sheet_token, int(row["row_number"]), {
+        updates.append((int(row["row_number"]), {
             "Status": status,
             "Last_Error": reason,
-        })
+        }))
+    write_queue_rows_fields(sheet_token, updates)
 
 
 def _update_master_after_send(reconciler: QueueReconciler, email: str, message_id: str) -> None:
