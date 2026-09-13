@@ -67,6 +67,7 @@ DEFAULT_LEDGER = REPO_ROOT / "runtime/acceptance/auto-send-queue/ledger.json"
 DEFAULT_STATUS = REPO_ROOT / "runtime/acceptance/auto-send-queue/status.json"
 DEFAULT_LOCK = REPO_ROOT / "runtime/acceptance/auto-send-queue/sender.lock"
 DEFAULT_READY_CACHE = REPO_ROOT / "runtime/acceptance/auto-send-queue/ready-queue.json"
+DEFAULT_REGA_STAGE_JOURNAL = REPO_ROOT / "runtime/acceptance/auto-send-queue/rega-stage-journal.json"
 READY_CACHE_SCHEMA = "auto-send-ready-queue/1"
 READY_REFRESH_SECONDS = 30 * 60
 POLL_SECONDS = 60
@@ -374,9 +375,24 @@ def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
         persist_new_row_defaults(sheet_token, raw, normalised)
 
 
+def _load_rega_stage_journal(path: Path = DEFAULT_REGA_STAGE_JOURNAL) -> dict[str, dict[str, str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    rows = payload.get("queue_ids") if isinstance(payload, dict) else None
+    return {str(k): dict(v) for k, v in rows.items() if isinstance(v, dict)} if isinstance(rows, dict) else {}
+
+
+def _save_rega_stage_journal(rows: dict[str, dict[str, str]], path: Path = DEFAULT_REGA_STAGE_JOURNAL) -> None:
+    _atomic_status(path, {"schema": "rega-stage-journal/1", "updated_at": utc_now(), "queue_ids": rows})
+
+
 def _stage_latest_verified_rega_records(
     sheet_token: str,
     raw_rows: list[dict[str, str]],
+    *,
+    journal_path: Path = DEFAULT_REGA_STAGE_JOURNAL,
 ) -> int:
     """Admit newly verified REGA checkpoint routes into the existing queue.
 
@@ -398,7 +414,25 @@ def _stage_latest_verified_rega_records(
         for row in raw_rows
         if str(row.get("Email") or "").strip()
     }
+    existing_qids = {
+        str(row.get("Queue_ID") or "").strip()
+        for row in raw_rows
+        if str(row.get("Queue_ID") or "").strip()
+    }
+    journal = _load_rega_stage_journal(journal_path)
+    journal_changed = False
+    for row in raw_rows:
+        qid = str(row.get("Queue_ID") or "").strip()
+        if not qid.startswith("OASQ-REGA-API-") or qid in journal:
+            continue
+        journal[qid] = {
+            "email": str(row.get("Email") or "").strip().lower(),
+            "state": "observed_live_queue",
+            "at": utc_now(),
+        }
+        journal_changed = True
     additions: list[list[str]] = []
+    planned: list[tuple[str, str, str]] = []
     for record in records.values():
         if not isinstance(record, dict) or record.get("excluded"):
             continue
@@ -427,6 +461,8 @@ def _stage_latest_verified_rega_records(
             continue
 
         queue_id = "OASQ-REGA-API-" + hashlib.sha256(email.encode()).hexdigest()[:12].upper()
+        if queue_id in existing_qids or queue_id in journal:
+            continue
         evidence = json.dumps({
             "source": REGA_RECOVERY_SOURCE,
             "verified": True,
@@ -452,10 +488,28 @@ def _stage_latest_verified_rega_records(
             evidence,
             "",
         ])
+        planned.append((queue_id, email, master_id))
         existing.add(email)
+        existing_qids.add(queue_id)
 
     if not additions:
+        if journal_changed:
+            _save_rega_stage_journal(journal, journal_path)
         return 0
+
+    # Persist append intent before the remote mutation. If the HTTP response is
+    # lost after Sheets commits, a restart must fail closed instead of appending
+    # the same deterministic Queue_ID again.
+    intent_at = utc_now()
+    for queue_id, email, master_id in planned:
+        journal[queue_id] = {
+            "email": email,
+            "master_id": master_id,
+            "state": "append_intent",
+            "at": intent_at,
+        }
+    _save_rega_stage_journal(journal, journal_path)
+
     encoded = quote("Auto Send Queue!A:L", safe="!:")
     sheets_request(
         sheet_token,
@@ -463,6 +517,15 @@ def _stage_latest_verified_rega_records(
         f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{encoded}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
         {"values": additions},
     )
+    staged_at = utc_now()
+    for queue_id, email, master_id in planned:
+        journal[queue_id] = {
+            "email": email,
+            "master_id": master_id,
+            "state": "append_confirmed",
+            "at": staged_at,
+        }
+    _save_rega_stage_journal(journal, journal_path)
     return len(additions)
 
 
