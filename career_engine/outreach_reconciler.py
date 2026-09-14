@@ -532,8 +532,16 @@ def normalise_row(row: dict[str, str]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+QUEUE_WRITE_BATCH_CELLS = 25
+
+
 def write_queue_rows_fields(token: str, rows: list[tuple[int, dict[str, str]]]) -> None:
-    """Write named Auto Send Queue fields for existing rows in bounded batches."""
+    """Write named Auto Send Queue fields in small bounded batches.
+
+    Keep this deliberately conservative: Career Engine has previously hit Google
+    Sheets quota/metadata limits during large mutations. Never expand this into
+    an unbounded write; each request is capped and independently retryable.
+    """
     data: list[dict[str, Any]] = []
     for row_number, updates in rows:
         if row_number < 2:
@@ -547,8 +555,8 @@ def write_queue_rows_fields(token: str, rows: list[tuple[int, dict[str, str]]]) 
                 "majorDimension": "ROWS",
                 "values": [[str(value)]],
             })
-    for offset in range(0, len(data), 200):
-        chunk = data[offset:offset + 200]
+    for offset in range(0, len(data), QUEUE_WRITE_BATCH_CELLS):
+        chunk = data[offset:offset + QUEUE_WRITE_BATCH_CELLS]
         sheets_request(
             token,
             "POST",
