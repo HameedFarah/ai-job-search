@@ -326,6 +326,14 @@ def _is_account_level_error(exc: Exception) -> bool:
     ))
 
 
+def _is_infrastructure_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in (
+        "request failed closed", "timeout", "timed out", "temporarily unavailable",
+        "connection reset", "connection refused", "urlerror", "service unavailable",
+    ))
+
+
 def _is_permanent_recipient_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return any(marker in text for marker in (
@@ -1136,6 +1144,16 @@ def run(
                 })
                 _status(status_path, "account-level-stop", error_type=type(exc).__name__)
                 return ACCOUNT_LEVEL_STOP_EXIT_CODE
+
+            # Infrastructure/API failures are never recipient failures. Leave the
+            # row in SENDING so the next restart performs Gmail dedupe first;
+            # this is restart-safe even when the send outcome was ambiguous.
+            if _is_infrastructure_error(exc):
+                _status(
+                    status_path, "infrastructure-stop", queue_id=queue_id, recipient=email,
+                    error_type=type(exc).__name__, error=str(exc)[:500],
+                )
+                return 1
 
             # Synthetic guard violation — permanent reject, never retry.
             if _is_synthetic_guard_error(exc):

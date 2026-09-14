@@ -8,6 +8,7 @@ remote; credentials and response bodies are never printed.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import subprocess
@@ -32,6 +33,8 @@ MAX_WRITE_ROWS = 25
 REQUIRED = ("Email", "Outscraper_Status", "Outscraper_Verification", "Outscraper_Replacement_Email", "Outscraper_Evidence", "Outscraper_Checked_At")
 SHEET_COLUMNS = ("O", "S", "T", "U", "V", "W")
 _REFRESHED_GOOGLE_TOKEN = ""
+SHEETS_MUTATION_LOCK = Path.home() / ".cache" / "career-google-sheets-write.lock"
+SHEETS_MIN_MUTATION_INTERVAL_SECONDS = 1.5
 EXPECTED_HEADERS = (
     "Queue_ID", "Email", "Company_or_Office", "Source_Dataset", "Source_Record_ID",
     "Source_Verification", "Source_Date_or_Freshness", "Send_Eligibility", "Gmail_Draft_ID",
@@ -64,6 +67,45 @@ def rclone_access_token(remote: str = "gdrive", runner: Callable[..., bytes] = s
         raise RuntimeError("unable to obtain Google auth from rclone") from exc
 
 
+def _api_label(url: str) -> str:
+    if "gmail.googleapis.com" in url:
+        return "Gmail API"
+    if "sheets.googleapis.com" in url:
+        return "Google Sheets API"
+    return "Google API"
+
+
+def _acquire_sheet_mutation_lock(method: str, url: str):
+    if method.upper() not in {"POST", "PUT", "PATCH", "DELETE"} or "sheets.googleapis.com" not in url:
+        return None
+    SHEETS_MUTATION_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    handle = SHEETS_MUTATION_LOCK.open("a+", encoding="utf-8")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    handle.seek(0)
+    try:
+        last = float((handle.read() or "0").strip() or 0)
+    except ValueError:
+        last = 0.0
+    delay = SHEETS_MIN_MUTATION_INTERVAL_SECONDS - (time.time() - last)
+    if delay > 0:
+        time.sleep(delay)
+    return handle
+
+
+def _release_sheet_mutation_lock(handle) -> None:
+    if handle is None:
+        return
+    try:
+        handle.seek(0)
+        handle.truncate()
+        handle.write(str(time.time()))
+        handle.flush()
+        os.fsync(handle.fileno())
+    finally:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
 def sheets_request(token: str, method: str, url: str, payload: dict | None = None) -> dict:
     global _REFRESHED_GOOGLE_TOKEN
     active_token = _REFRESHED_GOOGLE_TOKEN or token
@@ -71,43 +113,55 @@ def sheets_request(token: str, method: str, url: str, payload: dict | None = Non
         raise RuntimeError("invalid Google auth")
     data = json.dumps(payload).encode() if payload is not None else None
     last_exc: BaseException | None = None
-    for attempt in range(6):
-        request = urllib.request.Request(
-            url,
-            data=data,
-            method=method,
-            headers={"Authorization": "Bearer " + active_token, "Content-Type": "application/json"},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                body = json.loads(response.read().decode("utf-8"))
-                if not isinstance(body, dict):
-                    raise RuntimeError("Google Sheets returned invalid JSON")
-                return body
-        except urllib.error.HTTPError as exc:
-            last_exc = exc
-            if exc.code == 401 and attempt < 2:
-                try:
-                    refreshed = rclone_access_token(os.environ.get("RCLONE_GDRIVE_REMOTE", "gdrive"))
-                except RuntimeError as refresh_exc:
-                    raise RuntimeError("Google Sheets auth refresh failed closed") from refresh_exc
-                if not refreshed or "access_token" in refreshed.lower():
-                    raise RuntimeError("Google Sheets auth refresh returned invalid auth")
-                active_token = refreshed
-                _REFRESHED_GOOGLE_TOKEN = refreshed
-                continue
-            if exc.code not in {429, 500, 502, 503, 504} or attempt == 5:
-                raise RuntimeError("Google Sheets request failed closed") from exc
-            if exc.code == 429:
-                # Sheets write quota is per-minute. Short retries only repeat
-                # the same quota failure, so wait for the next quota window.
-                time.sleep(65)
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            last_exc = exc
-            if attempt == 5:
-                raise RuntimeError("Google Sheets request failed closed") from exc
-        time.sleep(0.5 * (attempt + 1))
-    raise RuntimeError("Google Sheets request failed closed") from last_exc
+    api_label = _api_label(url)
+    is_sheets = "sheets.googleapis.com" in url
+    is_gmail = "gmail.googleapis.com" in url
+    lock_handle = _acquire_sheet_mutation_lock(method, url)
+    try:
+        for attempt in range(6):
+            request = urllib.request.Request(
+                url,
+                data=data,
+                method=method,
+                headers={"Authorization": "Bearer " + active_token, "Content-Type": "application/json"},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    body = json.loads(response.read().decode("utf-8"))
+                    if not isinstance(body, dict):
+                        raise RuntimeError(f"{api_label} returned invalid JSON")
+                    return body
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                if exc.code == 401 and not is_gmail and attempt < 2:
+                    try:
+                        refreshed = rclone_access_token(os.environ.get("RCLONE_GDRIVE_REMOTE", "gdrive"))
+                    except RuntimeError as refresh_exc:
+                        raise RuntimeError("Google Sheets API auth refresh failed closed (401)") from refresh_exc
+                    if not refreshed or "access_token" in refreshed.lower():
+                        raise RuntimeError("Google Sheets API auth refresh returned invalid auth")
+                    active_token = refreshed
+                    _REFRESHED_GOOGLE_TOKEN = refreshed
+                    continue
+                if is_gmail and exc.code in {401, 403, 429}:
+                    raise RuntimeError(f"Gmail API request failed closed ({exc.code})") from exc
+                if exc.code not in {429, 500, 502, 503, 504} or attempt == 5:
+                    raise RuntimeError(f"{api_label} request failed closed ({exc.code})") from exc
+                if exc.code == 429:
+                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                    try:
+                        delay = max(65.0, float(retry_after)) if retry_after else 65.0
+                    except (TypeError, ValueError):
+                        delay = 65.0
+                    time.sleep(delay)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+                last_exc = exc
+                if attempt == 5:
+                    raise RuntimeError(f"{api_label} request failed closed ({type(exc).__name__})") from exc
+            time.sleep(0.5 * (attempt + 1))
+        raise RuntimeError(f"{api_label} request failed closed") from last_exc
+    finally:
+        _release_sheet_mutation_lock(lock_handle)
 
 
 def read_queue(token: str, spreadsheet_id: str = SPREADSHEET_ID) -> list[dict[str, str]]:
