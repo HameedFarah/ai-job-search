@@ -1050,9 +1050,17 @@ def run(args):
                 )
                 or (
                     args.refresh_contacts
-                    and bool(r.get("domain"))
-                    and r.get("identity_status") == "confirmed"
-                    and r.get("outcome") in {"domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                    and (
+                        (
+                            bool(r.get("domain"))
+                            and r.get("identity_status") == "confirmed"
+                            and r.get("outcome") in {"domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                        )
+                        or (
+                            bool(r.get("selected"))
+                            and int(r.get("discovery_version") or 0) < DISCOVERY_VERSION
+                        )
+                    )
                 )
             )
             for r in active)
@@ -1104,9 +1112,17 @@ def run(args):
                     )
                     or (
                         args.refresh_contacts
-                        and bool(records[mid].get("domain"))
-                        and records[mid].get("identity_status") == "confirmed"
-                        and records[mid].get("outcome") in {"domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                        and (
+                            (
+                                bool(records[mid].get("domain"))
+                                and records[mid].get("identity_status") == "confirmed"
+                                and records[mid].get("outcome") in {"domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                            )
+                            or (
+                                bool(records[mid].get("selected"))
+                                and int(records[mid].get("discovery_version") or 0) < DISCOVERY_VERSION
+                            )
+                        )
                     )
                 )
                 if not retry_improved and records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:

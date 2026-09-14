@@ -96,7 +96,7 @@ def test_finish_free_then_identity_then_strict_outscraper_resolution():
     # domains we already know and converts fresh domain evidence into mailboxes.
     refresh = run_phase(
         CONTACT_MANIFEST,
-        ['--authoritative-only', '--refresh-contacts'],
+        ['--refresh-contacts'],
     )
     print_phase('CONTACT_REFRESH_PHASE', refresh)
     assert refresh.returncode == 0
