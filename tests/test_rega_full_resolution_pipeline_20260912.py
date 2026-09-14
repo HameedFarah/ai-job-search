@@ -33,11 +33,21 @@ def run_phase(
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
     for _batch in range(100):
-        result = subprocess.run(cmd, cwd=WORKTREE, env=env, text=True, capture_output=True, timeout=3900)
-        stdout_parts.append(result.stdout[-6000:])
-        stderr_parts.append(result.stderr[-3000:])
-        if result.returncode != 0:
-            return subprocess.CompletedProcess(cmd, result.returncode, '\n'.join(stdout_parts), '\n'.join(stderr_parts))
+        result = None
+        for attempt in range(3):
+            result = subprocess.run(cmd, cwd=WORKTREE, env=env, text=True, capture_output=True, timeout=3900)
+            stdout_parts.append(result.stdout[-6000:])
+            stderr_parts.append(result.stderr[-3000:])
+            if result.returncode == 0:
+                break
+            transient = any(marker in result.stderr for marker in (
+                'TimeoutError: The read operation timed out',
+                'URLError',
+                'RemoteDisconnected',
+                'ConnectionResetError',
+            ))
+            if not transient or attempt == 2:
+                return subprocess.CompletedProcess(cmd, result.returncode, '\n'.join(stdout_parts), '\n'.join(stderr_parts))
         summary = json.loads((STATE / 'summary.json').read_text())
         if int(summary.get('run_processed') or 0) < 25:
             return subprocess.CompletedProcess(cmd, 0, '\n'.join(stdout_parts), '\n'.join(stderr_parts))
