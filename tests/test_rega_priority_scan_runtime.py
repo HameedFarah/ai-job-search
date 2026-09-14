@@ -112,6 +112,64 @@ def test_hold_or_failed_queue_does_not_block_company_replacement():
     assert {"held@example.com", "dead@example.com", "hold-auto@example.com"}.issubset(state["known_emails"])
 
 
+def test_bounced_sent_projection_does_not_block_company_replacement():
+    state = build_dedupe_state(
+        [],
+        [{
+            "Email": "dead@example.com",
+            "Company_or_Office": "Retry Co",
+            "Send_State": "SENT",
+        }],
+        [{
+            "Email": "dead@example.com",
+            "Company_or_Office": "Retry Co",
+            "Status": "SENT",
+            "Gmail_Message_ID": "gm-1",
+        }],
+        [
+            {
+                "Recipient_Email": "dead@example.com",
+                "Company_or_Office": "Retry Co",
+                "Delivery_State": "BOUNCED",
+                "Bounce_State": "PERMANENT",
+                "Gmail_Message_ID": "gm-1",
+            },
+            {
+                "Recipient_Email": "dead@example.com",
+                "Company_or_Office": "Retry Co",
+                "Delivery_State": "SENT",
+                "Bounce_State": "",
+                "Gmail_Message_ID": "gm-1",
+            },
+        ],
+    )
+    assert normalized_company("Retry Co") not in state["contacted_companies"]
+    assert normalized_company("Retry Co") not in state["queued_companies"]
+    assert "dead@example.com" in state["permanent_bounces"]
+
+
+def test_temporary_bounce_also_reopens_company_without_marking_permanent():
+    state = build_dedupe_state(
+        [], [],
+        [{
+            "Email": "full@example.com",
+            "Company_or_Office": "Full Co",
+            "Status": "SENT",
+            "Gmail_Message_ID": "gm-2",
+        }],
+        [{
+            "Recipient_Email": "full@example.com",
+            "Company_or_Office": "Full Co",
+            "Delivery_State": "BOUNCED",
+            "Bounce_State": "TEMPORARY",
+            "Gmail_Message_ID": "gm-2",
+        }],
+    )
+    assert normalized_company("Full Co") not in state["contacted_companies"]
+    assert normalized_company("Full Co") not in state["queued_companies"]
+    assert "full@example.com" not in state["permanent_bounces"]
+
+
 def test_permanent_bounce_is_stronger_than_generic_duplicate():
     reason = _blocked_candidate(
         "dead@example.com",

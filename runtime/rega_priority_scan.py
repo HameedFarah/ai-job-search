@@ -726,20 +726,44 @@ def build_dedupe_state(master: list[dict[str, str]], send_queue: list[dict[str, 
         for row in sent_rows
         if str(row.get("Bounce_State") or "").strip().upper() == "PERMANENT"
     }
+    # Sent Email Tracker may contain both a legacy campaign row and an Auto
+    # Send Queue projection for the same Gmail transaction. A later DSN must
+    # therefore dominate every duplicate SENT projection; otherwise the blank
+    # duplicate incorrectly keeps the company marked contacted/covered and
+    # suppresses replacement discovery. Preserve the historical send itself,
+    # but treat any post-send delivery failure as not successfully contacted.
+    bounced_emails = {
+        str(row.get("Recipient_Email") or "").strip().lower()
+        for row in sent_rows
+        if str(row.get("Bounce_State") or "").strip()
+        or str(row.get("Delivery_State") or "").strip().upper() == "BOUNCED"
+    }
+    bounced_message_ids = {
+        str(row.get("Gmail_Message_ID") or "").strip()
+        for row in sent_rows
+        if (str(row.get("Bounce_State") or "").strip()
+            or str(row.get("Delivery_State") or "").strip().upper() == "BOUNCED")
+        and str(row.get("Gmail_Message_ID") or "").strip()
+    }
     contacted_companies = {
         normalized_company(row.get("Company_or_Office", ""))
         for row in sent_rows
         if str(row.get("Delivery_State") or "").strip().upper() == "SENT"
         and not str(row.get("Bounce_State") or "").strip()
+        and str(row.get("Recipient_Email") or "").strip().lower() not in bounced_emails
+        and str(row.get("Gmail_Message_ID") or "").strip() not in bounced_message_ids
     }
     queued_companies = {
         normalized_company(row.get("Company_or_Office", ""))
         for row in send_queue
         if str(row.get("Send_State") or "").strip().upper() in SEND_QUEUE_COVERED_STATES
+        and str(row.get("Email") or "").strip().lower() not in bounced_emails
     } | {
         normalized_company(row.get("Company_or_Office", ""))
         for row in auto_queue
         if str(row.get("Status") or "").strip().upper() in AUTO_QUEUE_COVERED_STATES
+        and str(row.get("Email") or "").strip().lower() not in bounced_emails
+        and str(row.get("Gmail_Message_ID") or "").strip() not in bounced_message_ids
     }
     return {
         "known_emails": {x for x in known_emails if x},
