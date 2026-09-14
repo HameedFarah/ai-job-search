@@ -109,7 +109,7 @@ def _release_sheet_mutation_lock(handle) -> None:
 
 def sheets_request(token: str, method: str, url: str, payload: dict | None = None) -> dict:
     global _REFRESHED_GOOGLE_TOKEN
-    active_token = _REFRESHED_GOOGLE_TOKEN or token
+    active_token = token if "gmail.googleapis.com" in url else (_REFRESHED_GOOGLE_TOKEN or token)
     if not active_token or "access_token" in active_token.lower():
         raise RuntimeError("invalid Google auth")
     data = json.dumps(payload).encode() if payload is not None else None
