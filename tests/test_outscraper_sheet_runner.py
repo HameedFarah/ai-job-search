@@ -44,6 +44,16 @@ class SheetRunnerTests(unittest.TestCase):
         second_request = urlopen.call_args_list[1].args[0]
         self.assertEqual(second_request.headers["Authorization"], "Bearer refreshed-token")
 
+    def test_gmail_request_never_uses_cached_rclone_token(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"ok":true}'
+        with patch("runtime.outscraper_sheet_runner._REFRESHED_GOOGLE_TOKEN", "sheets-token"), \
+             patch("runtime.outscraper_sheet_runner.urllib.request.urlopen", return_value=response) as urlopen:
+            result = sheets_request("gmail-token", "GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile")
+        self.assertEqual(result, {"ok": True})
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.headers["Authorization"], "Bearer gmail-token")
+
     def test_sheets_request_retries_transient_network_error(self):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b'{"ok":true}'
