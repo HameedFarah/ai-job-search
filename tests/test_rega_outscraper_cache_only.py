@@ -63,3 +63,10 @@ def test_phase_markers_are_monotonic_across_refreshes():
     assert merged["dataforseo_version"] == 2
     assert merged["outscraper_attempted"] is True
     assert merged["outscraper_maps"] == {"basis": "cached"}
+
+
+def test_contact_refresh_marker_is_monotonic():
+    from career_engine.rega_enrichment.continuous import CONTACT_REFRESH_VERSION, preserve_phase_markers
+    previous = {"contact_refresh_version": CONTACT_REFRESH_VERSION}
+    merged = preserve_phase_markers(previous, {"outcome": "validated_general"})
+    assert merged["contact_refresh_version"] == CONTACT_REFRESH_VERSION

@@ -94,6 +94,7 @@ def identity_matches(row, text, host):
 
 DISCOVERY_VERSION = 10
 DATAFORSEO_DISCOVERY_VERSION = 2
+CONTACT_REFRESH_VERSION = 1
 AUTH_DOMAIN_MARKER = "REGA_AUTH_DOMAIN_20260913 "
 AUTHORITATIVE_IDENTITY_SOURCES = {
     "pif.gov.sa",
@@ -867,6 +868,10 @@ def preserve_phase_markers(previous, result):
     )
     if previous.get("outscraper_attempted") or merged.get("outscraper_attempted"):
         merged["outscraper_attempted"] = True
+    merged["contact_refresh_version"] = max(
+        int(previous.get("contact_refresh_version") or 0),
+        int(merged.get("contact_refresh_version") or 0),
+    )
     if previous.get("outscraper_maps") and not merged.get("outscraper_maps"):
         merged["outscraper_maps"] = previous["outscraper_maps"]
     return merged
@@ -1088,6 +1093,7 @@ def run(args):
                 )
                 or (
                     args.refresh_contacts
+                    and int(r.get("contact_refresh_version") or 0) < CONTACT_REFRESH_VERSION
                     and (
                         (
                             bool(r.get("domain"))
@@ -1151,6 +1157,7 @@ def run(args):
                     )
                     or (
                         args.refresh_contacts
+                        and int(records[mid].get("contact_refresh_version") or 0) < CONTACT_REFRESH_VERSION
                         and (
                             (
                                 bool(records[mid].get("domain"))
@@ -1184,6 +1191,8 @@ def run(args):
                           "error_type": type(exc).__name__, "at": now()}
             finally:
                 signal.alarm(0)
+            if args.refresh_contacts:
+                result["contact_refresh_version"] = CONTACT_REFRESH_VERSION
             if mid in records:
                 result = preserve_phase_markers(records[mid], result)
             if (
