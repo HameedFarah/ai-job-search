@@ -48,7 +48,6 @@ from runtime.outscraper_sheet_runner import (
     SPREADSHEET_ID,
     rclone_access_token,
     sheets_request,
-    write_campaign_updates,
 )
 
 CONFIG_SHEET_NAME = "Config"
@@ -677,6 +676,67 @@ def _mark_gmail_skips(sheet_token: str, reconciler: QueueReconciler, skips: list
     write_queue_rows_fields(sheet_token, updates)
 
 
+MASTER_SYNC_COLUMNS = {
+    "Send_State": "O",
+    "Sent_Message_ID": "P",
+    "Terminal_Outcome": "Q",
+}
+
+
+def _write_master_campaign_updates(
+    sheet_token: str, updates: list[tuple[str, str, dict[str, str]]]
+) -> None:
+    """Write Send Queue provenance without consuming developer-metadata quota."""
+    if not updates:
+        return
+    before = _read_master_send_queue(sheet_token)
+    located: dict[str, tuple[int, dict[str, str]]] = {}
+    for row_number, row in enumerate(before, start=2):
+        qid = str(row.get("Queue_ID") or "").strip()
+        if qid:
+            if qid in located:
+                raise RuntimeError("Send Queue contains duplicate Queue_ID during master sync")
+            located[qid] = (row_number, row)
+
+    data: list[dict[str, Any]] = []
+    expected: dict[str, tuple[str, dict[str, str]]] = {}
+    for queue_id, email, fields in updates:
+        qid = str(queue_id).strip()
+        target = located.get(qid)
+        if target is None:
+            raise RuntimeError("Send Queue target identity missing during master sync")
+        row_number, row = target
+        actual_email = str(row.get("Email") or "").strip().lower()
+        wanted_email = str(email).strip().lower()
+        if actual_email != wanted_email:
+            raise RuntimeError("Send Queue target email changed during master sync")
+        unknown = set(fields) - set(MASTER_SYNC_COLUMNS)
+        if unknown:
+            raise RuntimeError(f"unsupported master sync fields: {sorted(unknown)}")
+        expected[qid] = (wanted_email, dict(fields))
+        for field, value in fields.items():
+            data.append({
+                "range": f"'Send Queue'!{MASTER_SYNC_COLUMNS[field]}{row_number}",
+                "majorDimension": "ROWS",
+                "values": [[str(value)]],
+            })
+
+    sheets_request(
+        sheet_token, "POST",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values:batchUpdate",
+        {"valueInputOption": "RAW", "data": data},
+    )
+
+    after = _read_master_send_queue(sheet_token)
+    after_by_qid = {str(row.get("Queue_ID") or "").strip(): row for row in after}
+    for qid, (email, fields) in expected.items():
+        row = after_by_qid.get(qid)
+        if row is None or str(row.get("Email") or "").strip().lower() != email:
+            raise RuntimeError("Send Queue identity readback failed after master sync")
+        if any(str(row.get(field) or "") != str(value) for field, value in fields.items()):
+            raise RuntimeError("Send Queue value readback failed after master sync")
+
+
 def _update_master_after_send(reconciler: QueueReconciler, email: str, message_id: str) -> None:
     target_company = str(reconciler.master.get("email_to_company", {}).get(email) or "")
     updates: list[tuple[str, str, dict[str, str]]] = []
@@ -702,7 +762,22 @@ def _update_master_after_send(reconciler: QueueReconciler, email: str, message_i
     if updates:
         sheet_token = rclone_access_token()
         for offset in range(0, len(updates), 25):
-            write_campaign_updates(sheet_token, updates[offset:offset + 25], SPREADSHEET_ID)
+            _write_master_campaign_updates(sheet_token, updates[offset:offset + 25])
+
+
+def _best_effort_master_sync(
+    status_path: Path, reconciler: QueueReconciler, queue_id: str, email: str, message_id: str
+) -> bool:
+    """Sync secondary master provenance without contaminating committed send state."""
+    try:
+        _update_master_after_send(reconciler, email, message_id)
+    except Exception as exc:
+        _status(
+            status_path, "master-sync-warning", queue_id=queue_id, recipient=email,
+            gmail_message_id=message_id, error_type=type(exc).__name__, error=str(exc)[:500],
+        )
+        return False
+    return True
 
 
 def _queue_has_work(raw_rows: list[dict[str, str]]) -> bool:
@@ -1003,8 +1078,13 @@ def run(
                 "Gmail_Message_ID": message_id,
                 "Last_Error": "",
             })
-            _update_master_after_send(reconciler, email, message_id)
-            _status(status_path, "sent", queue_id=queue_id, recipient=email, gmail_message_id=message_id)
+            master_sync_ok = _best_effort_master_sync(
+                status_path, reconciler, queue_id, email, message_id
+            )
+            _status(
+                status_path, "sent", queue_id=queue_id, recipient=email,
+                gmail_message_id=message_id, master_sync_ok=master_sync_ok,
+            )
             if once:
                 return 0
             continue

@@ -171,6 +171,26 @@ def test_persist_defaults_batches_only_rows_that_need_updates(monkeypatch):
     assert set(writes[0][1]) >= {"Queue_ID", "Priority", "Status", "Added_At"}
 
 
+def test_master_sync_failure_is_secondary(monkeypatch, tmp_path):
+    events = []
+    monkeypatch.setattr(sender, "_update_master_after_send", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("secondary failure")))
+    monkeypatch.setattr(sender, "_status", lambda _p, phase, **extra: events.append((phase, extra)))
+    ok = sender._best_effort_master_sync(tmp_path / "status.json", object(), "Q1", "person@example.com", "mid1")
+    assert ok is False
+    assert events == [("master-sync-warning", {"queue_id": "Q1", "recipient": "person@example.com", "gmail_message_id": "mid1", "error_type": "RuntimeError", "error": "secondary failure"})]
+
+
+def test_direct_master_sync_uses_verified_row_and_readback(monkeypatch):
+    before = [{"Queue_ID": "SEND-1", "Email": "person@example.com", "Send_State": "READY", "Sent_Message_ID": "", "Terminal_Outcome": ""}]
+    after = [{"Queue_ID": "SEND-1", "Email": "person@example.com", "Send_State": "SENT", "Sent_Message_ID": "mid1", "Terminal_Outcome": "sent_pending_dsn"}]
+    reads = iter([before, after]); calls = []
+    monkeypatch.setattr(sender, "_read_master_send_queue", lambda _t: next(reads))
+    monkeypatch.setattr(sender, "sheets_request", lambda token, method, url, payload: calls.append((method, url, payload)) or {})
+    sender._write_master_campaign_updates("token", [("SEND-1", "person@example.com", {"Send_State": "SENT", "Sent_Message_ID": "mid1", "Terminal_Outcome": "sent_pending_dsn"})])
+    data = calls[0][2]["data"]
+    assert [item["range"] for item in data] == ["'Send Queue'!O2", "'Send Queue'!P2", "'Send Queue'!Q2"]
+
+
 def test_master_success_uses_sent_pending_dsn(monkeypatch):
     from types import SimpleNamespace
 
@@ -187,8 +207,8 @@ def test_master_success_uses_sent_pending_dsn(monkeypatch):
     monkeypatch.setattr(sender, "rclone_access_token", lambda: "sheet-token")
     monkeypatch.setattr(
         sender,
-        "write_campaign_updates",
-        lambda token, updates, spreadsheet_id: batches.extend(updates),
+        "_write_master_campaign_updates",
+        lambda token, updates: batches.extend(updates),
     )
     sender._update_master_after_send(reconciler, "person@example.com", "mid123")
     assert batches == [(
