@@ -1196,6 +1196,17 @@ def run(args):
             if mid in records:
                 result = preserve_phase_markers(records[mid], result)
             if (
+                args.refresh_contacts
+                and not result.get("domain")
+                and result.get("outcome") in {"research_error", "search_unavailable", "provider_research_incomplete"}
+            ):
+                # A legacy route that cannot be re-proven during the final
+                # refresh must finish fail-closed instead of leaving an
+                # infrastructure-error outcome or remaining sendable.
+                result["refresh_failure_outcome"] = result["outcome"]
+                result["outcome"] = "identity_unconfirmed"
+                result["identity_status"] = "identity_unconfirmed"
+            if (
                 mid in records
                 and not result.get("domain")
                 and not args.use_dataforseo_fallback
