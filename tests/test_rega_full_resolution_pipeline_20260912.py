@@ -23,14 +23,25 @@ def run_phase(
     cmd = [
         sys.executable, str(RUNTIME_EXEC), '--manifest', str(manifest), '--',
         sys.executable, str(WORKTREE / 'career-engine'), 'rega-enrich',
-        '--root', str(STATE), '--apply', '--limit', '0', '--search-limit', '10000',
+        '--root', str(STATE), '--apply', '--limit', '25', '--search-limit', '10000',
         '--hunter-cap', '60', '--prospeo-cap', '60', '--snov-cap', '500',
         '--use-all-available-provider-credit',
         *extra,
     ]
     env = os.environ.copy()
     env['REGA_ENABLE_COMPANY_DOMAIN_LOOKUP'] = '1' if enable_company_domain_lookup else '0'
-    return subprocess.run(cmd, cwd=WORKTREE, env=env, text=True, capture_output=True, timeout=21630)
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    for _batch in range(100):
+        result = subprocess.run(cmd, cwd=WORKTREE, env=env, text=True, capture_output=True, timeout=3900)
+        stdout_parts.append(result.stdout[-6000:])
+        stderr_parts.append(result.stderr[-3000:])
+        if result.returncode != 0:
+            return subprocess.CompletedProcess(cmd, result.returncode, '\n'.join(stdout_parts), '\n'.join(stderr_parts))
+        summary = json.loads((STATE / 'summary.json').read_text())
+        if int(summary.get('run_processed') or 0) < 25:
+            return subprocess.CompletedProcess(cmd, 0, '\n'.join(stdout_parts), '\n'.join(stderr_parts))
+    return subprocess.CompletedProcess(cmd, 75, '\n'.join(stdout_parts), 'phase exceeded 100 bounded batches')
 
 
 def print_phase(label: str, result: subprocess.CompletedProcess[str]) -> None:
