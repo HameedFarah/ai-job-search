@@ -1224,7 +1224,7 @@ def run(args):
             result["tracker_write"] = write_result(legacy, result, args.apply)
             report()
             print(json.dumps({"master_id": mid, "outcome": result["outcome"], "processed": summary["run_processed"]}), flush=True)
-            if research.consecutive_errors >= 5 and outscraper is None and not args.use_dataforseo_fallback:
+            if research.consecutive_errors >= 5 and outscraper is None and not args.use_dataforseo_fallback and not args.refresh_contacts:
                 summary["status"] = "paused_search_unavailable"
                 break
             time.sleep(1)
