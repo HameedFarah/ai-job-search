@@ -51,3 +51,15 @@ def test_tracker_notes_replace_prior_machine_snapshots():
     assert notes.startswith("manual note | second manual | REGA_API_20260911 ")
     assert notes.count("REGA_API_20260911") == 1
     assert '"at":"old"' not in notes
+
+
+def test_phase_markers_are_monotonic_across_refreshes():
+    from career_engine.rega_enrichment.continuous import preserve_phase_markers
+    previous = {"dataforseo_attempted": True, "dataforseo_version": 2,
+                "outscraper_attempted": True, "outscraper_maps": {"basis": "cached"}}
+    refreshed = {"outcome": "validated_general", "dataforseo_attempted": False}
+    merged = preserve_phase_markers(previous, refreshed)
+    assert merged["dataforseo_attempted"] is True
+    assert merged["dataforseo_version"] == 2
+    assert merged["outscraper_attempted"] is True
+    assert merged["outscraper_maps"] == {"basis": "cached"}

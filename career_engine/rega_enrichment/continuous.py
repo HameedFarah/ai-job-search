@@ -856,6 +856,22 @@ def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_d
     return result
 
 
+def preserve_phase_markers(previous, result):
+    """Keep completed enrichment phases monotonic across later refresh passes."""
+    merged = dict(result)
+    if previous.get("dataforseo_attempted") or merged.get("dataforseo_attempted"):
+        merged["dataforseo_attempted"] = True
+    merged["dataforseo_version"] = max(
+        int(previous.get("dataforseo_version") or 0),
+        int(merged.get("dataforseo_version") or 0),
+    )
+    if previous.get("outscraper_attempted") or merged.get("outscraper_attempted"):
+        merged["outscraper_attempted"] = True
+    if previous.get("outscraper_maps") and not merged.get("outscraper_maps"):
+        merged["outscraper_maps"] = previous["outscraper_maps"]
+    return merged
+
+
 def tracker_updates(row, result):
     """Append evidence; avoid live sender admission fields and preserve portal history."""
     marker = "REGA_API_20260911"
@@ -1168,6 +1184,8 @@ def run(args):
                           "error_type": type(exc).__name__, "at": now()}
             finally:
                 signal.alarm(0)
+            if mid in records:
+                result = preserve_phase_markers(records[mid], result)
             if (
                 mid in records
                 and not result.get("domain")
