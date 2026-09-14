@@ -868,7 +868,11 @@ def tracker_updates(row, result):
                 "supersedes_result_at": result.get("supersedes_result_at")}
     note = marker + " " + json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
     old = row.get("Notes", "")
-    updates = {"Notes": old + (" | " if old else "") + note}
+    # Keep human/manual notes, but collapse prior machine-generated REGA snapshots
+    # to the latest one. Full per-run evidence remains in records.json/history.
+    # This prevents the Google Sheets 50k-character cell limit from recurring.
+    preserved = [part for part in old.split(" | ") if part and not part.startswith(marker)]
+    updates = {"Notes": " | ".join([*preserved, note])}
     if result.get("domain") and not row.get("Address_or_Website", "").strip():
         updates["Address_or_Website"] = "https://" + result["domain"] + "/"
     # Keep old lifecycle/send decisions; notes are append-only research evidence.

@@ -40,3 +40,14 @@ def test_cached_provider_failure_is_terminal_without_credit():
     result = process(row, NoResolveResearch(), object(), object(), outscraper=object(), maps_cache=cache, outscraper_allow_fresh=False)
     assert result["outcome"] == "identity_unconfirmed"
     assert result["outscraper_maps"]["retryable"] is True
+
+
+def test_tracker_notes_replace_prior_machine_snapshots():
+    from career_engine.rega_enrichment.continuous import tracker_updates
+    row = {"Notes": "manual note | REGA_API_20260911 {\"at\":\"old\"} | second manual"}
+    result = {"outcome": "identity_unconfirmed", "domain": "", "contacts": [], "portals": [],
+              "at": "2026-09-14T18:00:00Z", "supersedes_result_at": "old"}
+    notes = tracker_updates(row, result)["Notes"]
+    assert notes.startswith("manual note | second manual | REGA_API_20260911 ")
+    assert notes.count("REGA_API_20260911") == 1
+    assert '"at":"old"' not in notes
