@@ -101,3 +101,78 @@ def test_prestart_staging_journal_blocks_duplicate_after_uncertain_append(monkey
 
     monkeypatch.setattr(sender, "sheets_request", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("duplicate append must not run")))
     assert sender._stage_latest_verified_rega_records("token", [], journal_path=journal) == 0
+
+
+def test_prestart_promotes_same_recovery_hold_when_checkpoint_is_now_verified(monkeypatch, tmp_path):
+    email = "info@example.sa"
+    queue_id = "OASQ-REGA-API-" + __import__("hashlib").sha256(email.encode()).hexdigest()[:12].upper()
+    records = {
+        "CE-1": {
+            "master_id": "CE-1",
+            "company": "Example",
+            "identity_status": "confirmed",
+            "discovery_version": 10,
+            "domain": "example.sa",
+            "selected": {
+                "email": email,
+                "relevance_confirmed": True,
+                "source_urls": ["https://example.sa/contact"],
+                "validation": {
+                    "email": email,
+                    "provider": "snov",
+                    "status": "RECEIVING",
+                    "safe_to_send": True,
+                },
+            },
+        }
+    }
+    path = tmp_path / "records.json"
+    path.write_text(json.dumps(records))
+    monkeypatch.setattr(sender, "REGA_ENRICHMENT_RECORDS", path)
+    writes = []
+    monkeypatch.setattr(sender, "write_queue_rows_fields", lambda token, updates: writes.extend(updates))
+    monkeypatch.setattr(sender, "sheets_request", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no append expected")))
+    raw = [{
+        "__row_number": "7",
+        "Queue_ID": queue_id,
+        "Email": email,
+        "Source": sender.REGA_RECOVERY_SOURCE,
+        "Priority": "IMPORTANT",
+        "Status": "HOLD",
+        "Sent_At": "",
+        "Gmail_Message_ID": "",
+        "Last_Error": "mailbox_verification_required",
+        "Evidence_or_Notes": '{"verified":false}',
+    }]
+    journal = tmp_path / "stage-journal.json"
+    assert sender._stage_latest_verified_rega_records("token", raw, journal_path=journal) == 1
+    assert len(writes) == 1
+    row_number, fields = writes[0]
+    assert row_number == 7
+    assert fields["Status"] == "PENDING"
+    assert fields["Last_Error"] == ""
+    evidence = json.loads(fields["Evidence_or_Notes"])
+    assert evidence["verified"] is True
+    assert evidence["validation"]["status"] == "RECEIVING"
+    payload = json.loads(journal.read_text())
+    assert payload["queue_ids"][queue_id]["state"] == "promoted_verified_hold"
+
+
+def test_prestart_never_promotes_existing_sent_or_nonrecovery_row(monkeypatch, tmp_path):
+    email = "info@example.sa"
+    queue_id = "OASQ-REGA-API-" + __import__("hashlib").sha256(email.encode()).hexdigest()[:12].upper()
+    records = {
+        "CE-1": {
+            "master_id": "CE-1", "company": "Example", "identity_status": "confirmed",
+            "discovery_version": 10, "domain": "example.sa",
+            "selected": {"email": email, "relevance_confirmed": True,
+                         "validation": {"email": email, "status": "RECEIVING", "safe_to_send": True}},
+        }
+    }
+    path = tmp_path / "records.json"
+    path.write_text(json.dumps(records))
+    monkeypatch.setattr(sender, "REGA_ENRICHMENT_RECORDS", path)
+    monkeypatch.setattr(sender, "write_queue_rows_fields", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no promotion expected")))
+    monkeypatch.setattr(sender, "sheets_request", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no append expected")))
+    raw = [{"__row_number": "7", "Queue_ID": queue_id, "Email": email, "Source": "OTHER", "Status": "HOLD"}]
+    assert sender._stage_latest_verified_rega_records("token", raw, journal_path=tmp_path / "j.json") == 0

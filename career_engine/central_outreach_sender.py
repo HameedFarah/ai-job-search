@@ -422,7 +422,9 @@ def _stage_latest_verified_rega_records(
 
     This is deliberately narrow: one selected mailbox per confirmed employer,
     explicit RECEIVING/safe validation, exact domain match, no duplicate email,
-    and no Gmail action. Normal reconciliation remains the send authority.
+    and no Gmail action. A legacy recovery HOLD for the same deterministic
+    mailbox may be promoted in place when the current checkpoint now proves all
+    admission gates; historical SENT/PENDING or non-recovery rows are untouched.
     """
     if not REGA_ENRICHMENT_RECORDS.is_file():
         return 0
@@ -433,11 +435,12 @@ def _stage_latest_verified_rega_records(
     if not isinstance(records, dict):
         return 0
 
-    existing = {
-        str(row.get("Email") or "").strip().lower()
-        for row in raw_rows
-        if str(row.get("Email") or "").strip()
-    }
+    existing_by_email: dict[str, list[dict[str, str]]] = {}
+    for row in raw_rows:
+        email = str(row.get("Email") or "").strip().lower()
+        if email:
+            existing_by_email.setdefault(email, []).append(row)
+    existing = set(existing_by_email)
     existing_qids = {
         str(row.get("Queue_ID") or "").strip()
         for row in raw_rows
@@ -455,8 +458,11 @@ def _stage_latest_verified_rega_records(
             "at": utc_now(),
         }
         journal_changed = True
+
     additions: list[list[str]] = []
     planned: list[tuple[str, str, str]] = []
+    promotions: list[tuple[int, dict[str, str]]] = []
+    promoted: list[tuple[str, str, str]] = []
     for record in records.values():
         if not isinstance(record, dict) or record.get("excluded"):
             continue
@@ -473,7 +479,7 @@ def _stage_latest_verified_rega_records(
         email = str(selected.get("email") or "").strip().lower()
         domain = str(record.get("domain") or "").strip().lower()
         master_id = str(record.get("master_id") or "").strip()
-        if not email or email in existing or not domain or not master_id:
+        if not email or not domain or not master_id:
             continue
         if _email_domain(email) != domain:
             continue
@@ -485,8 +491,6 @@ def _stage_latest_verified_rega_records(
             continue
 
         queue_id = "OASQ-REGA-API-" + hashlib.sha256(email.encode()).hexdigest()[:12].upper()
-        if queue_id in existing_qids or queue_id in journal:
-            continue
         evidence = json.dumps({
             "source": REGA_RECOVERY_SOURCE,
             "verified": True,
@@ -498,6 +502,31 @@ def _stage_latest_verified_rega_records(
             "source_urls": selected.get("source_urls") or [],
             "hiring_evidence": selected.get("hiring_evidence") or [],
         }, ensure_ascii=False, separators=(",", ":"))
+
+        matches = existing_by_email.get(email, [])
+        if matches:
+            if len(matches) == 1:
+                prior = matches[0]
+                promotable = (
+                    str(prior.get("Queue_ID") or "").strip() == queue_id
+                    and str(prior.get("Source") or "").strip() == REGA_RECOVERY_SOURCE
+                    and str(prior.get("Status") or "").strip().upper() == "HOLD"
+                    and not str(prior.get("Sent_At") or "").strip()
+                    and not str(prior.get("Gmail_Message_ID") or "").strip()
+                    and str(prior.get("__row_number") or "").isdigit()
+                )
+                if promotable:
+                    promotions.append((int(prior["__row_number"]), {
+                        "Priority": "IMPORTANT",
+                        "Status": "PENDING",
+                        "Last_Error": "",
+                        "Evidence_or_Notes": evidence,
+                    }))
+                    promoted.append((queue_id, email, master_id))
+            continue
+        if queue_id in existing_qids or queue_id in journal:
+            continue
+
         additions.append([
             queue_id,
             email,
@@ -516,10 +545,22 @@ def _stage_latest_verified_rega_records(
         existing.add(email)
         existing_qids.add(queue_id)
 
+    if promotions:
+        write_queue_rows_fields(sheet_token, promotions)
+        promoted_at = utc_now()
+        for queue_id, email, master_id in promoted:
+            journal[queue_id] = {
+                "email": email,
+                "master_id": master_id,
+                "state": "promoted_verified_hold",
+                "at": promoted_at,
+            }
+        journal_changed = True
+
     if not additions:
         if journal_changed:
             _save_rega_stage_journal(journal, journal_path)
-        return 0
+        return len(promotions)
 
     # Persist append intent before the remote mutation. If the HTTP response is
     # lost after Sheets commits, a restart must fail closed instead of appending
@@ -550,7 +591,7 @@ def _stage_latest_verified_rega_records(
             "at": staged_at,
         }
     _save_rega_stage_journal(journal, journal_path)
-    return len(additions)
+    return len(promotions) + len(additions)
 
 
 def _current_rega_records() -> dict[str, dict[str, Any]]:
