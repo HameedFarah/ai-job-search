@@ -8,9 +8,11 @@ from career_engine.rega_enrichment.continuous import (
     hiring_evidence,
     official_home_matches,
     can_preserve_current_domain,
+    preserve_current_domain_retry,
     resolve_dataforseo,
     authoritative_domain_evidence,
     DISCOVERY_VERSION,
+    CONTACT_REFRESH_VERSION,
 )
 
 
@@ -35,6 +37,25 @@ def test_single_brand_needs_domain_and_saudi_context():
     row = {"Company_or_Office": "Armal Real Estate", "Arabic_Name": ""}
     assert not identity_matches(row, "Armal news in Riyadh", "news.com")
     assert identity_matches(row, "Armal", "armal.com.sa")
+
+
+def test_preserved_current_domain_keeps_completed_contact_refresh_marker():
+    previous = {
+        "master_id": "CE-00301",
+        "domain": "adyar.sa",
+        "outcome": "email_candidates_held",
+        "discovery_version": DISCOVERY_VERSION,
+        "contact_refresh_version": 0,
+    }
+    retry = {
+        "outcome": "search_unavailable",
+        "contact_refresh_version": CONTACT_REFRESH_VERSION,
+    }
+    merged = preserve_current_domain_retry(previous, retry)
+    assert merged["domain"] == "adyar.sa"
+    assert merged["outcome"] == "email_candidates_held"
+    assert merged["retry_outcome"] == "search_unavailable"
+    assert merged["contact_refresh_version"] == CONTACT_REFRESH_VERSION
 
 
 def test_no_route_and_portal_records_are_reopened():

@@ -877,6 +877,16 @@ def preserve_phase_markers(previous, result):
     return merged
 
 
+def preserve_current_domain_retry(previous, retry_result):
+    """Keep stronger current-domain evidence while recording completed phase markers."""
+    preserved = dict(
+        previous,
+        discovery_version=DISCOVERY_VERSION,
+        retry_outcome=retry_result["outcome"],
+    )
+    return preserve_phase_markers(retry_result, preserved)
+
+
 def tracker_updates(row, result):
     """Append evidence; avoid live sender admission fields and preserve portal history."""
     marker = "REGA_API_20260911"
@@ -1229,8 +1239,7 @@ def run(args):
                 # revalidate older identity decisions, so a failed fresh check
                 # must not silently promote a stale domain into the new version.
                 save(root / "history" / (mid + "-retry-" + result["at"].replace(":", "") + ".json"), result)
-                result = dict(records[mid], discovery_version=DISCOVERY_VERSION,
-                              retry_outcome=result["outcome"])
+                result = preserve_current_domain_retry(records[mid], result)
             if mid in records and result.get("domain") == records[mid].get("domain") and result.get("domain"):
                 contacts = {c["email"]: c for c in records[mid].get("contacts", [])}
                 contacts.update({c["email"]: c for c in result.get("contacts", [])})
