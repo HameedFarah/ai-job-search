@@ -90,6 +90,17 @@ def test_finish_free_then_identity_then_strict_outscraper_resolution():
     print_phase('OUTSCRAPER_PHASE', paid)
     assert paid.returncode == 0
 
+    # Phase 4: now that strict identity recovery may have confirmed additional
+    # official domains, revisit only those current confirmed domains with the
+    # contact providers. This avoids wasting paid identity-search attempts on
+    # domains we already know and converts fresh domain evidence into mailboxes.
+    refresh = run_phase(
+        CONTACT_MANIFEST,
+        ['--authoritative-only', '--refresh-contacts'],
+    )
+    print_phase('CONTACT_REFRESH_PHASE', refresh)
+    assert refresh.returncode == 0
+
     summary = json.loads((STATE / 'summary.json').read_text())
     assert summary['status'] == 'scope_processed'
     assert summary['research_remaining'] == 0

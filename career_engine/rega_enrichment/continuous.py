@@ -918,6 +918,7 @@ def build_args(parser):
         action="store_true",
         help="Use one bounded existing-credit DataForSEO official-site search per unresolved company; never purchases/top-ups",
     )
+    parser.add_argument("--refresh-contacts", action="store_true")
     parser.add_argument("--max-runtime", type=int, default=21600)
     parser.add_argument("--company-timeout", type=int, default=150)
     parser.add_argument("--status", action="store_true")
@@ -1047,6 +1048,12 @@ def run(args):
                     and int(r.get("dataforseo_version") or 0) < DATAFORSEO_DISCOVERY_VERSION
                     and r.get("outcome") in {"identity_unconfirmed", "search_unavailable", "provider_research_incomplete", "domain_confirmed_no_route"}
                 )
+                or (
+                    args.refresh_contacts
+                    and bool(r.get("domain"))
+                    and r.get("identity_status") == "confirmed"
+                    and r.get("outcome") in {"domain_confirmed_no_route", "email_candidates_held", "portal_only"}
+                )
             )
             for r in active)
         summary["research_remaining"] += summary["improvement_retries_remaining"]
@@ -1094,6 +1101,12 @@ def run(args):
                         args.use_dataforseo_fallback
                         and int(records[mid].get("dataforseo_version") or 0) < DATAFORSEO_DISCOVERY_VERSION
                         and records[mid].get("outcome") in {"identity_unconfirmed", "search_unavailable", "provider_research_incomplete", "domain_confirmed_no_route"}
+                    )
+                    or (
+                        args.refresh_contacts
+                        and bool(records[mid].get("domain"))
+                        and records[mid].get("identity_status") == "confirmed"
+                        and records[mid].get("outcome") in {"domain_confirmed_no_route", "email_candidates_held", "portal_only"}
                     )
                 )
                 if not retry_improved and records[mid].get("outcome") not in {"research_error", "search_unavailable", "provider_research_incomplete"}:
