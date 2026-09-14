@@ -172,7 +172,7 @@ def _maps_query(row):
     return ", ".join(x for x in (name, location, "Saudi Arabia") if x)
 
 
-def _batch_maps_prefetch(root, selected, records, outscraper):
+def _batch_maps_prefetch(root, selected, records, outscraper, *, allow_fresh=True):
     from .provider_clients import ProviderBudget
     path = Path(root) / "outscraper-maps-v9.json"
     cache = {"discovery_version": DISCOVERY_VERSION, "maps_batch_version": 3, "records": {}}
@@ -184,6 +184,8 @@ def _batch_maps_prefetch(root, selected, records, outscraper):
         except Exception:
             pass
     cached = cache.setdefault("records", {})
+    if not allow_fresh:
+        return {mid: item.get("records") or [] for mid, item in cached.items()}
     targets = []
     for row in selected:
         mid = str(row.get("Master_ID") or "").strip()
@@ -698,7 +700,7 @@ def resolve_dataforseo(row, research):
     return "", [], evidence, "identity_unconfirmed"
 
 
-def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_dataforseo=False):
+def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_dataforseo=False, outscraper_allow_fresh=True):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
               "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
     if use_dataforseo:
@@ -729,6 +731,9 @@ def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_d
         if maps_cache is not None and mid in maps_cache:
             candidate_host, candidate_pages, maps_evidence, maps_detail = _resolve_prefetched_maps(row, research, maps_cache[mid])
             evidence.extend(maps_evidence)
+        elif not outscraper_allow_fresh:
+            candidate_host, candidate_pages = "", []
+            maps_detail = {"basis": "outscraper_cache_miss_no_credit", "retryable": False}
         else:
             try:
                 candidate_host, maps_detail = legacy.maps_discover_domain(outscraper, row)
@@ -763,7 +768,7 @@ def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_d
         candidates.extend(apis.prospeo_contacts(host))
     if not any(contact_rank(c) <= 2 for c in candidates):
         candidates.extend(apis.snov_contacts(host))
-    if outscraper is not None and not any(contact_rank(c) <= 2 for c in candidates):
+    if outscraper is not None and outscraper_allow_fresh and not any(contact_rank(c) <= 2 for c in candidates):
         from runtime import rega_priority_scan as legacy
         try:
             outscraper_candidates = legacy.contact_candidates(outscraper, host)
@@ -957,6 +962,7 @@ def run(args):
             raise RuntimeError("OUTSCRAPER_API_KEY_missing_for_requested_fallback")
         outscraper = legacy.OutscraperClient(outscraper_key)
         outscraper_balance_before = legacy.balance(outscraper)
+    outscraper_allow_fresh = bool(outscraper is not None and outscraper_balance_before is not None and outscraper_balance_before > 0)
     if args.use_dataforseo_fallback:
         if not os.environ.get("DATAFORSEO_API_KEY", "").strip():
             raise RuntimeError("DATAFORSEO_API_KEY_missing_for_requested_fallback")
@@ -1013,10 +1019,11 @@ def run(args):
     records = json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
     for mid, reason in excluded.items():
         records.setdefault(mid, {"master_id": mid, "outcome": reason, "at": now(), "excluded": True})
-    maps_cache = _batch_maps_prefetch(root, selected, records, outscraper) if outscraper is not None else {}
+    maps_cache = _batch_maps_prefetch(root, selected, records, outscraper, allow_fresh=outscraper_allow_fresh) if outscraper is not None else {}
     summary = {"status": "running", "started_at": now(), "universe": len(rows), "selected": len(selected),
                "excluded": len(excluded), "balances_before": balances,
                "outscraper_fallback": bool(outscraper), "outscraper_balance_before": outscraper_balance_before,
+               "outscraper_allow_fresh": outscraper_allow_fresh,
                "dataforseo_fallback": bool(args.use_dataforseo_fallback),
                "sends": 0, "queue_writes": 0, "purchases": 0, "apply": args.apply,
                "run_processed": 0, "task_id": "t_73094078"}
@@ -1138,6 +1145,7 @@ def run(args):
                     outscraper=outscraper,
                     maps_cache=maps_cache,
                     use_dataforseo=args.use_dataforseo_fallback,
+                    outscraper_allow_fresh=outscraper_allow_fresh,
                 )
             except (Exception, CompanyDeadline) as exc:
                 result = {"master_id": mid, "company": row.get("Company_or_Office"), "outcome": "research_error",
