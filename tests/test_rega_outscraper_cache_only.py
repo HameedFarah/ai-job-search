@@ -14,6 +14,11 @@ class NoHostResearch:
         return "", [], [], "identity_unconfirmed"
 
 
+class NoResolveResearch:
+    def resolve(self, row):
+        raise AssertionError("generic research must be skipped in cache-only mode")
+
+
 def test_batch_prefetch_cache_only_never_calls_provider(tmp_path: Path):
     cache = {"discovery_version": DISCOVERY_VERSION, "maps_batch_version": 3,
              "records": {"CE-1": {"records": [{"status": "candidate"}]}}}
@@ -32,6 +37,6 @@ def test_cache_miss_no_credit_finishes_without_provider_call():
 def test_cached_provider_failure_is_terminal_without_credit():
     row = {"Master_ID": "CE-3", "Company_or_Office": "Example", "Arabic_Name": "", "Region": "Riyadh"}
     cache = {"CE-3": [{"status": "quota_required"}]}
-    result = process(row, NoHostResearch(), object(), object(), outscraper=object(), maps_cache=cache, outscraper_allow_fresh=False)
+    result = process(row, NoResolveResearch(), object(), object(), outscraper=object(), maps_cache=cache, outscraper_allow_fresh=False)
     assert result["outcome"] == "identity_unconfirmed"
     assert result["outscraper_maps"]["retryable"] is True

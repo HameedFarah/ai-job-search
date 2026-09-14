@@ -703,7 +703,13 @@ def resolve_dataforseo(row, research):
 def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_dataforseo=False, outscraper_allow_fresh=True):
     result = {"master_id": row["Master_ID"], "company": row.get("Company_or_Office"),
               "priority": priority_band(career_value_score(row)), "at": now(), "discovery_version": DISCOVERY_VERSION, "contacts": [], "portals": []}
-    if use_dataforseo:
+    cache_only_maps = bool(outscraper is not None and not outscraper_allow_fresh and maps_cache is not None and row["Master_ID"] in maps_cache)
+    if cache_only_maps:
+        # Identity search already ran in earlier phases. For an exhausted
+        # Outscraper account, evaluate only the evidence already purchased.
+        host, pages, evidence, identity = "", [], [], "identity_unconfirmed"
+        result["dataforseo_attempted"] = False
+    elif use_dataforseo:
         host, pages, evidence, identity = research.resolve_existing(row)
         result["dataforseo_attempted"] = True
         result["dataforseo_version"] = DATAFORSEO_DISCOVERY_VERSION
