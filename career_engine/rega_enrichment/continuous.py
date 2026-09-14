@@ -743,9 +743,13 @@ def process(row, research, apis, dedupe, outscraper=None, maps_cache=None, use_d
         result["outscraper_maps"] = maps_detail
         maps_basis = str(maps_detail.get("basis") or "")
         if not candidate_host:
-            if maps_detail.get("retryable") or maps_basis in {"outscraper_maps_error", "outscraper_maps_provider_failure", "outscraper_maps_batch_provider_failure"}:
+            retryable_maps_failure = maps_detail.get("retryable") or maps_basis in {"outscraper_maps_error", "outscraper_maps_provider_failure", "outscraper_maps_batch_provider_failure"}
+            if retryable_maps_failure and outscraper_allow_fresh:
                 identity = "provider_research_incomplete"
             else:
+                # With exhausted Outscraper credit, cached provider failures are
+                # a terminal no-evidence result for this no-purchase pass rather
+                # than an infrastructure-incomplete state that can never clear.
                 identity = "identity_unconfirmed"
         elif candidate_pages:
             host, pages, identity = candidate_host, candidate_pages, "confirmed"
@@ -1048,6 +1052,7 @@ def run(args):
                 or (
                     args.use_outscraper_fallback
                     and not r.get("outscraper_attempted")
+                    and (outscraper_allow_fresh or str(r.get("master_id") or "") in maps_cache)
                     and r.get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "provider_research_incomplete"}
                 )
                 or (
@@ -1110,6 +1115,7 @@ def run(args):
                     or (
                         args.use_outscraper_fallback
                         and not records[mid].get("outscraper_attempted")
+                        and (outscraper_allow_fresh or mid in maps_cache)
                         and records[mid].get("outcome") in {"identity_unconfirmed", "domain_confirmed_no_route", "email_candidates_held", "provider_research_incomplete"}
                     )
                     or (

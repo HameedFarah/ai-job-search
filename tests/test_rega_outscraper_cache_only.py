@@ -27,3 +27,11 @@ def test_cache_miss_no_credit_finishes_without_provider_call():
     result = process(row, NoHostResearch(), object(), object(), outscraper=object(), maps_cache={}, outscraper_allow_fresh=False)
     assert result["outcome"] == "identity_unconfirmed"
     assert result["outscraper_maps"]["basis"] == "outscraper_cache_miss_no_credit"
+
+
+def test_cached_provider_failure_is_terminal_without_credit():
+    row = {"Master_ID": "CE-3", "Company_or_Office": "Example", "Arabic_Name": "", "Region": "Riyadh"}
+    cache = {"CE-3": [{"status": "quota_required"}]}
+    result = process(row, NoHostResearch(), object(), object(), outscraper=object(), maps_cache=cache, outscraper_allow_fresh=False)
+    assert result["outcome"] == "identity_unconfirmed"
+    assert result["outscraper_maps"]["retryable"] is True
