@@ -1052,8 +1052,20 @@ def run(args):
     save(root / "scope.json", {"at": now(), "universe": len(rows), "selected_ids": [r["Master_ID"] for r in selected], "excluded": excluded})
     checkpoint = root / "records.json"
     records = json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
+    selected_ids = {r["Master_ID"] for r in selected}
+    # Reconcile checkpoint membership to the current canonical scope on every
+    # run. Historical records may move to already_contacted/already_covered
+    # after the sender succeeds; they must stop contributing to active yield
+    # and remaining-work counters without losing their evidence history.
+    for mid, record in records.items():
+        if mid in excluded:
+            record["excluded"] = True
+            record["exclusion_reason"] = excluded[mid]
+        elif mid in selected_ids:
+            record.pop("excluded", None)
+            record.pop("exclusion_reason", None)
     for mid, reason in excluded.items():
-        records.setdefault(mid, {"master_id": mid, "outcome": reason, "at": now(), "excluded": True})
+        records.setdefault(mid, {"master_id": mid, "outcome": reason, "at": now(), "excluded": True, "exclusion_reason": reason})
     maps_cache = _batch_maps_prefetch(root, selected, records, outscraper, allow_fresh=outscraper_allow_fresh) if outscraper is not None else {}
     summary = {"status": "running", "started_at": now(), "universe": len(rows), "selected": len(selected),
                "excluded": len(excluded), "balances_before": balances,
