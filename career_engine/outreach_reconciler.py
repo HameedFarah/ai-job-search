@@ -900,6 +900,45 @@ def sent_tracker_dedupe_for_queue(
     return result
 
 
+def sent_tracker_delivery_failures_for_queue(
+    spreadsheet_token: str,
+    spreadsheet_id: str = SPREADSHEET_ID,
+) -> set[str]:
+    """Return exact recipients with proven post-send delivery failure.
+
+    Any DSN-backed failure reopens company/domain replacement discovery. Only
+    PERMANENT failures are exact-mailbox hard blocks; temporary, policy, server,
+    and message-size failures must not masquerade as successful company contact.
+    """
+    encoded = quote("Sent Email Tracker!A:L", safe="!:")
+    body = sheets_request(
+        spreadsheet_token,
+        "GET",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{encoded}",
+    )
+    values = body.get("values")
+    if not isinstance(values, list) or len(values) < 2:
+        raise RuntimeError("Sent Email Tracker is empty or malformed")
+    headers = [str(x) for x in values[0]]
+    required = {"Recipient_Email", "Career_Related", "Delivery_State", "Bounce_State"}
+    if not required.issubset(set(headers)):
+        raise RuntimeError("Sent Email Tracker schema does not match canonical contract")
+    failed: set[str] = set()
+    for raw in values[1:]:
+        if not isinstance(raw, list):
+            continue
+        padded = [str(x) for x in raw] + [""] * (len(headers) - len(raw))
+        row = dict(zip(headers, padded))
+        if str(row.get("Career_Related") or "").strip().upper() != "YES":
+            continue
+        email = str(row.get("Recipient_Email") or "").strip().lower()
+        delivery = str(row.get("Delivery_State") or "").strip().upper()
+        bounce = str(row.get("Bounce_State") or "").strip().upper()
+        if email and "@" in email and (delivery == "BOUNCED" or bounce):
+            failed.add(email)
+    return failed
+
+
 def gmail_dedupe_for_queue(*, after_epoch: int | None = None) -> dict[str, str]:
     """Return {recipient_email: message_id} from BOTH Gmail config contexts.
 
@@ -1039,6 +1078,7 @@ class QueueReconciler:
         self.blocked_emails: set[str] = set()
         self.blocked_companies: set[str] = set()
         self.permanently_bounced_mailboxes: set[str] = set()
+        self.delivery_failed_mailboxes: set[str] = set()
         self.master_rows: list[dict[str, str]] = []
         self.master: dict[str, Any] = _master_index([])
 
@@ -1070,8 +1110,10 @@ class QueueReconciler:
             checkpoint_eligible = set()
 
         tracker_sent: dict[str, str] = {}
+        tracker_failed: set[str] = set()
         if getattr(self, "sheet_token", None):
             tracker_sent = sent_tracker_dedupe_for_queue(self.sheet_token)
+            tracker_failed = sent_tracker_delivery_failures_for_queue(self.sheet_token)
 
         if active_emails and active_emails.issubset(checkpoint_eligible):
             self.gmail_dedupe_mode = "sent-tracker-plus-incremental-gmail"
@@ -1084,11 +1126,13 @@ class QueueReconciler:
         self.sent_by_email = dict(tracker_sent)
         self.sent_by_email.update(live_sent)
         self.gmail_dedupe_loaded = True
+        self.delivery_failed_mailboxes = tracker_failed
 
         # Build blocked sets from Gmail-sent emails and canonical master aliases.
         email_to_company = self.master.get("email_to_company", {})
         company_domains = self.master.get("company_domains", {})
         self.permanently_bounced_mailboxes = set(self.master.get("permanent_bounce_emails", []))
+        self.delivery_failed_mailboxes |= self.permanently_bounced_mailboxes
         for email, _mid in self.sent_by_email.items():
             email = email.lower().strip()
             # Every historical recipient remains an exact-address block. A
@@ -1096,7 +1140,7 @@ class QueueReconciler:
             # company/domain was successfully contacted. Do not let that
             # failed delivery poison a verified replacement route.
             self.blocked_emails.add(email)
-            if email in self.permanently_bounced_mailboxes:
+            if email in self.delivery_failed_mailboxes:
                 continue
             domain = _email_domain(email)
             if domain and not _is_public_email_domain(domain):
@@ -1212,9 +1256,10 @@ class QueueReconciler:
             sent_company = _company_key(str(entry.get("company") or ""))
             sent_domain = str(entry.get("domain") or _email_domain(str(entry.get("email") or ""))).lower()
             sent_email = str(entry.get("email") or "").strip().lower()
-            # Ledger SENT entries for permanently bounced mailboxes must NOT
-            # poison the domain for verified replacement addresses.
-            if sent_email in self.permanently_bounced_mailboxes:
+            # A Gmail transaction that later failed delivery must NOT poison
+            # company/domain dedupe for a verified replacement address.
+            failed_delivery = getattr(self, "delivery_failed_mailboxes", self.permanently_bounced_mailboxes)
+            if sent_email in failed_delivery:
                 continue
             if sent_company:
                 sent_companies.add(sent_company)

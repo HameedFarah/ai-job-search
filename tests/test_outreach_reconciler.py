@@ -1007,6 +1007,33 @@ def test_success_in_ledger_blocks_replacement():
         tmp.unlink(missing_ok=True)
 
 
+
+def test_message_size_delivery_failure_does_not_block_replacement_in_ledger():
+    """A DSN message-size rejection is a failed delivery, not company contact."""
+    tmp = Path("/tmp/test_message_size_ledger.json")
+    try:
+        ledger = QueueLedger(tmp)
+        qid = _stable_id_for("careers@old-domain.sa")
+        ledger.mark_pending(qid, {
+            "email": "careers@old-domain.sa", "company": "Example Group",
+            "priority": "IMPORTANT", "added_at": "2026-09-01T00:00:00Z", "domain": "old-domain.sa",
+        })
+        ledger.mark_sent(qid, "mid-size-reject", "2026-09-01T01:00:00Z")
+        ledger.save()
+        r = QueueReconciler.__new__(QueueReconciler)
+        r.ledger = QueueLedger(tmp)
+        r.master = _master_index([])
+        r.permanently_bounced_mailboxes = set()
+        r.delivery_failed_mailboxes = {"careers@old-domain.sa"}
+        candidate = {
+            "email": "info@new-domain.sa", "queue_id": _stable_id_for("info@new-domain.sa"),
+            "domain": "new-domain.sa", "company": "Example Group",
+        }
+        result = r.apply_ledge_dedupe([candidate])
+        assert [row["email"] for row in result] == ["info@new-domain.sa"]
+    finally:
+        tmp.unlink(missing_ok=True)
+
 def test_exact_mailbox_block_still_works():
     """Exact permanently bounced mailbox must NEVER be retried, regardless of
     domain dedupe lifting."""
