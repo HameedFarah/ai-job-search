@@ -66,6 +66,27 @@ def test_window_close_buffer_prevents_edge_send_start():
     assert sender.MIN_SEND_START_BUFFER_SECONDS == 120
 
 
+def test_sender_token_refreshes_before_expiry(monkeypatch):
+    monkeypatch.setattr(sender, "gmail_access_token_for_context", lambda _ctx: "fresh")
+    monkeypatch.setattr(sender, "_sender_profile", lambda _token: sender.CAREER_OUTWARD_EMAIL)
+    token, acquired = sender._refresh_sender_token_if_due(
+        "old", 100.0, now_mono=100.0 + sender.GMAIL_TOKEN_REFRESH_SECONDS
+    )
+    assert token == "fresh"
+    assert acquired == 100.0 + sender.GMAIL_TOKEN_REFRESH_SECONDS
+
+
+def test_sender_token_reused_inside_refresh_window(monkeypatch):
+    def no_refresh(_ctx):
+        raise AssertionError("refresh not due")
+    monkeypatch.setattr(sender, "gmail_access_token_for_context", no_refresh)
+    token, acquired = sender._refresh_sender_token_if_due(
+        "fresh-enough", 100.0, now_mono=100.0 + sender.GMAIL_TOKEN_REFRESH_SECONDS - 1
+    )
+    assert token == "fresh-enough"
+    assert acquired == 100.0
+
+
 def test_campaign_package_is_config_driven():
     campaign = _campaign()
     assert campaign["subject"] == ARABIC_SUBJECT

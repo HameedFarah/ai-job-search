@@ -73,6 +73,7 @@ POLL_SECONDS = 60
 # This margin is deliberately larger than the normal API/readback latency and
 # still preserves the owner-approved operating window.
 MIN_SEND_START_BUFFER_SECONDS = 120
+GMAIL_TOKEN_REFRESH_SECONDS = 45 * 60
 # Distinguish a deliberate Gmail account-level stop from transient infrastructure
 # failures so systemd may safely restart the latter without retrying a restricted
 # sending account.
@@ -142,6 +143,16 @@ def _gmail_json(token: str, method: str, url: str, payload: dict[str, Any] | Non
 def _sender_profile(token: str) -> str:
     payload = _gmail_json(token, "GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile")
     return str(payload.get("emailAddress") or "").strip().lower()
+
+
+def _refresh_sender_token_if_due(token: str, acquired_mono: float, *, now_mono: float | None = None) -> tuple[str, float]:
+    current = time.monotonic() if now_mono is None else now_mono
+    if current - acquired_mono < GMAIL_TOKEN_REFRESH_SECONDS:
+        return token, acquired_mono
+    refreshed = gmail_access_token_for_context(SENDER_GWS_CONFIG_DIR)
+    if _sender_profile(refreshed) != CAREER_OUTWARD_EMAIL:
+        raise RuntimeError("sender OAuth context is not hameedfarah@gmail.com")
+    return refreshed, current
 
 
 def _sender_sent_today_count(token: str) -> int:
@@ -949,6 +960,7 @@ def run(
     sender_token = gmail_access_token_for_context(SENDER_GWS_CONFIG_DIR)
     if _sender_profile(sender_token) != CAREER_OUTWARD_EMAIL:
         raise RuntimeError("sender OAuth context is not hameedfarah@gmail.com")
+    sender_token_acquired_mono = time.monotonic()
 
     failed_this_run: set[str] = set()
     reconciler, ready_queue = _refresh_ready_queue(
@@ -983,6 +995,9 @@ def run(
             time.sleep(max(0.1, min(cadence_wait, seconds_left)))
             continue
 
+        sender_token, sender_token_acquired_mono = _refresh_sender_token_if_due(
+            sender_token, sender_token_acquired_mono
+        )
         ready_queue = _drop_committed_ready_rows(ready_queue, reconciler, failed_this_run)
         refresh_due = (
             not ready_queue
@@ -1076,6 +1091,9 @@ def run(
             )
             return 0
 
+        sender_token, sender_token_acquired_mono = _refresh_sender_token_if_due(
+            sender_token, sender_token_acquired_mono
+        )
         selected = ready_queue[0]
         queue_id = str(selected["queue_id"])
         email = str(selected["email"]).lower()
