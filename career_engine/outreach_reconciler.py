@@ -939,6 +939,49 @@ def sent_tracker_delivery_failures_for_queue(
     return failed
 
 
+def gmail_dedupe_for_active_emails(active_emails: set[str]) -> dict[str, str]:
+    """Target Gmail dedupe to currently active recipients and their domains.
+
+    This preserves the cross-account Gmail safety check without rescanning every
+    sent message whenever new research rows are appended to the queue.
+    """
+    emails = sorted({
+        str(email or "").strip().lower()
+        for email in active_emails
+        if _valid_email(str(email or ""))
+    })
+    if not emails:
+        return {}
+    contexts = (
+        (CAREER_GMAIL_ACCOUNT, PRIMARY_GWS_CONFIG_DIR),
+        (CAREER_OUTWARD_EMAIL, SENDER_GWS_CONFIG_DIR),
+    )
+    sent_by_email: dict[str, str] = {}
+    for expected_email, config_dir in contexts:
+        actual = _profile_email(config_dir)
+        if actual != expected_email:
+            raise RuntimeError(
+                f"Gmail config context {config_dir.name} authenticated as {actual or 'unknown'}, expected {expected_email}"
+            )
+        token = gmail_access_token_for_context(config_dir)
+        for offset in range(0, len(emails), 20):
+            chunk = emails[offset:offset + 20]
+            terms: list[str] = []
+            for email in chunk:
+                terms.append(f"to:{email}")
+                domain = _email_domain(email)
+                if domain and not _is_public_email_domain(domain):
+                    terms.append(f"to:{domain}")
+            query = "after:2026/08/01 {" + " ".join(terms) + "}"
+            for message in _gmail_list_paginated(token, "messages", query):
+                message_id = str(message.get("id") or "")
+                if not message_id:
+                    continue
+                for addr in _message_to_addrs(token, message_id):
+                    sent_by_email.setdefault(addr, message_id)
+    return sent_by_email
+
+
 def gmail_dedupe_for_queue(*, after_epoch: int | None = None) -> dict[str, str]:
     """Return {recipient_email: message_id} from BOTH Gmail config contexts.
 
@@ -1119,10 +1162,11 @@ class QueueReconciler:
             self.gmail_dedupe_mode = "sent-tracker-plus-incremental-gmail"
             live_sent = gmail_dedupe_for_queue(after_epoch=_dedupe_checkpoint_after_epoch())
         else:
-            # New or previously-unaccepted rows receive a complete Gmail
-            # history census before they can become sendable.
-            self.gmail_dedupe_mode = "sent-tracker-plus-full-gmail-history"
-            live_sent = gmail_dedupe_for_queue()
+            # New research rows only need a targeted cross-account Gmail check
+            # for their exact addresses and non-public domains. Historical
+            # company evidence still comes from the canonical Sent Email Tracker.
+            self.gmail_dedupe_mode = "sent-tracker-plus-targeted-gmail"
+            live_sent = gmail_dedupe_for_active_emails(active_emails)
         self.sent_by_email = dict(tracker_sent)
         self.sent_by_email.update(live_sent)
         self.gmail_dedupe_loaded = True

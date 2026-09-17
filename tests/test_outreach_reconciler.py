@@ -512,21 +512,22 @@ def test_checkpoint_covered_queue_uses_incremental_gmail_scan(monkeypatch):
     assert calls == [module._dedupe_checkpoint_after_epoch()]
 
 
-def test_uncovered_queue_falls_back_to_full_history(monkeypatch):
+def test_uncovered_queue_uses_targeted_gmail_scan(monkeypatch):
     import career_engine.outreach_reconciler as module
 
-    r = _dedupe_test_reconciler("new@arabstarch.com")
+    email = "new@arabstarch.com"
+    r = _dedupe_test_reconciler(email)
     calls = []
     monkeypatch.setattr(module, "verify_both_accounts_available", lambda: (True, "ok"))
     monkeypatch.setattr(module, "_accepted_dedupe_checkpoint_eligible_emails", lambda: {"other@baad.gov.sa"})
     monkeypatch.setattr(
         module,
-        "gmail_dedupe_for_queue",
-        lambda *, after_epoch=None: calls.append(after_epoch) or {},
+        "gmail_dedupe_for_active_emails",
+        lambda active: calls.append(set(active)) or {},
     )
     assert r.fetch_gmail_dedupe() == {}
-    assert r.gmail_dedupe_mode == "sent-tracker-plus-full-gmail-history"
-    assert calls == [None]
+    assert r.gmail_dedupe_mode == "sent-tracker-plus-targeted-gmail"
+    assert calls == [{email}]
 
 
 def test_gmail_access_token_for_context_raises_on_fail():
