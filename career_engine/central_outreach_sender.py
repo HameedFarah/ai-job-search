@@ -14,7 +14,7 @@ import hashlib
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -69,7 +69,7 @@ DEFAULT_REGA_STAGE_JOURNAL = REPO_ROOT / "runtime/acceptance/auto-send-queue/reg
 READY_CACHE_SCHEMA = "auto-send-ready-queue/1"
 READY_REFRESH_SECONDS = 30 * 60
 POLL_SECONDS = 60
-# Do not begin a fresh Gmail transaction at the edge of the hard 19:00 stop.
+# Do not begin a fresh Gmail transaction at the edge of the configured send-window stop.
 # This margin is deliberately larger than the normal API/readback latency and
 # still preserves the owner-approved operating window.
 MIN_SEND_START_BUFFER_SECONDS = 120
@@ -107,7 +107,10 @@ def _seconds_until_window_close(
     local = (now or datetime.now(timezone.utc)).astimezone(RIYADH)
     if not _window_open(local, start_hour=start_hour, end_hour=end_hour):
         return 0.0
-    close = local.replace(hour=end_hour, minute=0, second=0, microsecond=0)
+    if end_hour == 24:
+        close = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        close = local.replace(hour=end_hour, minute=0, second=0, microsecond=0)
     return max(0.0, (close - local).total_seconds())
 
 
@@ -230,7 +233,7 @@ def _read_campaign_config(sheet_token: str) -> dict[str, Any]:
     window_end = int(config["send_window_end_hour"])
     if cadence_seconds < MIN_ALLOWED_CADENCE_SECONDS:
         raise RuntimeError("campaign cadence is below hard safety minimum")
-    if daily_cap <= 0 or daily_cap > 300:
+    if daily_cap <= 0 or daily_cap > 350:
         raise RuntimeError("campaign send cap is outside approved safety bound")
     if not (0 <= window_start < window_end <= 24):
         raise RuntimeError("campaign send window is invalid")

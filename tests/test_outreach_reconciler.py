@@ -205,9 +205,9 @@ def test_18_59_allowed():
     assert result is not None
 
 
-def test_19_00_denied():
-    # 19:00 Asia/Riyadh = 16:00 UTC — hour is 19, outside window
-    now = datetime(2026, 9, 1, 16, 0, tzinfo=timezone.utc)
+def test_midnight_denied():
+    # 00:00 Asia/Riyadh = 21:00 UTC on the prior UTC date
+    now = datetime(2026, 9, 1, 21, 0, tzinfo=timezone.utc)
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = QueueLedger(Path("/dev/null"))
     r.master = _master_index([])
@@ -215,9 +215,9 @@ def test_19_00_denied():
     assert result is None
 
 
-def test_before_08_00_denied():
-    # 05:00 Asia/Riyadh = 02:00 UTC
-    now = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+def test_before_05_00_denied():
+    # 04:59 Asia/Riyadh = 01:59 UTC
+    now = datetime(2026, 9, 1, 1, 59, tzinfo=timezone.utc)
     r = QueueReconciler.__new__(QueueReconciler)
     r.ledger = QueueLedger(Path("/dev/null"))
     r.master = _master_index([])
@@ -225,12 +225,12 @@ def test_before_08_00_denied():
     assert result is None
 
 
-def test_window_end_hour_is_19():
-    assert WINDOW_END_HOUR == 19
+def test_window_end_hour_is_24():
+    assert WINDOW_END_HOUR == 24
 
 
-def test_window_start_hour_is_8():
-    assert WINDOW_START_HOUR == 8
+def test_window_start_hour_is_5():
+    assert WINDOW_START_HOUR == 5
 
 
 # ---------------------------------------------------------------------------
@@ -633,8 +633,8 @@ def test_queue_columns_count():
     assert len(QUEUE_COL) == 12
 
 
-def test_max_daily_is_300():
-    assert MAX_DAILY == 300
+def test_max_daily_is_350():
+    assert MAX_DAILY == 350
 
 
 # ---------------------------------------------------------------------------

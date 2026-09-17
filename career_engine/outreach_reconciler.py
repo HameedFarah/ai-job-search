@@ -100,11 +100,11 @@ SENDERS = {CAREER_OUTWARD_EMAIL}  # hameedfarah@gmail.com only
 # >=90 sec cadence between sends
 CADENCE_SECONDS = 90
 
-MAX_DAILY = 300
+MAX_DAILY = 350
 
-# Send window: 08:00 <= local hour < 19 (i.e. 08:00 through 18:59)
-WINDOW_START_HOUR = 8
-WINDOW_END_HOUR = 19
+# Send window: 05:00 <= local hour < 24 (i.e. 05:00 through 23:59)
+WINDOW_START_HOUR = 5
+WINDOW_END_HOUR = 24
 
 # Absolute exclusion lists. Keep all known English/Arabic aliases here so every
 # queue consumer and replenisher inherits the same protected-employer gate.
@@ -1371,7 +1371,7 @@ class QueueReconciler:
 
         local = now_utc.astimezone(RIYADH)
 
-        # Send window check: 08:00 <= hour < 19
+        # Send window check: 05:00 <= hour < 24
         if not (WINDOW_START_HOUR <= local.hour < WINDOW_END_HOUR):
             return None  # outside window
 
@@ -1396,7 +1396,10 @@ class QueueReconciler:
         if local.hour >= WINDOW_START_HOUR and local.hour < WINDOW_END_HOUR:
             # We're in the window — return seconds until it closes
             if local.hour == WINDOW_END_HOUR - 1 and local.minute >= 0:
-                target = local.replace(hour=WINDOW_END_HOUR, minute=0, second=0, microsecond=0)
+                if WINDOW_END_HOUR == 24:
+                    target = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                else:
+                    target = local.replace(hour=WINDOW_END_HOUR, minute=0, second=0, microsecond=0)
                 return max(0.0, (target - local).total_seconds())
             return 0.0
 

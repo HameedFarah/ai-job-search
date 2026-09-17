@@ -52,17 +52,17 @@ def _campaign() -> dict:
 
 
 def test_window_boundaries_are_exact():
-    assert sender._window_open(datetime(2026, 9, 2, 5, 0, tzinfo=timezone.utc)) is True   # 08:00 Riyadh
-    assert sender._window_open(datetime(2026, 9, 2, 15, 59, tzinfo=timezone.utc)) is True # 18:59 Riyadh
-    assert sender._window_open(datetime(2026, 9, 2, 16, 0, tzinfo=timezone.utc)) is False # 19:00 Riyadh
-    assert sender._window_open(datetime(2026, 9, 2, 4, 59, tzinfo=timezone.utc)) is False # 07:59 Riyadh
+    assert sender._window_open(datetime(2026, 9, 2, 1, 59, tzinfo=timezone.utc)) is False # 04:59 Riyadh
+    assert sender._window_open(datetime(2026, 9, 2, 2, 0, tzinfo=timezone.utc)) is True    # 05:00 Riyadh
+    assert sender._window_open(datetime(2026, 9, 2, 20, 59, tzinfo=timezone.utc)) is True  # 23:59 Riyadh
+    assert sender._window_open(datetime(2026, 9, 2, 21, 0, tzinfo=timezone.utc)) is False  # 00:00 Riyadh next day
 
 
 def test_window_close_buffer_prevents_edge_send_start():
-    at_1858 = datetime(2026, 9, 2, 15, 58, 0, tzinfo=timezone.utc)
-    at_185901 = datetime(2026, 9, 2, 15, 59, 1, tzinfo=timezone.utc)
-    assert sender._seconds_until_window_close(at_1858) == 120
-    assert sender._seconds_until_window_close(at_185901) == 59
+    at_2358 = datetime(2026, 9, 2, 20, 58, 0, tzinfo=timezone.utc)
+    at_235901 = datetime(2026, 9, 2, 20, 59, 1, tzinfo=timezone.utc)
+    assert sender._seconds_until_window_close(at_2358) == 120
+    assert sender._seconds_until_window_close(at_235901) == 59
     assert sender.MIN_SEND_START_BUFFER_SECONDS == 120
 
 
