@@ -92,7 +92,7 @@ def load_queue(path: Path) -> list[dict]:
 def build_raw(item: dict) -> bytes:
     message = EmailMessage()
     message["To"] = str(item["email"]).strip().lower()
-    message["From"] = CAREER_OUTWARD_EMAIL
+    message["From"] = str(item.get("sender_email") or CAREER_OUTWARD_EMAIL).strip().lower()
     message["Subject"] = str(item["subject"])
     message.set_content(str(item["body"]))
     for attachment in item["attachments"]:
@@ -123,7 +123,8 @@ def _verify_message_payload(payload: dict, item: dict, *, require_sent: bool) ->
     parsed = BytesParser(policy=policy.default).parsebytes(_b64url_decode(raw))
     sender = parseaddr(str(parsed.get("From", "")))[1].lower()
     recipient = parseaddr(str(parsed.get("To", "")))[1].lower()
-    if sender != CAREER_OUTWARD_EMAIL or recipient != str(item["email"]).strip().lower():
+    expected_sender = str(item.get("sender_email") or CAREER_OUTWARD_EMAIL).strip().lower()
+    if sender != expected_sender or recipient != str(item["email"]).strip().lower():
         raise RuntimeError("Gmail message sender/recipient verification failed")
     if str(parsed.get("Subject", "")).strip() != str(item["subject"]).strip():
         raise RuntimeError("Gmail message subject verification failed")

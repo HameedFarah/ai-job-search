@@ -23,9 +23,10 @@ from urllib.request import Request, urlopen
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from career_engine.gmail import CAREER_OUTWARD_EMAIL, _b64url_encode
+from career_engine.gmail import CAREER_GMAIL_ACCOUNT, CAREER_OUTWARD_EMAIL, _b64url_encode
 from career_engine.outreach_reconciler import (
     RIYADH,
+    PRIMARY_GWS_CONFIG_DIR,
     SENDER_GWS_CONFIG_DIR,
     WINDOW_END_HOUR,
     WINDOW_START_HOUR,
@@ -148,13 +149,13 @@ def _sender_profile(token: str) -> str:
     return str(payload.get("emailAddress") or "").strip().lower()
 
 
-def _refresh_sender_token_if_due(token: str, acquired_mono: float, *, now_mono: float | None = None) -> tuple[str, float]:
+def _refresh_sender_token_if_due(token: str, acquired_mono: float, *, config_dir: Path = SENDER_GWS_CONFIG_DIR, expected_email: str = CAREER_OUTWARD_EMAIL, now_mono: float | None = None) -> tuple[str, float]:
     current = time.monotonic() if now_mono is None else now_mono
     if current - acquired_mono < GMAIL_TOKEN_REFRESH_SECONDS:
         return token, acquired_mono
-    refreshed = gmail_access_token_for_context(SENDER_GWS_CONFIG_DIR)
-    if _sender_profile(refreshed) != CAREER_OUTWARD_EMAIL:
-        raise RuntimeError("sender OAuth context is not hameedfarah@gmail.com")
+    refreshed = gmail_access_token_for_context(config_dir)
+    if _sender_profile(refreshed) != expected_email:
+        raise RuntimeError(f"sender OAuth context is not {expected_email}")
     return refreshed, current
 
 
@@ -223,6 +224,10 @@ def _read_campaign_config(sheet_token: str) -> dict[str, Any]:
         raise RuntimeError("campaign sequence mismatch")
     if config["next_send_timezone"] != "Asia/Riyadh":
         raise RuntimeError("campaign timezone mismatch")
+    dual_sender_enabled = config.get("dual_sender_enabled", "FALSE").strip().upper() in {"1", "TRUE", "YES", "ON"}
+    secondary_sender_email = config.get("secondary_sender_email", "").strip().lower()
+    if dual_sender_enabled and secondary_sender_email != CAREER_GMAIL_ACCOUNT:
+        raise RuntimeError("dual sender secondary account mismatch")
 
     start_at = datetime.fromisoformat(config["next_send_start_at"])
     if start_at.tzinfo is None:
@@ -240,6 +245,8 @@ def _read_campaign_config(sheet_token: str) -> dict[str, Any]:
 
     return {
         "sender_email": config["sender_email"].lower(),
+        "dual_sender_enabled": dual_sender_enabled,
+        "secondary_sender_email": secondary_sender_email,
         "subject": config["subject"],
         "body": config["body"],
         "content_version": config["next_batch_content_version"],
@@ -960,10 +967,19 @@ def run(
     ok, detail = verify_both_accounts_available()
     if not ok:
         raise RuntimeError(f"FAIL_CLOSED_BOTH_GMAIL_REQUIRED: {detail}")
-    sender_token = gmail_access_token_for_context(SENDER_GWS_CONFIG_DIR)
-    if _sender_profile(sender_token) != CAREER_OUTWARD_EMAIL:
-        raise RuntimeError("sender OAuth context is not hameedfarah@gmail.com")
-    sender_token_acquired_mono = time.monotonic()
+    account_specs = [(CAREER_OUTWARD_EMAIL, SENDER_GWS_CONFIG_DIR)]
+    if campaign.get("dual_sender_enabled", False):
+        account_specs.append((CAREER_GMAIL_ACCOUNT, PRIMARY_GWS_CONFIG_DIR))
+    sender_accounts: list[dict[str, Any]] = []
+    for account_email, config_dir in account_specs:
+        token = gmail_access_token_for_context(config_dir)
+        if _sender_profile(token) != account_email:
+            raise RuntimeError(f"sender OAuth context is not {account_email}")
+        sender_accounts.append({
+            "email": account_email, "config_dir": config_dir, "token": token,
+            "acquired_mono": time.monotonic(), "sent_today": 0,
+            "count_loaded": False, "disabled": False,
+        })
 
     failed_this_run: set[str] = set()
     reconciler, ready_queue = _refresh_ready_queue(
@@ -973,8 +989,6 @@ def run(
         failed_this_run,
     )
     last_refresh_mono = time.monotonic()
-    sender_sent_today = 0
-    gmail_count_loaded = False
 
     while _window_open(
         start_hour=campaign["window_start_hour"],
@@ -998,9 +1012,6 @@ def run(
             time.sleep(max(0.1, min(cadence_wait, seconds_left)))
             continue
 
-        sender_token, sender_token_acquired_mono = _refresh_sender_token_if_due(
-            sender_token, sender_token_acquired_mono
-        )
         ready_queue = _drop_committed_ready_rows(ready_queue, reconciler, failed_this_run)
         refresh_due = (
             not ready_queue
@@ -1016,42 +1027,32 @@ def run(
             )
             last_refresh_mono = time.monotonic()
             ready_queue = _drop_committed_ready_rows(ready_queue, reconciler, failed_this_run)
-            # External/manual sends can change the conservative account-level
-            # daily count, so refresh it only with a populated periodic refresh.
+            # External/manual sends can change account-level daily counts.
             if ready_queue:
-                sender_sent_today = _sender_sent_today_count(sender_token)
-                gmail_count_loaded = True
-            else:
-                gmail_count_loaded = False
+                for account in sender_accounts:
+                    account["sent_today"] = _sender_sent_today_count(account["token"])
+                    account["count_loaded"] = True
 
         if not ready_queue:
-            _status(status_path, "idle", ready=0, sender=CAREER_OUTWARD_EMAIL)
+            _status(status_path, "idle", ready=0, senders=[a["email"] for a in sender_accounts])
             if once:
                 return 0
             time.sleep(max(1, poll_seconds))
             continue
 
-        if not gmail_count_loaded:
-            sender_sent_today = _sender_sent_today_count(sender_token)
-            gmail_count_loaded = True
-
-        if sender_sent_today >= campaign["daily_cap"]:
-            _status(
-                status_path,
-                "daily-cap",
-                sender_sent_today=sender_sent_today,
-                cap=campaign["daily_cap"],
-            )
-            return 0
-
+        for account in sender_accounts:
+            if not account["count_loaded"]:
+                account["sent_today"] = _sender_sent_today_count(account["token"])
+                account["count_loaded"] = True
+        eligible_accounts = [a for a in sender_accounts if not a["disabled"] and a["sent_today"] < campaign["daily_cap"]]
         sent_today = _sent_today_from_ledger(reconciler)
-        if max(sent_today, sender_sent_today) >= campaign["daily_cap"]:
+        total_daily_cap = campaign["daily_cap"] * len(sender_accounts)
+        if not eligible_accounts or sent_today >= total_daily_cap:
             _status(
-                status_path,
-                "daily-cap",
-                sender_sent_today=sender_sent_today,
-                ledger_sent_today=sent_today,
-                cap=campaign["daily_cap"],
+                status_path, "daily-cap",
+                account_counts={a["email"]: a["sent_today"] for a in sender_accounts},
+                per_account_cap=campaign["daily_cap"], ledger_sent_today=sent_today,
+                total_cap=total_daily_cap,
             )
             return 0
 
@@ -1083,19 +1084,16 @@ def run(
         campaign["daily_cap"] = live_campaign["daily_cap"]
         campaign["window_start_hour"] = live_campaign["window_start_hour"]
         campaign["window_end_hour"] = live_campaign["window_end_hour"]
-        if max(sent_today, sender_sent_today) >= campaign["daily_cap"]:
-            _status(
-                status_path,
-                "daily-cap",
-                sender_sent_today=sender_sent_today,
-                ledger_sent_today=sent_today,
-                cap=campaign["daily_cap"],
-                live_refresh=True,
-            )
+        eligible_accounts = [a for a in sender_accounts if not a["disabled"] and a["sent_today"] < campaign["daily_cap"]]
+        total_daily_cap = campaign["daily_cap"] * len(sender_accounts)
+        if not eligible_accounts or sent_today >= total_daily_cap:
+            _status(status_path, "daily-cap", account_counts={a["email"]: a["sent_today"] for a in sender_accounts}, per_account_cap=campaign["daily_cap"], ledger_sent_today=sent_today, total_cap=total_daily_cap, live_refresh=True)
             return 0
 
-        sender_token, sender_token_acquired_mono = _refresh_sender_token_if_due(
-            sender_token, sender_token_acquired_mono
+        selected_sender = min(eligible_accounts, key=lambda a: (a["sent_today"], a["email"] != CAREER_OUTWARD_EMAIL))
+        selected_sender["token"], selected_sender["acquired_mono"] = _refresh_sender_token_if_due(
+            selected_sender["token"], selected_sender["acquired_mono"],
+            config_dir=selected_sender["config_dir"], expected_email=selected_sender["email"],
         )
         selected = ready_queue[0]
         queue_id = str(selected["queue_id"])
@@ -1113,6 +1111,7 @@ def run(
         accounted_committed = False
         try:
             item = _message_item(selected, campaign)
+            item["sender_email"] = selected_sender["email"]
             # Fail-closed synthetic guard: never send an obviously fake or
             # test identity even if it slipped through earlier filters.
             if _is_synthetic_email(selected.get("email", "")) or \
@@ -1121,11 +1120,11 @@ def run(
                 raise RuntimeError(
                     f"FAIL_CLOSED_SYNTHETIC: queue_id={queue_id} email={email}")
             raw = _verify_local_package(item)
-            response = _send_raw(sender_token, raw)
+            response = _send_raw(selected_sender["token"], raw)
             message_id = str(response.get("id") or "").strip()
             if not message_id:
                 raise RuntimeError("Gmail send returned no message ID")
-            sent_payload = _fetch_raw_sent(sender_token, message_id)
+            sent_payload = _fetch_raw_sent(selected_sender["token"], message_id)
             _verify_message_payload(sent_payload, item, require_sent=True)
 
             # From this point Gmail delivery is committed. No downstream
@@ -1135,7 +1134,7 @@ def run(
             sent_at = utc_now()
             reconciler.ledger.mark_sent(queue_id, message_id, sent_at)
             reconciler.ledger.save()
-            sender_sent_today += 1
+            selected_sender["sent_today"] += 1
             ready_queue = [row for row in ready_queue if str(row.get("queue_id") or "") != queue_id]
             try:
                 _write_ready_cache(ready_cache_path, ready_queue)
@@ -1153,7 +1152,7 @@ def run(
             )
             _status(
                 status_path, "sent", queue_id=queue_id, recipient=email,
-                gmail_message_id=message_id, master_sync_ok=master_sync_ok,
+                gmail_message_id=message_id, master_sync_ok=master_sync_ok, sender=selected_sender["email"],
             )
             if once:
                 return 0
@@ -1163,7 +1162,7 @@ def run(
                 # Gmail send already succeeded. Best-effort repair the queue,
                 # but never classify this as recipient failure / retryable.
                 if not accounted_committed:
-                    sender_sent_today += 1
+                    selected_sender["sent_today"] += 1
                     ready_queue = [
                         row for row in ready_queue
                         if str(row.get("queue_id") or "") != queue_id
@@ -1198,13 +1197,23 @@ def run(
                 continue
 
             if _is_account_level_error(exc):
+                selected_sender["disabled"] = True
+                if len(sender_accounts) > 1 and any(not a["disabled"] and a["sent_today"] < campaign["daily_cap"] for a in sender_accounts):
+                    reconciler.ledger.mark_pending(queue_id, selected)
+                    reconciler.ledger.save()
+                    write_queue_fields(sheet_token, int(selected["row_number"]), {
+                        "Status": "PENDING",
+                        "Last_Error": f"sender account temporarily disabled: {selected_sender['email']}",
+                    })
+                    _status(status_path, "account-disabled", sender=selected_sender["email"], error_type=type(exc).__name__)
+                    continue
                 reconciler.ledger.mark_failed(queue_id, f"ACCOUNT_LEVEL: {type(exc).__name__}", permanent=False)
                 reconciler.ledger.save()
                 write_queue_fields(sheet_token, int(selected["row_number"]), {
                     "Status": "FAILED_TEMPORARY",
-                    "Last_Error": "account-level Gmail restriction; sender stopped",
+                    "Last_Error": "account-level Gmail restriction; all sender capacity stopped",
                 })
-                _status(status_path, "account-level-stop", error_type=type(exc).__name__)
+                _status(status_path, "account-level-stop", sender=selected_sender["email"], error_type=type(exc).__name__)
                 return ACCOUNT_LEVEL_STOP_EXIT_CODE
 
             # Infrastructure/API failures are never recipient failures. Leave the
