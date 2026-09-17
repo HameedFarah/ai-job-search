@@ -182,6 +182,28 @@ def _sender_sent_today_count(token: str) -> int:
             return total
 
 
+def _sender_last_sent_utc(token: str) -> datetime | None:
+    """Return the account's latest SENT message timestamp for restart-safe per-account cadence."""
+    params = [("maxResults", 1), ("labelIds", "SENT")]
+    url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?" + urlencode(params)
+    payload = _gmail_json(token, "GET", url)
+    messages = payload.get("messages") or []
+    if not messages:
+        return None
+    message_id = str(messages[0].get("id") or "").strip()
+    if not message_id:
+        return None
+    meta = _gmail_json(
+        token, "GET",
+        f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}?format=metadata&metadataHeaders=From",
+    )
+    try:
+        millis = int(str(meta.get("internalDate") or "0"))
+    except ValueError:
+        return None
+    return datetime.fromtimestamp(millis / 1000.0, tz=timezone.utc) if millis > 0 else None
+
+
 def _read_campaign_config(sheet_token: str) -> dict[str, Any]:
     encoded = quote(f"{CONFIG_SHEET_NAME}!A:B", safe="!:")
     body = sheets_request(
@@ -978,6 +1000,7 @@ def run(
         sender_accounts.append({
             "email": account_email, "config_dir": config_dir, "token": token,
             "acquired_mono": time.monotonic(), "sent_today": 0,
+            "last_sent_utc": _sender_last_sent_utc(token),
             "count_loaded": False, "disabled": False,
         })
 
@@ -1002,16 +1025,6 @@ def run(
             _status(status_path, "window-closing", seconds_until_close=round(seconds_left, 3))
             return 0
 
-        # Cadence is pure local state; evaluate it before any remote refresh.
-        last_send = _last_send_from_ledger(reconciler)
-        cadence_wait = _cadence_wait_seconds(last_send, campaign["cadence_seconds"])
-        if cadence_wait > 0:
-            _status(status_path, "cadence-wait", seconds=round(cadence_wait, 3), ready=len(ready_queue))
-            if once:
-                return 0
-            time.sleep(max(0.1, min(cadence_wait, seconds_left)))
-            continue
-
         ready_queue = _drop_committed_ready_rows(ready_queue, reconciler, failed_this_run)
         refresh_due = (
             not ready_queue
@@ -1031,6 +1044,7 @@ def run(
             if ready_queue:
                 for account in sender_accounts:
                     account["sent_today"] = _sender_sent_today_count(account["token"])
+                    account["last_sent_utc"] = _sender_last_sent_utc(account["token"])
                     account["count_loaded"] = True
 
         if not ready_queue:
@@ -1043,6 +1057,7 @@ def run(
         for account in sender_accounts:
             if not account["count_loaded"]:
                 account["sent_today"] = _sender_sent_today_count(account["token"])
+                account["last_sent_utc"] = _sender_last_sent_utc(account["token"])
                 account["count_loaded"] = True
         eligible_accounts = [a for a in sender_accounts if not a["disabled"] and a["sent_today"] < campaign["daily_cap"]]
         sent_today = _sent_today_from_ledger(reconciler)
@@ -1090,7 +1105,36 @@ def run(
             _status(status_path, "daily-cap", account_counts={a["email"]: a["sent_today"] for a in sender_accounts}, per_account_cap=campaign["daily_cap"], ledger_sent_today=sent_today, total_cap=total_daily_cap, live_refresh=True)
             return 0
 
-        selected_sender = min(eligible_accounts, key=lambda a: (a["sent_today"], a["email"] != CAREER_OUTWARD_EMAIL))
+        # Each Gmail account has its own 96-second cadence. With two live accounts,
+        # interleave them at half the per-account cadence so aggregate throughput
+        # doubles without either mailbox exceeding its own minimum interval.
+        per_account_wait = {
+            a["email"]: _cadence_wait_seconds(a.get("last_sent_utc"), campaign["cadence_seconds"])
+            for a in eligible_accounts
+        }
+        cadence_ready = [a for a in eligible_accounts if per_account_wait[a["email"]] <= 0.0]
+        stagger_seconds = float(campaign["cadence_seconds"]) / max(1, len(eligible_accounts))
+        global_wait = _cadence_wait_seconds(_last_send_from_ledger(reconciler), stagger_seconds)
+        if global_wait > 0.0 or not cadence_ready:
+            wait_for = global_wait if global_wait > 0.0 else min(per_account_wait.values())
+            _status(
+                status_path, "cadence-wait", seconds=round(wait_for, 3), ready=len(ready_queue),
+                per_account_wait={k: round(v, 3) for k, v in per_account_wait.items()},
+                aggregate_stagger_seconds=round(stagger_seconds, 3),
+            )
+            if once:
+                return 0
+            time.sleep(max(0.1, min(wait_for, seconds_left)))
+            continue
+
+        selected_sender = min(
+            cadence_ready,
+            key=lambda a: (
+                a["sent_today"],
+                a.get("last_sent_utc") or datetime.min.replace(tzinfo=timezone.utc),
+                a["email"] != CAREER_OUTWARD_EMAIL,
+            ),
+        )
         selected_sender["token"], selected_sender["acquired_mono"] = _refresh_sender_token_if_due(
             selected_sender["token"], selected_sender["acquired_mono"],
             config_dir=selected_sender["config_dir"], expected_email=selected_sender["email"],
@@ -1135,6 +1179,7 @@ def run(
             reconciler.ledger.mark_sent(queue_id, message_id, sent_at)
             reconciler.ledger.save()
             selected_sender["sent_today"] += 1
+            selected_sender["last_sent_utc"] = datetime.fromisoformat(sent_at).astimezone(timezone.utc)
             ready_queue = [row for row in ready_queue if str(row.get("queue_id") or "") != queue_id]
             try:
                 _write_ready_cache(ready_cache_path, ready_queue)
@@ -1163,6 +1208,7 @@ def run(
                 # but never classify this as recipient failure / retryable.
                 if not accounted_committed:
                     selected_sender["sent_today"] += 1
+                    selected_sender["last_sent_utc"] = datetime.now(timezone.utc)
                     ready_queue = [
                         row for row in ready_queue
                         if str(row.get("queue_id") or "") != queue_id
