@@ -68,7 +68,7 @@ DEFAULT_LOCK = REPO_ROOT / "runtime/acceptance/auto-send-queue/sender.lock"
 DEFAULT_READY_CACHE = REPO_ROOT / "runtime/acceptance/auto-send-queue/ready-queue.json"
 DEFAULT_REGA_STAGE_JOURNAL = REPO_ROOT / "runtime/acceptance/auto-send-queue/rega-stage-journal.json"
 READY_CACHE_SCHEMA = "auto-send-ready-queue/1"
-READY_REFRESH_SECONDS = 30 * 60
+READY_REFRESH_SECONDS = 60
 POLL_SECONDS = 60
 # Do not begin a fresh Gmail transaction at the edge of the configured send-window stop.
 # This margin is deliberately larger than the normal API/readback latency and
