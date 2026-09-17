@@ -1339,11 +1339,11 @@ class QueueReconciler:
         return result
 
     def sort_by_priority(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Apply campaign sequence first, then stable order inside each lane.
+        """Apply owner campaign sequence, then stable order inside each lane.
 
-        Required sequence is REGA, then Balady T1..T5. Generic IMPORTANT/NORMAL
-        remains a tie-break only inside the same campaign lane so a Balady row
-        can never jump ahead of a pending REGA row.
+        Sequence: REGA -> MEED Developers -> MEED Consultants -> MEED Contractors
+        -> Balady T1..T5. Generic IMPORTANT/NORMAL is only a tie-break inside
+        the same lane and can never move a later lane ahead of an earlier one.
         """
         priority_order = {"IMPORTANT": 0, "NORMAL": 1}
         balady_order = {
@@ -1356,14 +1356,18 @@ class QueueReconciler:
 
         def lane(r: dict[str, Any]) -> int:
             source = str(r.get("source") or "").upper()
-            # Newly extracted/recovered REGA routes are the owner's first lane;
-            # all other REGA routes still remain ahead of every Balady tier.
             if "REGA_API_RECOVERY" in source:
                 return -1
             if "REGA" in source:
                 return 0
+            if "MEED_DEVELOPER" in source:
+                return 10
+            if "MEED_CONSULTANT" in source:
+                return 20
+            if "MEED_CONTRACTOR" in source:
+                return 30
             if "BALADY" in source:
-                return balady_order.get(str(r.get("balady_tier") or "").upper(), 98)
+                return 40 + balady_order.get(str(r.get("balady_tier") or "").upper(), 8)
             return 99
 
         def sort_key(r: dict[str, Any]):

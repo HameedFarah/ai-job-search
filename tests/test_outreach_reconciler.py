@@ -1202,6 +1202,9 @@ def test_normalise_row_preserves_other_errors_with_synthetic():
 def test_campaign_sequence_rega_then_balady_tiers_is_deterministic(tmp_path):
     reconciler = QueueReconciler.__new__(QueueReconciler)
     items = [
+        {"source": "MEED_CONTRACTOR_AGY_LOW_20260917", "balady_tier": "", "priority": "IMPORTANT", "added_at": "2026-09-01T00:00:00Z", "row_number": 13, "email": "contractor@example.sa"},
+        {"source": "MEED_CONSULTANT_AGY_LOW_20260917", "balady_tier": "", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 12, "email": "consultant@example.sa"},
+        {"source": "MEED_DEVELOPER_AGY_LOW_20260917", "balady_tier": "", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 11, "email": "developer@example.sa"},
         {"source": "BALADY live", "balady_tier": "T5_FREEMAIL", "priority": "IMPORTANT", "added_at": "2026-09-01T00:00:00Z", "row_number": 6, "email": "t5@gmail.com"},
         {"source": "BALADY live", "balady_tier": "T3_CORP_CONSULTANCY", "priority": "NORMAL", "added_at": "2026-09-01T00:00:00Z", "row_number": 4, "email": "t3@example.sa"},
         {"source": "REGA verified", "balady_tier": "", "priority": "NORMAL", "added_at": "2026-09-02T00:00:00Z", "row_number": 9, "email": "rega@example.sa"},
@@ -1212,8 +1215,9 @@ def test_campaign_sequence_rega_then_balady_tiers_is_deterministic(tmp_path):
     ]
     ordered = reconciler.sort_by_priority(items)
     assert [row["email"] for row in ordered] == [
-        "recovered@example.sa", "rega@example.sa", "hr@example.sa", "group@example.sa",
-        "t3@example.sa", "corp@example.sa", "t5@gmail.com",
+        "recovered@example.sa", "rega@example.sa", "developer@example.sa",
+        "consultant@example.sa", "contractor@example.sa", "hr@example.sa",
+        "group@example.sa", "t3@example.sa", "corp@example.sa", "t5@gmail.com",
     ]
 
 
