@@ -437,6 +437,10 @@ def _meed_recovery_validation_ok(raw: dict[str, str]) -> bool:
         "safe_to_send=true",
         "safe_to_send_validator=true",
         "prospeo + zerobounce valid",
+        "snov=valid",
+        "snov valid",
+        "snov_valid",
+        "snov-valid",
     )
     return any(marker in notes for marker in markers)
 
