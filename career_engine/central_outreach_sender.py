@@ -418,6 +418,37 @@ def _last_send_from_ledger(reconciler: QueueReconciler) -> datetime | None:
     return max(stamps) if stamps else None
 
 
+def _meed_recovery_category_ok(raw: dict[str, str]) -> bool:
+    """Fail closed when a recovery overlay explicitly classifies the MEED record as OTHER.
+
+    Recovery rows encode the source research id in Evidence_or_Notes (e.g. MD-1044).
+    The canonical recovery overlay may later establish that a source-list record does
+    not belong to its nominal MEED lane. Such rows must not be sent merely because
+    their queue Source still says MEED_DEVELOPER/CONSULTANT/CONTRACTOR.
+    """
+    source = str(raw.get("Source") or "").strip().upper()
+    if not (source.startswith("MEED_") and "FREE_RECOVERY" in source):
+        return True
+    notes = str(raw.get("Evidence_or_Notes") or "")
+    import re as _re
+    m = _re.search(r"\b(?:MD|MC|MK)-\d{4}\b", notes, _re.I)
+    if not m:
+        return True
+    rid = m.group(0).upper()
+    try:
+        from pathlib import Path as _Path
+        import json as _json
+        overlay_path = _Path("/home/hameedo/runtime/career-research/meed-recovery-master-routes.json")
+        if not overlay_path.exists():
+            return True
+        data = _json.loads(overlay_path.read_text())
+        category = str((data.get(rid) or {}).get("category") or "").strip().upper()
+        return category != "OTHER"
+    except Exception:
+        # Do not create a new sender dependency failure for ordinary validated rows.
+        return True
+
+
 def _meed_recovery_validation_ok(raw: dict[str, str]) -> bool:
     """Fail closed for MEED free-recovery rows until mailbox validation is explicit.
 
@@ -468,6 +499,9 @@ def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
         if raw_status in {"PENDING", "SENDING", "FAILED_TEMPORARY"} and not _meed_recovery_validation_ok(raw):
             fields["Status"] = "HOLD"
             fields["Last_Error"] = "meed_recovery_validation_required"
+        elif raw_status in {"PENDING", "SENDING", "FAILED_TEMPORARY"} and not _meed_recovery_category_ok(raw):
+            fields["Status"] = "HOLD"
+            fields["Last_Error"] = "meed_recovery_category_other"
         if fields:
             updates.append((int(normalised["row_number"]), fields))
     write_queue_rows_fields(sheet_token, updates)
