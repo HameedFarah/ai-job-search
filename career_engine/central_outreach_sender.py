@@ -418,6 +418,29 @@ def _last_send_from_ledger(reconciler: QueueReconciler) -> datetime | None:
     return max(stamps) if stamps else None
 
 
+def _meed_recovery_validation_ok(raw: dict[str, str]) -> bool:
+    """Fail closed for MEED free-recovery rows until mailbox validation is explicit.
+
+    Recovery research can discover an official-site email before deliverability
+    validation finishes. Such a row must never become sendable merely because it
+    was appended as PENDING. A validation marker is required in evidence/notes.
+    """
+    source = str(raw.get("Source") or "").strip().upper()
+    if not (source.startswith("MEED_") and "FREE_RECOVERY" in source):
+        return True
+    notes = str(raw.get("Evidence_or_Notes") or "").lower()
+    markers = (
+        "zerobounce=valid",
+        "zerobounce valid",
+        "zerobounce_valid",
+        "zerobounce-valid",
+        "safe_to_send=true",
+        "safe_to_send_validator=true",
+        "prospeo + zerobounce valid",
+    )
+    return any(marker in notes for marker in markers)
+
+
 def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
     """Persist missing machine-managed defaults in bounded Sheet batches."""
     updates: list[tuple[int, dict[str, str]]] = []
@@ -437,6 +460,10 @@ def _persist_defaults(sheet_token: str, raw_rows: list[dict[str, str]]) -> None:
         if normalised.get("normalise_error"):
             fields["Status"] = "HOLD"
             fields["Last_Error"] = str(normalised["normalise_error"])
+        raw_status = str(raw.get("Status") or normalised.get("status") or "").strip().upper()
+        if raw_status in {"PENDING", "SENDING", "FAILED_TEMPORARY"} and not _meed_recovery_validation_ok(raw):
+            fields["Status"] = "HOLD"
+            fields["Last_Error"] = "meed_recovery_validation_required"
         if fields:
             updates.append((int(normalised["row_number"]), fields))
     write_queue_rows_fields(sheet_token, updates)
