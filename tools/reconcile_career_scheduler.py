@@ -597,6 +597,7 @@ def host_timezone_name() -> str | None:
 
 
 def inspect(manifest: dict, target: Path, *, gateway_profile: str | None = None) -> dict:
+    desired_enabled = bool(manifest.get("enabled", True))
     target_store = target / "cron/jobs.json"
     target_jobs = jobs(target_store)
     target_named = [j for j in target_jobs if j.get("name") == manifest["name"]]
@@ -627,33 +628,38 @@ def inspect(manifest: dict, target: Path, *, gateway_profile: str | None = None)
     timezone_expected = manifest.get("timezone")
     timezone_ok = timezone_name == timezone_expected
     problems: list[str] = []
-    if len(target_matches) != 1:
-        problems.append("no single canonical matching job in target store")
-    if len(target_enabled_named) != 1:
+    if desired_enabled:
+        if len(target_matches) != 1:
+            problems.append("no single canonical matching job in target store")
+        if len(target_enabled_named) != 1:
+            problems.append(
+                f"target store has {len(target_enabled_named)} enabled '{manifest['name']}' jobs"
+            )
+        if enabled_total != 1:
+            problems.append(
+                f"{enabled_total} enabled '{manifest['name']}' jobs across all stores; exactly one allowed"
+            )
+        if duplicates:
+            problems.append(f"enabled duplicates in other stores: {len(duplicates)}")
+        if not deployed.is_file():
+            problems.append("deployed runtime script missing")
+        elif not bytes_match:
+            problems.append("deployed runtime script bytes drifted from committed source")
+        if not worktree["ok"]:
+            problems.extend(f"runtime worktree: {problem}" for problem in worktree["problems"])
+        if not runtime_root_pointer["ok"]:
+            problems.extend(
+                f"runtime root pointer: {problem}" for problem in runtime_root_pointer["problems"]
+            )
+        if not authority["ok"]:
+            problems.extend(f"runtime authority: {problem}" for problem in authority["problems"])
+        if not timezone_ok:
+            problems.append(
+                f"effective host timezone {timezone_name!r} != expected {timezone_expected!r}"
+            )
+    elif enabled_total != 0:
         problems.append(
-            f"target store has {len(target_enabled_named)} enabled '{manifest['name']}' jobs"
-        )
-    if enabled_total != 1:
-        problems.append(
-            f"{enabled_total} enabled '{manifest['name']}' jobs across all stores; exactly one allowed"
-        )
-    if duplicates:
-        problems.append(f"enabled duplicates in other stores: {len(duplicates)}")
-    if not deployed.is_file():
-        problems.append("deployed runtime script missing")
-    elif not bytes_match:
-        problems.append("deployed runtime script bytes drifted from committed source")
-    if not worktree["ok"]:
-        problems.extend(f"runtime worktree: {problem}" for problem in worktree["problems"])
-    if not runtime_root_pointer["ok"]:
-        problems.extend(
-            f"runtime root pointer: {problem}" for problem in runtime_root_pointer["problems"]
-        )
-    if not authority["ok"]:
-        problems.extend(f"runtime authority: {problem}" for problem in authority["problems"])
-    if not timezone_ok:
-        problems.append(
-            f"effective host timezone {timezone_name!r} != expected {timezone_expected!r}"
+            f"{enabled_total} enabled '{manifest['name']}' jobs across all stores; retired schedule requires zero"
         )
     if gateway_profile is not None:
         try:
@@ -685,6 +691,13 @@ def inspect(manifest: dict, target: Path, *, gateway_profile: str | None = None)
 
 
 def apply(manifest: dict, target: Path, *, gateway_profile: str | None = None) -> dict:
+    if not bool(manifest.get("enabled", True)):
+        for store in stores():
+            for candidate in jobs(store):
+                if candidate.get("name") == manifest["name"] and candidate.get("enabled"):
+                    run_hermes(store.parents[1], "pause", candidate["id"])
+        return inspect(manifest, target, gateway_profile=gateway_profile)
+
     # Provision/update the dedicated runtime worktree with ff-only semantics and
     # bind its runtime authority before touching the Hermes store. Runtime
     # preflight remains authoritative at scan time; this provisioning uses the

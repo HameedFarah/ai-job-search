@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "engine_version": "1.0.4",
-  "built_at": "2026-08-31T13:01:01+00:00",
-  "source_hash": "c5a93bc397a640f7af63a8168a4f4a4212400c949ab04e4e2849e41c03876489",
+  "built_at": "2026-09-18T17:06:27+00:00",
+  "source_hash": "7fd9b1303aba766d6e29775d2838b6d36ad155fb1acc05756cb19b9bd8b645a9",
   "sources": [
     {
       "path": "projects/job-automation/config/career-engine.v1.json",
@@ -54,9 +54,9 @@
     },
     {
       "path": "projects/job-automation/verified-career-profile-2026-08-01.md",
-      "sha256": "f2cf808111b080f86ad81ac75b75f2144c260c6e32016b161d2c365b46c7417d",
-      "size": 26699,
-      "modified_ns": 1786178999989372758
+      "sha256": "608bfc7034c4de708246da786657ebd7087f8989e0bbdc912ee1225fb778fb19",
+      "size": 27201,
+      "modified_ns": 1789568301353166242
     },
     {
       "path": "projects/job-automation/career-metrics-bank-2026-08-03.md",
@@ -1673,6 +1673,6 @@
       "cover_email_body"
     ]
   },
-  "bundle_hash": "3f32fc7fa82618908daa7628f07e5d05b7cc5e7c0bbbc6d26965cc524b15e4b8",
+  "bundle_hash": "94dc456d52d6ed3be4a6d1aabe7717d81ec6305b7a7e2d329521a32398c24d42",
   "cache_reused": false
 }

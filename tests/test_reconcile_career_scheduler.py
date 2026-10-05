@@ -12,7 +12,9 @@ SPEC.loader.exec_module(mod)
 
 
 def manifest():
-    return json.loads(mod.MANIFEST.read_text())
+    data = json.loads(mod.MANIFEST.read_text())
+    data["enabled"] = True
+    return data
 
 
 def test_profile_resolution_does_not_change_active_profile(tmp_path, monkeypatch):
@@ -31,6 +33,9 @@ def test_check_reports_missing_script_and_bounded_state(tmp_path, monkeypatch, c
     (hermes / "active_profile").write_text("default\n")
     (target / "jobs.json").write_text(json.dumps({"jobs": []}))
     monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
+    active_manifest = tmp_path / "manifest.json"
+    active_manifest.write_text(json.dumps(manifest()))
+    monkeypatch.setattr(mod, "MANIFEST", active_manifest)
     monkeypatch.setattr(
         mod, "resolve_target_profile",
         lambda requested: ("default", {"running_gateway_profile": "default", "requested_profile": requested}),
@@ -99,6 +104,33 @@ def test_resolve_hermes_fails_clearly_when_missing(tmp_path, monkeypatch):
     monkeypatch.delenv(mod.HERMES_EXECUTABLE_ENV, raising=False)
     with pytest.raises(FileNotFoundError, match="Hermes CLI not found"):
         mod.resolve_hermes()
+
+
+def test_apply_retired_schedule_pauses_all_named_jobs_without_provisioning(tmp_path, monkeypatch):
+    data = manifest()
+    data["enabled"] = False
+    hermes = tmp_path / ".hermes"
+    (hermes / "cron").mkdir(parents=True)
+    active = {"id": "active", "name": data["name"], "enabled": True}
+    (hermes / "cron/jobs.json").write_text(json.dumps({"jobs": [active]}))
+    monkeypatch.setattr(mod, "DEFAULT_HERMES", hermes)
+    monkeypatch.setattr(mod, "stores", lambda: [hermes / "cron/jobs.json"])
+    monkeypatch.setattr(mod, "ensure_runtime_worktree", lambda m: pytest.fail("retired schedule must not provision runtime"))
+    calls = []
+
+    def fake_run(home, *args):
+        calls.append((home, args))
+        (hermes / "cron/jobs.json").write_text(json.dumps({"jobs": [dict(active, enabled=False)]}))
+
+    monkeypatch.setattr(mod, "run_hermes", fake_run)
+    monkeypatch.setattr(mod, "runtime_worktree_status", lambda m: {"ok": False, "problems": ["not needed"]})
+    monkeypatch.setattr(mod, "read_runtime_root_pointer_status", lambda m: {"ok": False, "problems": ["not needed"]})
+    monkeypatch.setattr(mod, "read_runtime_authority_status", lambda m: {"ok": False, "problems": ["not needed"]})
+    monkeypatch.setattr(mod, "host_timezone_name", lambda: "UTC")
+    result = mod.apply(data, hermes, gateway_profile="default")
+    assert calls == [(hermes, ("pause", "active"))]
+    assert result["enabled_jobs_total"] == 0
+    assert result["status"] == "ok"
 
 
 def test_apply_create_uses_create_supported_arguments(tmp_path, monkeypatch):
