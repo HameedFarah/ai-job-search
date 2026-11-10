@@ -1,7 +1,14 @@
 # Career Cloudflare Access migration — implementation plan
 
 **Plan ID:** `career-cloudflare-access-20260818`  
-**Canonical tracker:** `docs/implementation/career-cloudflare-access-20260818-tracker.csv`
+**Canonical task authority:** [ClickUp — FarahDigital Operations & Admin](https://app.clickup.com/901211080258/v/l/901223582313) (`CAREER-CF-ACC-001`–`CAREER-CF-ACC-007`)
+**Historical source snapshot:** `docs/archive/career-cloudflare-access-20260818-tracker-20261110.csv`
+
+## Task tracker cutover — accepted 2026-11-10
+
+ClickUp is the task authority for this completed technical workstream. Maus-authenticated migration created seven unique tasks, all in `DONE`, with all seven source dependencies represented as native ClickUp links and independently read back. Original fields, evidence, timestamps, and `owner_role` values are retained in task descriptions. Those source roles were not mapped to ClickUp users. The source snapshot is preserved unchanged at the archive path above (SHA-256 `56a85a7317d2487bd3c64b525370466fb8a36d4f8671efd30ef6dd36d28aa21d`).
+
+The previous CSV planner is retired and fails closed; it no longer reads the archived snapshot. The Career Engine remains hibernated. This technical task migration does not resume job discovery, outreach, sending, or applications.
 
 ## Architecture
 
